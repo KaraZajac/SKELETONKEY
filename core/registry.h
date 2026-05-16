@@ -21,5 +21,6 @@ const struct iamroot_module *iamroot_module_find(const char *name);
 /* Each module family declares one of these in its public header. The
  * top-level iamroot main() calls them in order at startup. */
 void iamroot_register_copy_fail_family(void);
+void iamroot_register_dirty_pipe(void);
 
 #endif /* IAMROOT_REGISTRY_H */

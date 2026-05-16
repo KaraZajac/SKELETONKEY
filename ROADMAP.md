@@ -33,7 +33,7 @@ commitments.
       because there's only one family today; the extraction is
       mechanical and lands when a second family arrives.
 
-## Phase 2 — Add Dirty Pipe (CVE-2022-0847)
+## Phase 2 — Add Dirty Pipe (CVE-2022-0847) — PARTIAL (DETECT done 2026-05-16)
 
 Public PoC, well-understood, useful for completeness — IAMROOT
 without Dirty Pipe is incomplete as a "historical bundle." Affects
@@ -41,12 +41,23 @@ kernels ≤5.16.11/≤5.15.25/≤5.10.102 so coverage is older
 deployments (worth bundling — many production boxes still run
 these).
 
-- [ ] `modules/dirty_pipe_cve_2022_0847/` — exploit + detect + range
-      metadata
-- [ ] Test matrix: Ubuntu 20.04 (vulnerable kernels), Debian 11
-      (vulnerable kernels), modern kernels (immune — should detect
-      as patched)
-- [ ] Detection rules: auditd splice/pipe write patterns
+- [x] `modules/dirty_pipe_cve_2022_0847/` directory promoted out of
+      `_stubs/`
+- [x] `core/kernel_range.{c,h}` — branch-aware patched-version
+      comparison (reusable by every future module)
+- [x] `dirty_pipe_detect()` — kernel version check against
+      branch-backport thresholds (5.10.102 / 5.15.25 / 5.16.11 / 5.17+)
+- [x] Detection rules: `auditd.rules` (splice() syscall + passwd/shadow
+      watches) and `sigma.yml` (non-root modification of sensitive files)
+- [x] Registered in `iamroot --list` / `--scan` output. Verified on
+      kernel 6.12.86 → correctly reports OK (patched).
+- [ ] **Phase 1.5 / Phase 2 followup**: actual exploit. Needs
+      extraction of `find_passwd_uid_field` + `try_revert_passwd_page_cache`
+      + `exploit_su` into `core/` so dirty_pipe can call them without
+      duplicating the copy_fail_family helpers.
+- [ ] CI matrix: Ubuntu 20.04 with kernel 5.13 (vulnerable),
+      Debian 11 with 5.10.0-8 (vulnerable), Debian 13 with 6.12.x
+      (patched — should detect as OK)
 
 ## Phase 3 — Add EntryBleed (CVE-2023-0458) as stage-1 leak brick
 

@@ -154,6 +154,7 @@ int main(int argc, char **argv)
     /* Bring up the module registry. As new families land, add their
      * register_* call here. */
     iamroot_register_copy_fail_family();
+    iamroot_register_dirty_pipe();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};

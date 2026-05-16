@@ -1,0 +1,26 @@
+# Dirty Pipe (CVE-2022-0847) — auditd detection rules
+#
+# Detects the Dirty Pipe primitive pattern: a process splice()s a file
+# into a pipe, then write()s to that pipe. The kernel bug allows the
+# write to land in the page cache of the original file.
+#
+# False-positive surface: legitimate splice-then-write is rare in
+# userspace; most uses of splice are file-to-file (e.g. cp via sendfile).
+# Tuning may be needed in environments using nginx/HAProxy/etc.
+#
+# Drop these into /etc/audit/rules.d/ and reload auditd.
+
+# Watch /etc/passwd, /etc/shadow, /etc/sudoers, /etc/sudoers.d/* for
+# any modification by non-root — the Dirty Pipe payload typically
+# overwrites these to gain root.
+-w /etc/passwd      -p wa -k iamroot-dirty-pipe
+-w /etc/shadow      -p wa -k iamroot-dirty-pipe
+-w /etc/sudoers     -p wa -k iamroot-dirty-pipe
+-w /etc/sudoers.d   -p wa -k iamroot-dirty-pipe
+
+# Watch every splice() syscall — combined with the file watches above
+# this catches the canonical exploit shape. (High volume on servers
+# using nginx/HAProxy; consider scoping with -F gid!=33 -F gid!=99 to
+# exclude web servers.)
+-a always,exit -F arch=b64 -S splice -k iamroot-dirty-pipe-splice
+-a always,exit -F arch=b32 -S splice -k iamroot-dirty-pipe-splice

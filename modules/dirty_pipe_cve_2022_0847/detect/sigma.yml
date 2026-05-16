@@ -1,0 +1,40 @@
+title: Possible Dirty Pipe exploitation (CVE-2022-0847)
+id: f6b13c08-iamroot-dirty-pipe
+status: experimental
+description: |
+  Detects file modifications to /etc/passwd, /etc/shadow, /etc/sudoers,
+  or /etc/sudoers.d/* by a non-root process. The Dirty Pipe primitive
+  is a page-cache write — the on-disk file is unchanged but the running
+  kernel sees the modified contents. This sigma rule complements the
+  auditd rules in detect/auditd.rules.
+references:
+  - https://dirtypipe.cm4all.com/
+  - https://nvd.nist.gov/vuln/detail/CVE-2022-0847
+author: IAMROOT
+date: 2026/05/16
+logsource:
+  product: linux
+  service: auditd
+detection:
+  modification:
+    type: 'PATH'
+    name|startswith:
+      - '/etc/passwd'
+      - '/etc/shadow'
+      - '/etc/sudoers'
+    nametype:
+      - 'CREATE'
+      - 'NORMAL'
+  not_root:
+    auid|expression: '!= 0'
+  condition: modification and not_root
+falsepositives:
+  - Legitimate package upgrades (`apt`, `dnf`, `dpkg`) — these run as
+    root so auid=0 excludes them
+  - Manual edits via `vipw`, `passwd`, etc. — these also run as
+    setuid-root so auid≠0 is uncommon for the actual file write
+level: high
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - cve.2022.0847

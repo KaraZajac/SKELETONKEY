@@ -20,8 +20,8 @@ BUILD   := build
 BIN     := iamroot
 
 # core/
-CORE_SRC := core/registry.c
-CORE_OBJ := $(BUILD)/core/registry.o
+CORE_SRCS := core/registry.c core/kernel_range.c
+CORE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRCS))
 
 # Family: copy_fail_family
 # All DIRTYFAIL .c files contribute; iamroot_modules.c is the bridge.
@@ -31,10 +31,15 @@ CFF_SRCS := $(wildcard $(CFF_DIR)/src/*.c) $(CFF_DIR)/iamroot_modules.c
 CFF_SRCS := $(filter-out $(CFF_DIR)/src/dirtyfail.c, $(CFF_SRCS))
 CFF_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CFF_SRCS))
 
+# Family: dirty_pipe (single-CVE family, no shared infrastructure)
+DP_DIR   := modules/dirty_pipe_cve_2022_0847
+DP_SRCS  := $(DP_DIR)/iamroot_modules.c
+DP_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(DP_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJ) $(CFF_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS)
 
 .PHONY: all clean debug static help
 
