@@ -36,10 +36,15 @@ DP_DIR   := modules/dirty_pipe_cve_2022_0847
 DP_SRCS  := $(DP_DIR)/iamroot_modules.c
 DP_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(DP_SRCS))
 
+# Family: entrybleed (single-CVE family, x86_64 only)
+EB_DIR   := modules/entrybleed_cve_2023_0458
+EB_SRCS  := $(EB_DIR)/iamroot_modules.c
+EB_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(EB_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS)
 
 .PHONY: all clean debug static help
 

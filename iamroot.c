@@ -155,6 +155,7 @@ int main(int argc, char **argv)
      * register_* call here. */
     iamroot_register_copy_fail_family();
     iamroot_register_dirty_pipe();
+    iamroot_register_entrybleed();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};

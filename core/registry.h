@@ -22,5 +22,6 @@ const struct iamroot_module *iamroot_module_find(const char *name);
  * top-level iamroot main() calls them in order at startup. */
 void iamroot_register_copy_fail_family(void);
 void iamroot_register_dirty_pipe(void);
+void iamroot_register_entrybleed(void);
 
 #endif /* IAMROOT_REGISTRY_H */

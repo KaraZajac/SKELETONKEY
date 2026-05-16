@@ -59,20 +59,26 @@ these).
       Debian 11 with 5.10.0-8 (vulnerable), Debian 13 with 6.12.x
       (patched — should detect as OK)
 
-## Phase 3 — Add EntryBleed (CVE-2023-0458) as stage-1 leak brick
+## Phase 3 — EntryBleed (CVE-2023-0458) as stage-1 leak brick (DONE 2026-05-16)
 
 EntryBleed is **not a standalone LPE**. It's a **kbase leak
-primitive** that other modules can chain. Bundle it because:
+primitive** that other modules can chain. Bundled because:
 
 - Stage-1 of any future "build-your-own LPE" workflow
 - Detection rules for KPTI side-channel attempts are useful for
   defenders
 - Already works empirically on lts-6.12.88 (verified 2026-05-16)
 
-- [ ] `modules/entrybleed_cve_2023_0458/` — leak primitive +
-      detect-mitigations
-- [ ] Exposed as a library helper: other modules can call
-      `entrybleed_leak_kbase()` when they need a kbase
+- [x] `modules/entrybleed_cve_2023_0458/` — leak primitive + detect
+- [x] Exposed as a library helper: other modules can call
+      `entrybleed_leak_kbase_lib()` (declared in iamroot_modules.h)
+- [x] Wired into iamroot.c registry; `iamroot --exploit entrybleed
+      --i-know` produces a kbase leak. Verified on kctf-mgr:
+      leaked `0xffffffff8d800000` with KASLR slide `0xc800000`.
+- [x] `entry_SYSCALL_64` slot offset configurable via
+      `IAMROOT_ENTRYBLEED_OFFSET` env var (default matches lts-6.12.x).
+      Future enhancement: auto-detect via /boot/System.map or
+      /proc/kallsyms if accessible.
 
 ## Phase 4 — CI matrix
 
