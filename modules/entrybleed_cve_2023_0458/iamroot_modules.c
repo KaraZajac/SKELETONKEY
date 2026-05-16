@@ -221,16 +221,39 @@ static iamroot_result_t entrybleed_exploit(const struct iamroot_ctx *ctx)
 
 #endif
 
+/* EntryBleed is a side-channel; auditd / file-write rules don't catch
+ * it (no syscalls of interest fire). The most we can do is flag
+ * processes spending unusual time in tight prefetchnta loops, which is
+ * detectable via perf-counter-based EDR but not via classic auditd.
+ * Ship a Sigma note describing this; auditd rule intentionally omitted. */
+static const char entrybleed_sigma[] =
+    "title: EntryBleed-style KPTI timing side-channel (CVE-2023-0458)\n"
+    "id: 7b3a48d1-iamroot-entrybleed\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  EntryBleed leaks kbase via prefetchnta timing against entry_SYSCALL_64.\n"
+    "  No syscall trace and no filesystem footprint, so this rule is\n"
+    "  INFORMATIONAL: it documents the technique for defenders, but reliable\n"
+    "  detection requires perf-counter-based EDR. Treat unexplained spikes in\n"
+    "  prefetchnta-heavy processes as suspicious.\n"
+    "logsource: {product: linux}\n"
+    "level: informational\n"
+    "tags: [attack.discovery, attack.t1082, cve.2023.0458]\n";
+
 const struct iamroot_module entrybleed_module = {
-    .name         = "entrybleed",
-    .cve          = "CVE-2023-0458",
-    .summary      = "KPTI prefetchnta timing side-channel → kbase leak (stage-1)",
-    .family       = "entrybleed",
-    .kernel_range = "any x86_64 KPTI-enabled kernel; only partial mitigations in mainline",
-    .detect       = entrybleed_detect,
-    .exploit      = entrybleed_exploit,
-    .mitigate     = NULL,
-    .cleanup      = NULL,
+    .name           = "entrybleed",
+    .cve            = "CVE-2023-0458",
+    .summary        = "KPTI prefetchnta timing side-channel → kbase leak (stage-1)",
+    .family         = "entrybleed",
+    .kernel_range   = "any x86_64 KPTI-enabled kernel; only partial mitigations in mainline",
+    .detect         = entrybleed_detect,
+    .exploit        = entrybleed_exploit,
+    .mitigate       = NULL,
+    .cleanup        = NULL,
+    .detect_auditd  = NULL,
+    .detect_sigma   = entrybleed_sigma,
+    .detect_yara    = NULL,
+    .detect_falco   = NULL,
 };
 
 void iamroot_register_entrybleed(void)

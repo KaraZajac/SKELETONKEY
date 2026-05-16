@@ -84,6 +84,15 @@ struct iamroot_module {
     /* Undo --exploit (e.g. evict from page cache) or --mitigate side
      * effects. NULL if no cleanup applies. */
     iamroot_result_t (*cleanup)(const struct iamroot_ctx *ctx);
+
+    /* Detection rule corpus — embedded so the binary is self-
+     * contained. Each may be NULL if this module ships no rules for
+     * that format. Strings are NUL-terminated; concatenated in the
+     * order modules register. */
+    const char *detect_auditd;   /* auditd .rules content */
+    const char *detect_sigma;    /* sigma YAML content */
+    const char *detect_yara;     /* yara rules content */
+    const char *detect_falco;    /* falco rules content */
 };
 
 #endif /* IAMROOT_MODULE_H */

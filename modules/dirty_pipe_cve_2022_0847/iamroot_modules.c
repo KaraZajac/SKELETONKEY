@@ -108,16 +108,48 @@ static iamroot_result_t dirty_pipe_exploit(const struct iamroot_ctx *ctx)
     return IAMROOT_PRECOND_FAIL;
 }
 
+/* Embedded detection rules — keep the binary self-contained so
+ * `iamroot --detect-rules --format=auditd` works without a separate
+ * data-dir install. */
+static const char dirty_pipe_auditd[] =
+    "# Dirty Pipe (CVE-2022-0847) — auditd detection rules\n"
+    "# See modules/dirty_pipe_cve_2022_0847/detect/auditd.rules for full version.\n"
+    "-w /etc/passwd    -p wa -k iamroot-dirty-pipe\n"
+    "-w /etc/shadow    -p wa -k iamroot-dirty-pipe\n"
+    "-w /etc/sudoers   -p wa -k iamroot-dirty-pipe\n"
+    "-w /etc/sudoers.d -p wa -k iamroot-dirty-pipe\n"
+    "-a always,exit -F arch=b64 -S splice -k iamroot-dirty-pipe-splice\n"
+    "-a always,exit -F arch=b32 -S splice -k iamroot-dirty-pipe-splice\n";
+
+static const char dirty_pipe_sigma[] =
+    "title: Possible Dirty Pipe exploitation (CVE-2022-0847)\n"
+    "id: f6b13c08-iamroot-dirty-pipe\n"
+    "status: experimental\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  modification:\n"
+    "    type: 'PATH'\n"
+    "    name|startswith: ['/etc/passwd', '/etc/shadow', '/etc/sudoers']\n"
+    "  not_root:\n"
+    "    auid|expression: '!= 0'\n"
+    "  condition: modification and not_root\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2022.0847]\n";
+
 const struct iamroot_module dirty_pipe_module = {
-    .name         = "dirty_pipe",
-    .cve          = "CVE-2022-0847",
-    .summary      = "pipe_buffer CAN_MERGE flag inheritance → page-cache write",
-    .family       = "dirty_pipe",
-    .kernel_range = "5.8 ≤ K, fixed mainline 5.17, backports: 5.10.102 / 5.15.25 / 5.16.11",
-    .detect       = dirty_pipe_detect,
-    .exploit      = dirty_pipe_exploit,
-    .mitigate     = NULL,
-    .cleanup      = NULL,
+    .name           = "dirty_pipe",
+    .cve            = "CVE-2022-0847",
+    .summary        = "pipe_buffer CAN_MERGE flag inheritance → page-cache write",
+    .family         = "dirty_pipe",
+    .kernel_range   = "5.8 ≤ K, fixed mainline 5.17, backports: 5.10.102 / 5.15.25 / 5.16.11",
+    .detect         = dirty_pipe_detect,
+    .exploit        = dirty_pipe_exploit,
+    .mitigate       = NULL,
+    .cleanup        = NULL,
+    .detect_auditd  = dirty_pipe_auditd,
+    .detect_sigma   = dirty_pipe_sigma,
+    .detect_yara    = NULL,
+    .detect_falco   = NULL,
 };
 
 void iamroot_register_dirty_pipe(void)

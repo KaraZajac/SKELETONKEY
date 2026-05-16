@@ -49,6 +49,8 @@ static void usage(const char *prog)
 "  --exploit <name>      run named module's exploit (REQUIRES --i-know)\n"
 "  --mitigate <name>     apply named module's mitigation\n"
 "  --cleanup <name>      undo named module's exploit/mitigate side effects\n"
+"  --detect-rules        dump detection rules for every module\n"
+"                        (combine with --format=auditd|sigma|yara|falco)\n"
 "  --version             print version\n"
 "  --help                this message\n"
 "\n"
@@ -58,6 +60,7 @@ static void usage(const char *prog)
 "  --no-shell            in --exploit modes, prepare but don't drop to shell\n"
 "  --json                machine-readable output (for SIEM/CI)\n"
 "  --no-color            disable ANSI color codes\n"
+"  --format <f>          with --detect-rules: auditd (default), sigma, yara, falco\n"
 "\n"
 "Exit codes:\n"
 "  0 not vulnerable / OK    2 vulnerable   5 exploit succeeded\n"
@@ -71,8 +74,16 @@ enum mode {
     MODE_EXPLOIT,
     MODE_MITIGATE,
     MODE_CLEANUP,
+    MODE_DETECT_RULES,
     MODE_HELP,
     MODE_VERSION,
+};
+
+enum detect_format {
+    FMT_AUDITD,
+    FMT_SIGMA,
+    FMT_YARA,
+    FMT_FALCO,
 };
 
 static const char *result_str(iamroot_result_t r)
@@ -132,6 +143,59 @@ static int cmd_scan(const struct iamroot_ctx *ctx)
     return worst;
 }
 
+/* Dump detection rules for every registered module in the requested
+ * format. Modules that don't ship a rule for that format are simply
+ * skipped (no error). Output goes to stdout so it can be redirected
+ * straight into /etc/audit/rules.d/, the SIEM, etc. */
+static int cmd_detect_rules(enum detect_format fmt)
+{
+    static const char *fmt_names[] = {
+        [FMT_AUDITD] = "auditd",
+        [FMT_SIGMA]  = "sigma",
+        [FMT_YARA]   = "yara",
+        [FMT_FALCO]  = "falco",
+    };
+    size_t n = iamroot_module_count();
+    fprintf(stdout, "# IAMROOT detection rules — format: %s\n", fmt_names[fmt]);
+    fprintf(stdout, "# Generated from %zu registered modules\n", n);
+    fprintf(stdout, "# AUTHORIZED-TESTING tool; see docs/ETHICS.md\n\n");
+    /* Dedup by pointer: family-shared rule strings (e.g. all 5
+     * copy_fail_family modules share one auditd rule string) would
+     * otherwise emit identical blocks once per module. */
+    const char *seen[64] = {0};
+    size_t n_seen = 0;
+    int emitted = 0;
+    for (size_t i = 0; i < n; i++) {
+        const struct iamroot_module *m = iamroot_module_at(i);
+        const char *rules = NULL;
+        switch (fmt) {
+        case FMT_AUDITD: rules = m->detect_auditd; break;
+        case FMT_SIGMA:  rules = m->detect_sigma;  break;
+        case FMT_YARA:   rules = m->detect_yara;   break;
+        case FMT_FALCO:  rules = m->detect_falco;  break;
+        }
+        if (rules == NULL) continue;
+        /* Already emitted? */
+        bool dup = false;
+        for (size_t k = 0; k < n_seen; k++) {
+            if (seen[k] == rules) { dup = true; break; }
+        }
+        if (dup) {
+            fprintf(stdout, "# === %s (%s) — see family rules above ===\n\n",
+                    m->name, m->cve);
+            continue;
+        }
+        if (n_seen < sizeof(seen)/sizeof(seen[0])) seen[n_seen++] = rules;
+        fprintf(stdout, "# === %s (%s) ===\n", m->name, m->cve);
+        fputs(rules, stdout);
+        fputc('\n', stdout);
+        emitted++;
+    }
+    fprintf(stderr, "[*] emitted detection rules for %d / %zu module(s) (format: %s)\n",
+            emitted, n, fmt_names[fmt]);
+    return 0;
+}
+
 static int cmd_one(const struct iamroot_module *m, const char *op,
                    const struct iamroot_ctx *ctx)
 {
@@ -162,27 +226,31 @@ int main(int argc, char **argv)
     const char *target = NULL;
     int i_know = 0;
 
+    enum detect_format dr_fmt = FMT_AUDITD;
     static struct option longopts[] = {
-        {"scan",       no_argument,       0, 'S'},
-        {"list",       no_argument,       0, 'L'},
-        {"exploit",    required_argument, 0, 'E'},
-        {"mitigate",   required_argument, 0, 'M'},
-        {"cleanup",    required_argument, 0, 'C'},
-        {"i-know",     no_argument,       0,  1 },
-        {"active",     no_argument,       0,  2 },
-        {"no-shell",   no_argument,       0,  3 },
-        {"json",       no_argument,       0,  4 },
-        {"no-color",   no_argument,       0,  5 },
-        {"version",    no_argument,       0, 'V'},
-        {"help",       no_argument,       0, 'h'},
+        {"scan",          no_argument,       0, 'S'},
+        {"list",          no_argument,       0, 'L'},
+        {"exploit",       required_argument, 0, 'E'},
+        {"mitigate",      required_argument, 0, 'M'},
+        {"cleanup",       required_argument, 0, 'C'},
+        {"detect-rules",  no_argument,       0, 'D'},
+        {"format",        required_argument, 0,  6 },
+        {"i-know",        no_argument,       0,  1 },
+        {"active",        no_argument,       0,  2 },
+        {"no-shell",      no_argument,       0,  3 },
+        {"json",          no_argument,       0,  4 },
+        {"no-color",      no_argument,       0,  5 },
+        {"version",       no_argument,       0, 'V'},
+        {"help",          no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
 
     int c, opt_idx;
-    while ((c = getopt_long(argc, argv, "SLE:M:C:Vh", longopts, &opt_idx)) != -1) {
+    while ((c = getopt_long(argc, argv, "SLDE:M:C:Vh", longopts, &opt_idx)) != -1) {
         switch (c) {
         case 'S': mode = MODE_SCAN; break;
         case 'L': mode = MODE_LIST; break;
+        case 'D': mode = MODE_DETECT_RULES; break;
         case 'E': mode = MODE_EXPLOIT; target = optarg; break;
         case 'M': mode = MODE_MITIGATE; target = optarg; break;
         case 'C': mode = MODE_CLEANUP; target = optarg; break;
@@ -191,6 +259,13 @@ int main(int argc, char **argv)
         case  3 : ctx.no_shell = true; break;
         case  4 : ctx.json = true; break;
         case  5 : ctx.no_color = true; break;
+        case  6 :
+            if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
+            else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;
+            else if (strcmp(optarg, "yara")   == 0) dr_fmt = FMT_YARA;
+            else if (strcmp(optarg, "falco")  == 0) dr_fmt = FMT_FALCO;
+            else { fprintf(stderr, "[-] unknown --format: %s\n", optarg); return 1; }
+            break;
         case 'V': printf("iamroot %s\n", IAMROOT_VERSION); return 0;
         case 'h': mode = MODE_HELP; break;
         default: usage(argv[0]); return 1;
@@ -207,6 +282,7 @@ int main(int argc, char **argv)
 
     if (mode == MODE_SCAN) return cmd_scan(&ctx);
     if (mode == MODE_LIST) return cmd_list();
+    if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
 
     /* --exploit / --mitigate / --cleanup all take a target */
     if (target == NULL) {

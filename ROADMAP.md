@@ -90,14 +90,18 @@ primitive** that other modules can chain. Bundled because:
       detect step
 - [ ] Nightly run; failures open issues automatically
 
-## Phase 5 — Detection signature export
+## Phase 5 — Detection signature export (DONE 2026-05-16)
 
-- [ ] `iamroot --detect-rules --format=sigma` — Sigma rules per CVE
-- [ ] `--format=yara` — YARA rules for static detection of exploit
-      binaries
-- [ ] `--format=auditd` — auditd `.rules` snippets
-- [ ] `--format=falco` — Falco rule snippets
-- [ ] Sample SOC playbook in `docs/DETECTION_PLAYBOOK.md`
+- [x] `iamroot --detect-rules --format=auditd` — embedded auditd rules
+      across all modules (deduped — family-shared rules emit once)
+- [x] `iamroot --detect-rules --format=sigma` — embedded Sigma rules
+- [x] `--format=yara` and `--format=falco` flags accepted; per-module
+      strings can be added when authors ship them. Currently no module
+      ships YARA or Falco rules (skipped cleanly).
+- [x] `struct iamroot_module` gained `detect_auditd`, `detect_sigma`,
+      `detect_yara`, `detect_falco` fields — each NULL or pointer to
+      embedded C string. Self-contained binary, no data-dir install needed.
+- [ ] Sample SOC playbook in `docs/DETECTION_PLAYBOOK.md` — followup
 
 ## Phase 6 — Mitigation mode
 
