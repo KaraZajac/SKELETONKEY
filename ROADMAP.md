@@ -13,20 +13,25 @@ commitments.
 - [x] LICENSE (MIT)
 - [x] Private GitHub repo
 
-## Phase 1 — Make the bundling real (next session)
+## Phase 1 — Make the bundling real (DONE 2026-05-16)
 
-- [ ] Top-level `iamroot` dispatcher CLI (`iamroot.c`) — module
-      registry, fingerprint, route to module's detect/exploit
-- [ ] Module interface header (`core/module.h`) — standard
-      `iamroot_module` struct each module exports
-- [ ] Refactor `modules/copy_fail_family/` internals to expose the
-      standard module interface
-- [ ] Extract shared code into `core/`: `apparmor_bypass.c`,
-      `exploit_su.c`, `common.c`, `fcrypt.c` (currently duplicated
-      under the absorbed DIRTYFAIL tree)
-- [ ] Top-level `Makefile` that builds all modules into one binary
-- [ ] Smoke test: `iamroot --scan --json` on Ubuntu 26.04
-      produces sensible output
+- [x] Top-level `iamroot` dispatcher CLI (`iamroot.c`) — module
+      registry, route to module's detect/exploit
+- [x] Module interface header (`core/module.h`) — standard
+      `iamroot_module` struct + `iamroot_result_t` (numerically
+      aligned with copy_fail_family's `df_result_t` for zero-cost
+      bridging)
+- [x] `core/registry.{c,h}` — flat-array registry with `find_by_name`
+- [x] `modules/copy_fail_family/iamroot_modules.{c,h}` — bridge layer
+      exposing 5 modules
+- [x] Top-level `Makefile` that builds all modules into one binary
+- [x] Smoke test: `iamroot --scan --json` produces ingest-ready JSON;
+      `iamroot --list` prints the module inventory
+- [ ] **Deferred to Phase 1.5**: extract `apparmor_bypass.c`,
+      `exploit_su.c`, `common.c`, `fcrypt.c` into `core/` (shared
+      across families). Phase 1 keeps them inside copy_fail_family/src/
+      because there's only one family today; the extraction is
+      mechanical and lands when a second family arrives.
 
 ## Phase 2 — Add Dirty Pipe (CVE-2022-0847)
 
