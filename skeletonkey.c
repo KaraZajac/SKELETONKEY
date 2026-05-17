@@ -28,29 +28,24 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.4.2"
+#define SKELETONKEY_VERSION "0.4.3"
 
 static const char BANNER[] =
 "\n"
 "       ,d8888b,\n"
 "      d88'  `88b\n"
 "     d88' ,db, `88b\n"
-"     88  d8''8b  88===========================================,\n"
-"     88  88  88  88                                            `=,\n"
-"     88  `8bd8'  88                                              \"Yb,\n"
-"     `8b  `\"\"'  d8'                                                Yb\n"
-"      Y8,      ,8P                                              ,d8'\n"
-"       `Y8888P''                                              ,d8P'\n"
+"     888  d8''8b  888===========================================,\n"
+"     888  88  88  888                                            `=,\n"
+"     888  `8bd8'  888                                              \"Yb,\n"
+"     `88b  `\"\"'  d88'                                                Yb\n"
+"      `Y8,      ,8P'                                              ,d8'\n"
+"        `\"Y8P\"'                                                ,d8P'\n"
 "                                                            d8P\"\n"
 "\n"
-" ███████╗██╗  ██╗███████╗██╗     ███████╗████████╗ ██████╗ ███╗   ██╗██╗  ██╗███████╗██╗   ██╗\n"
-" ██╔════╝██║ ██╔╝██╔════╝██║     ██╔════╝╚══██╔══╝██╔═══██╗████╗  ██║██║ ██╔╝██╔════╝╚██╗ ██╔╝\n"
-" ███████╗█████╔╝ █████╗  ██║     █████╗     ██║   ██║   ██║██╔██╗ ██║█████╔╝ █████╗   ╚████╔╝ \n"
-" ╚════██║██╔═██╗ ██╔══╝  ██║     ██╔══╝     ██║   ██║   ██║██║╚██╗██║██╔═██╗ ██╔══╝    ╚██╔╝  \n"
-" ███████║██║  ██╗███████╗███████╗███████╗   ██║   ╚██████╔╝██║ ╚████║██║  ██╗███████╗   ██║   \n"
-" ╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝   ╚═╝   \n"
-"   Curated Linux kernel LPE corpus — v" SKELETONKEY_VERSION "\n"
-"   AUTHORIZED TESTING ONLY — see docs/ETHICS.md\n";
+"                       S K E L E T O N K E Y\n"
+"           Curated Linux kernel LPE corpus — v" SKELETONKEY_VERSION "\n"
+"                AUTHORIZED TESTING ONLY — see docs/ETHICS.md\n";
 
 static void usage(const char *prog)
 {
