@@ -61,17 +61,22 @@ CR4_DIR  := modules/cls_route4_cve_2022_2588
 CR4_SRCS := $(CR4_DIR)/iamroot_modules.c
 CR4_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CR4_SRCS))
 
+# Family: dirty_cow (CVE-2016-5195) — requires -pthread
+DCOW_DIR  := modules/dirty_cow_cve_2016_5195
+DCOW_SRCS := $(DCOW_DIR)/iamroot_modules.c
+DCOW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(DCOW_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS)
 
 .PHONY: all clean debug static help
 
 all: $(BIN)
 
 $(BIN): $(ALL_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread
 
 # Generic compile: any .c → corresponding .o under build/
 $(BUILD)/%.o: %.c

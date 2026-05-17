@@ -346,6 +346,7 @@ int main(int argc, char **argv)
     iamroot_register_nf_tables();
     iamroot_register_overlayfs();
     iamroot_register_cls_route4();
+    iamroot_register_dirty_cow();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};

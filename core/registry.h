@@ -27,5 +27,6 @@ void iamroot_register_pwnkit(void);
 void iamroot_register_nf_tables(void);
 void iamroot_register_overlayfs(void);
 void iamroot_register_cls_route4(void);
+void iamroot_register_dirty_cow(void);
 
 #endif /* IAMROOT_REGISTRY_H */
