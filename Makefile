@@ -56,10 +56,15 @@ OVL_DIR  := modules/overlayfs_cve_2021_3493
 OVL_SRCS := $(OVL_DIR)/iamroot_modules.c
 OVL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(OVL_SRCS))
 
+# Family: cls_route4 (CVE-2022-2588)
+CR4_DIR  := modules/cls_route4_cve_2022_2588
+CR4_SRCS := $(CR4_DIR)/iamroot_modules.c
+CR4_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CR4_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS)
 
 .PHONY: all clean debug static help
 
