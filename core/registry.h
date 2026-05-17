@@ -23,5 +23,6 @@ const struct iamroot_module *iamroot_module_find(const char *name);
 void iamroot_register_copy_fail_family(void);
 void iamroot_register_dirty_pipe(void);
 void iamroot_register_entrybleed(void);
+void iamroot_register_pwnkit(void);
 
 #endif /* IAMROOT_REGISTRY_H */

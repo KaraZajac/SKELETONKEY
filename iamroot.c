@@ -220,6 +220,7 @@ int main(int argc, char **argv)
     iamroot_register_copy_fail_family();
     iamroot_register_dirty_pipe();
     iamroot_register_entrybleed();
+    iamroot_register_pwnkit();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};

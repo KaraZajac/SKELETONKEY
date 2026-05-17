@@ -41,10 +41,15 @@ EB_DIR   := modules/entrybleed_cve_2023_0458
 EB_SRCS  := $(EB_DIR)/iamroot_modules.c
 EB_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(EB_SRCS))
 
+# Family: pwnkit (userspace polkit bug, not kernel)
+PK_DIR   := modules/pwnkit_cve_2021_4034
+PK_SRCS  := $(PK_DIR)/iamroot_modules.c
+PK_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(PK_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS)
 
 .PHONY: all clean debug static help
 

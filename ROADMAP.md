@@ -133,12 +133,16 @@ primitive** that other modules can chain. Bundled because:
 - [ ] Idempotent re-run safety: copy_fail_family's apply is already
       idempotent (overwrites conf files). Re-verify per module.
 
-## Phase 7+ — More modules
+## Phase 7+ — More modules (started 2026-05-16)
 
 Backfill of historical and recent LPEs as time allows:
 
 - [ ] **CVE-2021-3493** — overlayfs nested-userns LPE
-- [ ] **CVE-2021-4034** — Pwnkit (pkexec env handling)
+- [x] **CVE-2021-4034** — Pwnkit (pkexec env handling): 🔵 detect-only
+      landed. Version parser handles both formats: "0.X.Y" (older
+      polkit) and bare "121"/"126" (modern). Reports VULNERABLE if
+      pkexec is setuid AND version < 121. First userspace LPE in the
+      corpus. Full Qualys-PoC exploit is the next Phase 7 commit.
 - [ ] **CVE-2022-2588** — net/sched route4 dead UAF
 - [ ] **CVE-2023-2008** — vmwgfx OOB write
 - [ ] **CVE-2024-1086** — netfilter nf_tables UAF
