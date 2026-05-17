@@ -46,10 +46,15 @@ PK_DIR   := modules/pwnkit_cve_2021_4034
 PK_SRCS  := $(PK_DIR)/iamroot_modules.c
 PK_OBJS  := $(patsubst %.c,$(BUILD)/%.o,$(PK_SRCS))
 
+# Family: nf_tables (CVE-2024-1086)
+NFT_DIR  := modules/nf_tables_cve_2024_1086
+NFT_SRCS := $(NFT_DIR)/iamroot_modules.c
+NFT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NFT_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS)
 
 .PHONY: all clean debug static help
 

@@ -147,7 +147,13 @@ Backfill of historical and recent LPEs as time allows:
       Falls back gracefully on hosts without cc.
 - [ ] **CVE-2022-2588** — net/sched route4 dead UAF
 - [ ] **CVE-2023-2008** — vmwgfx OOB write
-- [ ] **CVE-2024-1086** — netfilter nf_tables UAF
+- [x] **CVE-2024-1086** — nf_tables UAF: 🔵 detect-only landed
+      (2026-05-16). Branch-backport thresholds for 5.4 / 5.10 / 5.15 /
+      6.1 / 6.6 / 6.7 plus mainline 6.8. Detect also probes
+      unprivileged user_ns clone availability — kernel-vulnerable hosts
+      with userns locked down get IAMROOT_PRECOND_FAIL (kernel still
+      needs patching but unprivileged-exploit path is closed). Full
+      Notselwyn-style exploit follows.
 - [ ] Fragnesia (if it lands as a CVE)
 - [ ] Anything we ourselves disclose — bundled AFTER upstream patch
       ships (responsible-disclosure-first)

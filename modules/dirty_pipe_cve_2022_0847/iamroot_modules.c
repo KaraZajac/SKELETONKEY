@@ -212,10 +212,48 @@ static const struct kernel_range dirty_pipe_range = {
                       sizeof(dirty_pipe_patched_branches[0]),
 };
 
+/* Active sentinel probe: write a known byte into a /tmp probe file
+ * via the Dirty Pipe primitive, then re-read to verify the page cache
+ * was actually poisoned. This catches the case where /proc/version
+ * looks vulnerable (e.g. Debian 5.10.0-30 — apparent version 5.10.30)
+ * but the distro silently backported the fix without bumping the
+ * upstream version number visible to uname().
+ *
+ * Side effects: creates and removes a single file under /tmp. No
+ * /etc/passwd writes; safe to run from --scan --active. */
+static int dirty_pipe_active_probe(void)
+{
+    char probe_path[] = "/tmp/iamroot-dirty-pipe-probe-XXXXXX";
+    int fd = mkstemp(probe_path);
+    if (fd < 0) return -1;
+    const char seed[16] = "ABCDABCDABCDABCD";
+    if (write(fd, seed, sizeof seed) != sizeof seed) { close(fd); unlink(probe_path); return -1; }
+    fsync(fd);
+    close(fd);
+
+    /* Try writing 'X' at offset 4 — well inside the first page, not
+     * page-aligned (offset 4 → page-relative offset 4, not 0). */
+    int rc = dirty_pipe_write(probe_path, 4, "X", 1);
+    if (rc < 0) {
+        unlink(probe_path);
+        return 0;   /* primitive could not even fire — patched or blocked */
+    }
+
+    /* Re-open and read; if the primitive works, byte 4 reads as 'X'.
+     * Use O_RDONLY + read, which goes through the page cache (which
+     * we just poisoned if the bug is live). */
+    fd = open(probe_path, O_RDONLY);
+    if (fd < 0) { unlink(probe_path); return -1; }
+    char readback[16] = {0};
+    ssize_t got = read(fd, readback, sizeof readback);
+    close(fd);
+    unlink(probe_path);
+    if (got < 5) return -1;
+    return readback[4] == 'X' ? 1 : 0;
+}
+
 static iamroot_result_t dirty_pipe_detect(const struct iamroot_ctx *ctx)
 {
-    (void)ctx;
-
     struct kernel_version v;
     if (!kernel_version_current(&v)) {
         fprintf(stderr, "[!] dirty_pipe: could not parse kernel version\n");
@@ -231,19 +269,51 @@ static iamroot_result_t dirty_pipe_detect(const struct iamroot_ctx *ctx)
         return IAMROOT_OK;
     }
 
-    bool patched = kernel_range_is_patched(&dirty_pipe_range, &v);
-    if (patched) {
+    bool patched_by_version = kernel_range_is_patched(&dirty_pipe_range, &v);
+
+    /* Active probe overrides version-only verdict when requested.
+     * The version check is necessary-but-not-sufficient: distros
+     * silently backport fixes without bumping the upstream version
+     * visible to uname(). The active probe fires the actual primitive
+     * and confirms whether it lands. */
+    if (ctx->active_probe) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] dirty_pipe: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[*] dirty_pipe: running active sentinel probe (safe; /tmp only)\n");
+        }
+        int probe = dirty_pipe_active_probe();
+        if (probe == 1) {
+            if (!ctx->json) {
+                fprintf(stderr, "[!] dirty_pipe: ACTIVE PROBE CONFIRMED — primitive lands "
+                                "(version %s)\n", v.release);
+            }
+            return IAMROOT_VULNERABLE;
+        }
+        if (probe == 0) {
+            if (!ctx->json) {
+                fprintf(stderr, "[+] dirty_pipe: active probe sentinel did NOT land — "
+                                "primitive blocked (likely patched%s)\n",
+                                patched_by_version ? "" : ", or distro silently backported");
+            }
+            return IAMROOT_OK;
+        }
+        /* probe < 0: probe machinery failed (mkstemp/open/read) — fall
+         * back to version-only verdict and report TEST_ERROR caveat */
+        if (!ctx->json) {
+            fprintf(stderr, "[?] dirty_pipe: active probe machinery failed; "
+                            "falling back to version check\n");
+        }
+    }
+
+    if (patched_by_version) {
+        if (!ctx->json) {
+            fprintf(stderr, "[+] dirty_pipe: kernel %s is patched (version-only check; "
+                            "use --active to confirm empirically)\n", v.release);
         }
         return IAMROOT_OK;
     }
     if (!ctx->json) {
-        fprintf(stderr, "[!] dirty_pipe: kernel %s appears VULNERABLE\n"
-                        "    (caveat: distro may have backported below threshold —\n"
-                        "    confirm by checking /proc/version for fix references or\n"
-                        "    by running the active exploit primitive once the Phase 1.5\n"
-                        "    helpers land in core/)\n",
+        fprintf(stderr, "[!] dirty_pipe: kernel %s appears VULNERABLE (version-only check)\n"
+                        "    Confirm empirically: re-run with --scan --active\n",
                 v.release);
     }
     return IAMROOT_VULNERABLE;
