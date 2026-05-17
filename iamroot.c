@@ -583,6 +583,7 @@ int main(int argc, char **argv)
     iamroot_register_stackrot();
     iamroot_register_af_packet2();
     iamroot_register_cgroup_release_agent();
+    iamroot_register_overlayfs_setuid();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};
