@@ -16,12 +16,20 @@
 
 <nav class="nav">
   <span class="nav-brand">SKELETONKEY</span>
-  <div class="nav-links">
-    <a href="https://github.com/KaraZajac/SKELETONKEY">GitHub</a>
-    <a href="https://github.com/KaraZajac/SKELETONKEY/releases/latest">Releases</a>
-    <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">CVEs</a>
-    <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/DEFENDERS.md">Defenders</a>
-  </div>
+  <a class="nav-github" href="https://github.com/KaraZajac/SKELETONKEY"
+     aria-label="View on GitHub">
+    <svg height="20" viewBox="0 0 16 16" width="20" fill="currentColor" aria-hidden="true">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+        0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+        -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66
+        .07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15
+        -.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0
+        1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82
+        1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01
+        1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+    </svg>
+    <span>GitHub</span>
+  </a>
 </nav>
 
 <header class="hero">
@@ -91,42 +99,53 @@
       </div>
     </div>
 
-    <h3 style="color: var(--green);">🟢 Lands root on a vulnerable host</h3>
-    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Structural exploits + page-cache writes. No per-kernel offsets needed.</p>
-    <div class="pills">
-      <span class="pill green">copy_fail</span>
-      <span class="pill green">copy_fail_gcm</span>
-      <span class="pill green">dirty_frag_esp</span>
-      <span class="pill green">dirty_frag_esp6</span>
-      <span class="pill green">dirty_frag_rxrpc</span>
-      <span class="pill green">dirty_pipe</span>
-      <span class="pill green">dirty_cow</span>
-      <span class="pill green">pwnkit</span>
-      <span class="pill green">overlayfs</span>
-      <span class="pill green">overlayfs_setuid</span>
-      <span class="pill green">cgroup_release_agent</span>
-      <span class="pill green">ptrace_traceme</span>
-      <span class="pill green">sudoedit_editor</span>
-      <span class="pill green">entrybleed</span>
-    </div>
+    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.5rem 0 1rem;">
+      Sortable by clicking column headers. 🟢 = lands root by
+      default · 🟡 = primitive + opt-in <code>--full-chain</code>.
+    </p>
 
-    <h3 style="color: var(--yellow);">🟡 Fires kernel primitive · opt-in <code>--full-chain</code></h3>
-    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Default returns <code>EXPLOIT_FAIL</code> honestly. With <code>--full-chain</code> + resolved offsets, runs the shared modprobe_path finisher.</p>
-    <div class="pills">
-      <span class="pill yellow">nf_tables</span>
-      <span class="pill yellow">nft_set_uaf</span>
-      <span class="pill yellow">nft_fwd_dup</span>
-      <span class="pill yellow">nft_payload</span>
-      <span class="pill yellow">netfilter_xtcompat</span>
-      <span class="pill yellow">af_packet</span>
-      <span class="pill yellow">af_packet2</span>
-      <span class="pill yellow">af_unix_gc</span>
-      <span class="pill yellow">cls_route4</span>
-      <span class="pill yellow">fuse_legacy</span>
-      <span class="pill yellow">stackrot</span>
-      <span class="pill yellow">sudo_samedit</span>
-      <span class="pill yellow">sequoia</span>
-      <span class="pill yellow">vmwgfx</span>
+    <div class="table-wrap">
+      <table class="cve-table" id="cve-table">
+        <thead>
+          <tr>
+            <th data-key="year"  class="sortable" data-dir="desc">Year</th>
+            <th data-key="cve"   class="sortable">CVE</th>
+            <th data-key="bug">Bug</th>
+            <th data-key="module" class="sortable">Module</th>
+            <th data-key="tier"   class="sortable">Tier</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>2024</td><td>CVE-2024-1086</td><td>nf_tables <code>nft_verdict_init</code> cross-cache UAF</td><td><code>nf_tables</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-32233</td><td>nf_tables anonymous-set UAF</td><td><code>nft_set_uaf</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-22809</td><td>sudoedit <code>EDITOR</code>/<code>VISUAL</code> <code>--</code> argv escape</td><td><code>sudoedit_editor</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-4622</td><td>AF_UNIX garbage-collector race UAF</td><td><code>af_unix_gc</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-3269</td><td>StackRot — maple-tree VMA-split UAF</td><td><code>stackrot</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-2008</td><td>vmwgfx DRM buffer-object OOB write</td><td><code>vmwgfx</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-0386</td><td>overlayfs <code>copy_up</code> preserves setuid bit</td><td><code>overlayfs_setuid</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-0458</td><td>EntryBleed — KPTI prefetchnta KASLR bypass</td><td><code>entrybleed</code></td><td><span class="tier green">🟢 leak</span></td></tr>
+          <tr><td>2023</td><td>CVE-2023-0179</td><td>nft_payload set-id memory corruption</td><td><code>nft_payload</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2022</td><td>CVE-2022-25636</td><td>nft_fwd_dup_netdev_offload heap OOB</td><td><code>nft_fwd_dup</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2022</td><td>CVE-2022-2588</td><td>net/sched cls_route4 dangling-filter UAF</td><td><code>cls_route4</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2022</td><td>CVE-2022-0492</td><td>cgroup v1 <code>release_agent</code> ns mismatch</td><td><code>cgroup_release_agent</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2022</td><td>CVE-2022-0847</td><td>Dirty Pipe — page-cache write via splice</td><td><code>dirty_pipe</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2022</td><td>CVE-2022-0185</td><td>fsconfig <code>legacy_parse_param</code> 4k heap OOB</td><td><code>fuse_legacy</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2021</td><td>CVE-2021-33909</td><td>Sequoia — <code>seq_file</code> size_t→int wrap</td><td><code>sequoia</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2021</td><td>CVE-2021-3156</td><td>sudo Baron Samedit heap overflow</td><td><code>sudo_samedit</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2021</td><td>CVE-2021-3493</td><td>Ubuntu overlayfs userns file-cap injection</td><td><code>overlayfs</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2021</td><td>CVE-2021-22555</td><td>iptables xt_compat 4-byte heap OOB</td><td><code>netfilter_xtcompat</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2021</td><td>CVE-2021-4034</td><td>Pwnkit — pkexec NULL argv env-injection</td><td><code>pwnkit</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2020</td><td>CVE-2020-14386</td><td>AF_PACKET <code>tp_reserve</code> integer underflow</td><td><code>af_packet2</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2019</td><td>CVE-2019-13272</td><td>PTRACE_TRACEME → setuid execve race</td><td><code>ptrace_traceme</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2017</td><td>CVE-2017-7308</td><td>AF_PACKET TPACKET_V3 integer overflow</td><td><code>af_packet</code></td><td><span class="tier yellow">🟡 primitive</span></td></tr>
+          <tr><td>2016</td><td>CVE-2016-5195</td><td>Dirty COW — COW race via <code>/proc/self/mem</code></td><td><code>dirty_cow</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2026</td><td>CVE-2026-31431</td><td>Copy Fail — algif_aead authencesn page-cache write</td><td><code>copy_fail</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2026</td><td>CVE-2026-43284</td><td>Dirty Frag — IPv4 xfrm-ESP page-cache write</td><td><code>dirty_frag_esp</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2026</td><td>CVE-2026-43284</td><td>Dirty Frag — IPv6 xfrm-ESP (esp6)</td><td><code>dirty_frag_esp6</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2026</td><td>CVE-2026-43500</td><td>Dirty Frag — RxRPC handshake forgery</td><td><code>dirty_frag_rxrpc</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+          <tr><td>2026</td><td>variant</td><td>Copy Fail GCM — rfc4106(gcm(aes)) sibling</td><td><code>copy_fail_gcm</code></td><td><span class="tier green">🟢 full chain</span></td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -272,6 +291,37 @@ function copyInstall(btn) {
     }, 1500);
   });
 }
+
+/* CVE table sort */
+(function() {
+  var table = document.getElementById('cve-table');
+  if (!table) return;
+  var headers = table.querySelectorAll('th.sortable');
+  headers.forEach(function(th, idx) {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', function() {
+      var tbody = table.querySelector('tbody');
+      var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+      var dir = th.getAttribute('data-dir') === 'asc' ? 'desc' : 'asc';
+      headers.forEach(function(h) { h.removeAttribute('data-dir'); });
+      th.setAttribute('data-dir', dir);
+      rows.sort(function(a, b) {
+        var av = a.children[idx].innerText.trim();
+        var bv = b.children[idx].innerText.trim();
+        var na = parseFloat(av), nb = parseFloat(bv);
+        if (!isNaN(na) && !isNaN(nb)) { av = na; bv = nb; }
+        if (av < bv) return dir === 'asc' ? -1 : 1;
+        if (av > bv) return dir === 'asc' ?  1 : -1;
+        return 0;
+      });
+      rows.forEach(function(r) { tbody.appendChild(r); });
+    });
+  });
+  /* default sort: Year desc */
+  var first = table.querySelector('th[data-key="year"]');
+  if (first) first.click(); /* asc */
+  if (first) first.click(); /* desc */
+})();
 </script>
 
 </body>

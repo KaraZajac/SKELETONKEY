@@ -64,12 +64,23 @@ code, pre {
   letter-spacing: 0.04em;
   color: var(--text);
 }
-.nav-links { display: flex; gap: 1.25rem; }
-.nav-links a {
+.nav-github {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--text-muted);
   font-size: 0.95rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
-.nav-links a:hover { color: var(--text); text-decoration: none; }
+.nav-github:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+  text-decoration: none;
+}
+.nav-github svg { display: block; }
 
 /* Hero */
 .hero {
@@ -241,6 +252,66 @@ section h3 {
 }
 .pill.green { border-color: rgba(63, 185, 80, 0.4); color: var(--green); }
 .pill.yellow { border-color: rgba(210, 153, 34, 0.4); color: var(--yellow); }
+
+/* CVE table */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+}
+table.cve-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+table.cve-table th,
+table.cve-table td {
+  text-align: left;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  white-space: nowrap;
+}
+table.cve-table th {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+table.cve-table th.sortable { cursor: pointer; user-select: none; }
+table.cve-table th.sortable:hover { color: var(--text); }
+table.cve-table th[data-dir="asc"]::after  { content: " ▲"; opacity: 0.7; }
+table.cve-table th[data-dir="desc"]::after { content: " ▼"; opacity: 0.7; }
+table.cve-table td:nth-child(3) { white-space: normal; min-width: 280px; }
+table.cve-table tr:last-child td { border-bottom: none; }
+table.cve-table tr:hover td { background: rgba(255, 255, 255, 0.025); }
+table.cve-table code {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.86em;
+}
+
+.tier {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.tier.green  { color: var(--green);  border-color: rgba(63, 185, 80, 0.4); }
+.tier.yellow { color: var(--yellow); border-color: rgba(210, 153, 34, 0.4); }
+
+@media (max-width: 600px) {
+  table.cve-table { font-size: 0.82rem; }
+  table.cve-table th,
+  table.cve-table td { padding: 0.45rem 0.6rem; }
+}
 
 /* Code block */
 pre.code {
