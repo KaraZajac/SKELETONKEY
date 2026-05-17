@@ -28,7 +28,7 @@ jobs:
             apt: build-essential
           - target: arm64
             cc: aarch64-linux-gnu-gcc
-            apt: build-essential gcc-aarch64-linux-gnu
+            apt: build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross linux-libc-dev-arm64-cross
     name: build (${{ matrix.target }})
     runs-on: ubuntu-latest
     steps:
