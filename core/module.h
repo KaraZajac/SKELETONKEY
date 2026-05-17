@@ -49,6 +49,7 @@ struct iamroot_ctx {
     bool          active_probe; /* --active (do invasive probes in detect) */
     bool          no_shell;     /* --no-shell (exploit prep but don't pop) */
     bool          authorized;   /* user typed --i-know on exploit */
+    bool          full_chain;   /* --full-chain (attempt root-pop after primitive) */
 };
 
 struct iamroot_module {

@@ -64,6 +64,12 @@ static void usage(const char *prog)
 "  --i-know              authorization gate for --exploit modes\n"
 "  --active              in --scan, do invasive sentinel probes (no /etc/passwd writes)\n"
 "  --no-shell            in --exploit modes, prepare but don't drop to shell\n"
+"  --full-chain          in --exploit modes, attempt full root-pop after primitive\n"
+"                        (the 🟡 modules return primitive-only by default; with\n"
+"                        --full-chain they continue to leak → arb-write →\n"
+"                        modprobe_path overwrite. Requires resolvable kernel\n"
+"                        offsets — env vars, /proc/kallsyms, or /boot/System.map.\n"
+"                        See docs/OFFSETS.md.)\n"
 "  --json                machine-readable output (for SIEM/CI)\n"
 "  --no-color            disable ANSI color codes\n"
 "  --format <f>          with --detect-rules: auditd (default), sigma, yara, falco\n"
@@ -606,6 +612,7 @@ int main(int argc, char **argv)
         {"no-shell",      no_argument,       0,  3 },
         {"json",          no_argument,       0,  4 },
         {"no-color",      no_argument,       0,  5 },
+        {"full-chain",    no_argument,       0,  7 },
         {"version",       no_argument,       0, 'V'},
         {"help",          no_argument,       0, 'h'},
         {0, 0, 0, 0}
@@ -627,6 +634,7 @@ int main(int argc, char **argv)
         case  3 : ctx.no_shell = true; break;
         case  4 : ctx.json = true; break;
         case  5 : ctx.no_color = true; break;
+        case  7 : ctx.full_chain = true; break;
         case  6 :
             if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
             else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;

@@ -20,7 +20,7 @@ BUILD   := build
 BIN     := iamroot
 
 # core/
-CORE_SRCS := core/registry.c core/kernel_range.c
+CORE_SRCS := core/registry.c core/kernel_range.c core/offsets.c core/finisher.c
 CORE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRCS))
 
 # Family: copy_fail_family
