@@ -23,7 +23,7 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts (v0.2.0):** 🟢 13 · 🟡 7 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
+**Counts (v0.3.0):** 🟢 13 · 🟡 11 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
 
 ## Inventory
 
@@ -50,6 +50,10 @@ Status legend:
 | CVE-2022-0185 | legacy_parse_param fsconfig heap OOB → container-escape | LPE (cross-cache UAF → cred overwrite from rootless container) | mainline 5.16.2 (Jan 2022) | `fuse_legacy` | 🟡 | userns+mountns reach, fsopen("cgroup2") + double fsconfig SET_STRING fires the 4k OOB, msg_msg cross-cache groom in kmalloc-4k, MSG_COPY read-back detects whether the OOB landed in an adjacent neighbour. Stops before the m_ts overflow → MSG_COPY arbitrary read chain (scaffold present, no per-kernel offsets). **Container-escape angle** — relevant to rootless docker/podman/snap. Branch backports: 5.16.2 / 5.15.14 / 5.10.91 / 5.4.171. |
 | CVE-2023-3269 | StackRot — maple-tree VMA-split UAF | LPE (kernel R/W via maple node use-after-RCU) | mainline 6.4-rc4 (Jul 2023) | `stackrot` | 🟡 | Two-thread race driver (MAP_GROWSDOWN + mremap rotation vs fork+fault) with cpu pinning + 3 s budget; kmalloc-192 spray for anon_vma/anon_vma_chain; race-iteration + signal breadcrumb. Honest reliability note in module header: **~<1% race-win/run on a vulnerable kernel** — the public PoC averages minutes-to-hours and needs a much wider VMA staging matrix to be reliable. Useful as a "is the maple-tree path reachable here?" probe. Branch backports: 6.4.4 / 6.3.13 / 6.1.37. |
 | CVE-2020-14386 | AF_PACKET tpacket_rcv VLAN integer underflow | LPE (heap OOB write via crafted frame) | mainline 5.9 (Sep 2020) | `af_packet2` | 🟡 | Sibling of CVE-2017-7308; tp_reserve underflow + sendmmsg skb spray + slab-delta witness. PRIMITIVE-DEMO scope (no cred overwrite). Branch backports: 5.8.7 / 5.7.16 / 5.4.62 / 4.19.143 / 4.14.197 / 4.9.235. Or Cohen's disclosure. Shares `iamroot-af-packet` audit key with CVE-2017-7308. |
+| CVE-2023-32233 | nf_tables anonymous-set UAF | LPE (kernel UAF in nft_set transaction) | mainline 6.4-rc4 (May 2023) | `nft_set_uaf` | 🟡 | Sondej+Krysiuk. Hand-rolled nfnetlink batch (NEWTABLE → NEWCHAIN → NEWSET(ANON\|EVAL) → NEWRULE(lookup) → DELSET → DELRULE) drives the deactivation skip; cg-512 msg_msg cross-cache spray. Branch backports: 4.19.283 / 5.4.243 / 5.10.180 / 5.15.111 / 6.1.28 / 6.2.15 / 6.3.2. --full-chain forges freed-set with `set->data = kaddr`. |
+| CVE-2023-4622 | AF_UNIX garbage-collector race UAF | LPE (slab UAF, plain unprivileged) | mainline 6.6-rc1 (Aug 2023) | `af_unix_gc` | 🟡 | Lin Ma. Two-thread race driver: SCM_RIGHTS cycle vs unix_gc trigger; kmalloc-512 (SLAB_TYPESAFE_BY_RCU) refill via msg_msg. **Widest deployment of any module — bug exists since 2.x.** No userns required. Branch backports: 4.14.326 / 4.19.295 / 5.4.257 / 5.10.197 / 5.15.130 / 6.1.51 / 6.5.0. |
+| CVE-2022-25636 | nft_fwd_dup_netdev_offload heap OOB | LPE (kernel R/W via offload action[] OOB) | mainline 5.17 / 5.16.11 (Feb 2022) | `nft_fwd_dup` | 🟡 | Aaron Adams (NCC). NFT_CHAIN_HW_OFFLOAD chain + 16 immediates + fwd writes past action.entries[1]. msg_msg kmalloc-512 spray. Branch backports: 5.4.181 / 5.10.102 / 5.15.25 / 5.16.11. |
+| CVE-2023-0179 | nft_payload set-id memory corruption | LPE (regs->data[] OOB R/W) | mainline 6.2-rc4 / 6.1.6 (Jan 2023) | `nft_payload` | 🟡 | Davide Ornaghi. NFTA_SET_DESC variable-length element + NFTA_SET_ELEM_EXPRESSIONS payload-set whose verdict.code drives the OOB. Dual cg-96 + 1k spray. Branch backports: 4.14.302 / 4.19.269 / 5.4.229 / 5.10.163 / 5.15.88 / 6.1.6. |
 | CVE-TBD | Fragnesia (ESP shared-frag in-place encrypt) | LPE (page-cache write) | mainline TBD | `_stubs/fragnesia_TBD` | ⚪ | Stub. Per `findings/audit_leak_write_modprobe_backups_2026-05-16.md`, requires CAP_NET_ADMIN in userns netns — may or may not be in-scope depending on target environment. |
 
 ## Operations supported per module
@@ -78,6 +82,10 @@ Symbols: ✓ = supported, — = not applicable / no automated path.
 | af_packet2 | ✓ | ✓ (primitive) | — (upgrade kernel) | — | ✓ (auditd, shared key) |
 | fuse_legacy | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
 | stackrot | ✓ | ✓ (race) | — (upgrade kernel) | ✓ (log unlink) | ✓ (auditd) |
+| nft_set_uaf | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd + sigma) |
+| af_unix_gc | ✓ | ✓ (race) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
+| nft_fwd_dup | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
+| nft_payload | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd + sigma) |
 
 ## Pipeline for additions
 
