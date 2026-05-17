@@ -85,7 +85,7 @@ The same binary covers offense and defense:
 
 ## Status
 
-**Active — v0.3.0 cut 2026-05-16.** Corpus covers **24 modules**
+**Active — v0.4.5 cut 2026-05-16.** Corpus covers **24 modules**
 across the 2016 → 2026 LPE timeline:
 
 - 🟢 **13 modules land root** end-to-end on a vulnerable host
