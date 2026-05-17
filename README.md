@@ -17,6 +17,18 @@
 curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh
 ```
 
+### One-command root (sysadmins / red-team)
+
+```bash
+curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
+  && skeletonkey --auto --i-know
+```
+
+`--auto` scans every bundled module's `detect()`, ranks the vulnerable
+ones by **exploit safety** (structural escapes first, page-cache writes
+next, kernel primitives, kernel races last), and runs the safest one.
+If it fails, it suggests the next candidates. Authorized testing only.
+
 **skeletonkey runs as a normal unprivileged user** — that's the whole
 point. `--scan`, `--audit`, `--exploit`, and `--detect-rules` all
 work without `sudo`. Only `--mitigate` and rule-file installation
@@ -85,7 +97,7 @@ The same binary covers offense and defense:
 
 ## Status
 
-**Active — v0.4.5 cut 2026-05-16.** Corpus covers **24 modules**
+**Active — v0.5.0 cut 2026-05-17.** Corpus covers **28 modules**
 across the 2016 → 2026 LPE timeline:
 
 - 🟢 **13 modules land root** end-to-end on a vulnerable host

