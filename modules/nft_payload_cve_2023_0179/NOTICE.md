@@ -20,7 +20,7 @@ Upstream fix: mainline 6.2-rc4 (commit `696e1a48b1a1`, Jan 2023).
 Branch backports: 4.14.302 / 4.19.269 / 5.4.229 / 5.10.163 /
 5.15.88 / 6.1.6.
 
-## IAMROOT role
+## SKELETONKEY role
 
 userns+netns. Hand-rolled nfnetlink batch: NEWTABLE → NEWCHAIN →
 NEWSET with `NFTA_SET_DESC` describing variable-length elements →

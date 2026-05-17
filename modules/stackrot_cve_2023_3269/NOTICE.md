@@ -16,7 +16,7 @@ Writeup: <https://lkmidas.github.io/posts/20230724-stackrot/>
 Upstream fix: mainline 6.5-rc1 (commit `0503ea8f5ba73`, July 2023).
 Branch backports: 6.4.4 / 6.3.13 / 6.1.37.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Two-thread race driver (Thread A: mremap rotation on MAP_GROWSDOWN
 anchored VMA; Thread B: fork+fault) with cpu pinning. kmalloc-192

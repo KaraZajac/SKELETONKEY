@@ -14,7 +14,7 @@ Advisory: USN-4915-1 / USN-4916-1 (Canonical, April 2021).
 
 Public PoC: vsh-style userns + overlayfs + xattr injection chain.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Detect parses `/etc/os-release` for `ID=ubuntu`, checks
 `unprivileged_userns_clone` sysctl, and with `--active` performs the

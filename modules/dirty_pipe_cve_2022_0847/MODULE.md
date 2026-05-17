@@ -25,7 +25,7 @@ by them.
 
 Even in 2026, many production deployments still run vulnerable
 kernels (RHEL 7/8, older Ubuntu LTS, embedded). Bundling Dirty Pipe
-makes IAMROOT useful as a "historical sweep" tool on long-tail
+makes SKELETONKEY useful as a "historical sweep" tool on long-tail
 systems.
 
 ## Implementation plan
@@ -34,8 +34,8 @@ systems.
   `NOTICE.md` when implemented)
 - `detect()`: kernel version check + `/proc/version` parse + test
   for fixed-version backports
-- `exploit()`: writes `iamroot::0:0:dirtypipe:/:/bin/bash` into
-  `/etc/passwd`, then `su iamroot` — same shape as copy_fail's
+- `exploit()`: writes `skeletonkey::0:0:dirtypipe:/:/bin/bash` into
+  `/etc/passwd`, then `su skeletonkey` — same shape as copy_fail's
   backdoor mode
 - Detection rules: auditd on splice() calls + pipe write patterns,
   filesystem audit on `/etc/passwd` modification by non-root
@@ -44,4 +44,4 @@ systems.
 
 Pick this up after Phase 1 (module-interface refactor of the
 copy_fail family) so this module can use the standard
-`iamroot_module` shape from the start.
+`skeletonkey_module` shape from the start.

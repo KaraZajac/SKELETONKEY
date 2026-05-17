@@ -16,7 +16,7 @@ GitHub: <https://github.com/Notselwyn/CVE-2024-1086>
 Upstream fix: mainline 6.8-rc1 (commit `f342de4e2f33`, Jan 2024).
 Stable backports throughout Q1 2024.
 
-## IAMROOT role
+## SKELETONKEY role
 
 This module fires the malformed-verdict trigger (NFT_GOTO + NFT_DROP
 in the same verdict) via a hand-rolled nfnetlink batch — no libmnl

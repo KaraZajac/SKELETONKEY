@@ -45,7 +45,7 @@ There is no single canonical patch. Partial mitigations include:
 - Lift the proven EntryBleed code from
   `SKYFALL/bugs/leak_write_modprobe_2026-05-16/exploit.c` into
   `module.c` here
-- Expose as both a CLI mode (`iamroot --leak-kbase`) and as a
+- Expose as both a CLI mode (`skeletonkey --leak-kbase`) and as a
   library helper (`uint64_t entrybleed_leak_kbase(void)`)
 - Detection rules: timing-attack pattern flags, perf-counter
   anomaly detection (informational — these are hard to make precise

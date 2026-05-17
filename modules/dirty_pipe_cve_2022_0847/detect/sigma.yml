@@ -1,5 +1,5 @@
 title: Possible Dirty Pipe exploitation (CVE-2022-0847)
-id: f6b13c08-iamroot-dirty-pipe
+id: f6b13c08-skeletonkey-dirty-pipe
 status: experimental
 description: |
   Detects file modifications to /etc/passwd, /etc/shadow, /etc/sudoers,
@@ -10,7 +10,7 @@ description: |
 references:
   - https://dirtypipe.cm4all.com/
   - https://nvd.nist.gov/vuln/detail/CVE-2022-0847
-author: IAMROOT
+author: SKELETONKEY
 date: 2026/05/16
 logsource:
   product: linux

@@ -15,7 +15,7 @@ Public PoC + writeup: <https://www.willsroot.io/2022/08/lpe-on-mountpoint.html>
 Upstream fix: mainline 5.20 / stable 5.19.7 (Aug 2022).
 Branch backports: 5.4.213 / 5.10.143 / 5.15.69 / 5.18.18 / 5.19.7.
 
-## IAMROOT role
+## SKELETONKEY role
 
 The module uses `unshare(USER|NET)`, brings up a dummy interface,
 creates an htb qdisc + class, adds a `route4` filter, then deletes

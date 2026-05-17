@@ -20,7 +20,7 @@ reachable.
 
 ## Decision needed before implementing
 
-Is the unprivileged-userns-netns scenario in scope for IAMROOT? If
+Is the unprivileged-userns-netns scenario in scope for SKELETONKEY? If
 yes, this module ships. If we restrict to "default Linux user
 account, no namespace tricks," this module is out of scope.
 

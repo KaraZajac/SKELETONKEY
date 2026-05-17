@@ -16,7 +16,7 @@ Public PoC + writeup:
 Upstream fix: mainline 6.2-rc6 (commit `4f11ada10d0a`, Jan 2023).
 Branch backports: 5.10.169 / 5.15.92 / 6.1.11.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Distro-agnostic — no per-kernel offsets, no race. Places a setuid
 binary in an overlay lower, mounts via fuse-overlayfs userns trick,

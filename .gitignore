@@ -5,7 +5,7 @@ build/
 *.dSYM/
 modules/*/build/
 modules/*/dirtyfail
-modules/*/iamroot
+modules/*/skeletonkey
 .vscode/
 .idea/
 *.swp

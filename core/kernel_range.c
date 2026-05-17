@@ -1,5 +1,5 @@
 /*
- * IAMROOT — kernel_range implementation
+ * SKELETONKEY — kernel_range implementation
  */
 
 #include "kernel_range.h"
@@ -19,7 +19,7 @@ bool kernel_version_current(struct kernel_version *out)
     if (uname(&u) < 0) return false;
 
     /* Stash release string for callers that want to print it. We hold
-     * a single static buffer; not threadsafe but iamroot is single-
+     * a single static buffer; not threadsafe but skeletonkey is single-
      * threaded today. */
     snprintf(g_release_buf, sizeof(g_release_buf), "%s", u.release);
     out->release = g_release_buf;

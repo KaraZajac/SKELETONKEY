@@ -1,6 +1,6 @@
-# IAMROOT detection playbook
+# SKELETONKEY detection playbook
 
-Operational guide for blue teams using IAMROOT defensively. Pairs
+Operational guide for blue teams using SKELETONKEY defensively. Pairs
 with `docs/DEFENDERS.md` (the "what" reference) — this is the "how to
 make it part of your daily ops" guide.
 
@@ -8,15 +8,15 @@ make it part of your daily ops" guide.
 
 ```
               ┌─────────────┐
-              │  inventory  │  ← iamroot --list (what's bundled?)
+              │  inventory  │  ← skeletonkey --list (what's bundled?)
               └──────┬──────┘
                      ▼
               ┌─────────────┐
-              │    scan     │  ← iamroot --scan --json (what am I vulnerable to?)
+              │    scan     │  ← skeletonkey --scan --json (what am I vulnerable to?)
               └──────┬──────┘
                      ▼
               ┌─────────────┐
-              │  fleet scan │  ← iamroot-fleet-scan.sh hosts.txt
+              │  fleet scan │  ← skeletonkey-fleet-scan.sh hosts.txt
               └──────┬──────┘
                      ▼
         ┌────────────┼────────────┐
@@ -29,7 +29,7 @@ make it part of your daily ops" guide.
         └────────────┼────────────┘
                      ▼
               ┌─────────────┐
-              │   monitor   │  ← ausearch -k iamroot-* / SIEM alerts
+              │   monitor   │  ← ausearch -k skeletonkey-* / SIEM alerts
               └─────────────┘
 ```
 
@@ -39,17 +39,17 @@ make it part of your daily ops" guide.
 
 ```bash
 # Daily/weekly hygiene check
-sudo iamroot --scan
+sudo skeletonkey --scan
 
 # If anything's VULNERABLE, deploy detections + apply mitigation
-sudo iamroot --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-iamroot.rules
+sudo skeletonkey --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
 sudo augenrules --load
-sudo iamroot --mitigate copy_fail   # or whichever module fired
+sudo skeletonkey --mitigate copy_fail   # or whichever module fired
 ```
 
 ### Small fleet (~10-100 hosts, SSH-reachable)
 
-Use `tools/iamroot-fleet-scan.sh`:
+Use `tools/skeletonkey-fleet-scan.sh`:
 
 ```bash
 # Hosts list — one per line; user@host:port supported
@@ -61,8 +61,8 @@ ops@db-01:2222
 EOF
 
 # Scan; binary scp'd, run, cleaned up. Output is one JSON doc.
-./iamroot-fleet-scan.sh \
-    --binary ./iamroot \
+./skeletonkey-fleet-scan.sh \
+    --binary ./skeletonkey \
     --ssh-key ~/.ssh/ops_key \
     --parallel 8 \
     hosts.txt > fleet-scan-$(date +%F).json
@@ -95,7 +95,7 @@ Output shape:
 
 ### Larger fleet (>100 hosts)
 
-`iamroot-fleet-scan.sh` is intentionally simple (parallel ssh). For
+`skeletonkey-fleet-scan.sh` is intentionally simple (parallel ssh). For
 fleets too large for SSH-fan-out, wrap it in your config-management
 tool of choice:
 
@@ -108,22 +108,22 @@ tool of choice:
 Sample Ansible task:
 
 ```yaml
-- name: scan with iamroot
+- name: scan with skeletonkey
   copy:
-    src: iamroot
-    dest: /tmp/iamroot
+    src: skeletonkey
+    dest: /tmp/skeletonkey
     mode: '0755'
 - name: run --scan --json
-  command: /tmp/iamroot --scan --json --no-color
+  command: /tmp/skeletonkey --scan --json --no-color
   register: scan
   changed_when: false
-  failed_when: false        # iamroot exit codes are semantic, not errors
+  failed_when: false        # skeletonkey exit codes are semantic, not errors
 - name: collect
   set_fact:
-    iamroot_scan: "{{ scan.stdout | from_json }}"
+    skeletonkey_scan: "{{ scan.stdout | from_json }}"
 - name: cleanup
   file:
-    path: /tmp/iamroot
+    path: /tmp/skeletonkey
     state: absent
 ```
 
@@ -133,46 +133,46 @@ Sample Ansible task:
 
 ```
 # splunk input config (inputs.conf)
-[script:///opt/iamroot/iamroot-cron-scan.sh]
+[script:///opt/skeletonkey/skeletonkey-cron-scan.sh]
 interval = 86400
-source = iamroot
-sourcetype = iamroot:scan
+source = skeletonkey
+sourcetype = skeletonkey:scan
 ```
 
-`iamroot-cron-scan.sh`:
+`skeletonkey-cron-scan.sh`:
 
 ```bash
 #!/bin/bash
-/usr/local/bin/iamroot --scan --json --no-color
+/usr/local/bin/skeletonkey --scan --json --no-color
 ```
 
 Search the indexed events:
 
 ```spl
-index=iamroot sourcetype="iamroot:scan" modules{}.result=VULNERABLE
+index=skeletonkey sourcetype="skeletonkey:scan" modules{}.result=VULNERABLE
 | stats count by host modules{}.cve
 ```
 
 ### Elastic / OpenSearch
 
 Filebeat module reading the per-host scan JSON files (one per day),
-indexed into an `iamroot-*` index pattern. Standard Kibana
+indexed into an `skeletonkey-*` index pattern. Standard Kibana
 visualization on `modules.cve` over time tracks vulnerability lifecycle.
 
 ### Sigma → your platform
 
 ```bash
 # Ship Sigma rules into your platform
-iamroot --detect-rules --format=sigma > /etc/sigma/iamroot.yml
+skeletonkey --detect-rules --format=sigma > /etc/sigma/skeletonkey.yml
 # Convert to your target (Sentinel, Elastic, etc.) via sigmac
-sigmac -t elastic /etc/sigma/iamroot.yml
+sigmac -t elastic /etc/sigma/skeletonkey.yml
 ```
 
 ## Day-to-day operational shape
 
 ### What "good" looks like in the SIEM
 
-- Daily `iamroot --scan --json` from every host indexed
+- Daily `skeletonkey --scan --json` from every host indexed
 - Trend dashboard: count of VULNERABLE results by CVE over time
 - Goal: every VULNERABLE → OK transition within SLA (e.g., 14 days for
   patched-mainline bugs, 24h for actively-exploited)
@@ -181,22 +181,22 @@ sigmac -t elastic /etc/sigma/iamroot.yml
 
 ### Auditd events from the embedded rules
 
-After deploying `iamroot --detect-rules --format=auditd`:
+After deploying `skeletonkey --detect-rules --format=auditd`:
 
 ```bash
 # By module key
-sudo ausearch -k iamroot-copy-fail -ts today
-sudo ausearch -k iamroot-dirty-pipe -ts today
-sudo ausearch -k iamroot-pwnkit -ts today
-sudo ausearch -k iamroot-nf-tables-userns -ts today
-sudo ausearch -k iamroot-overlayfs -ts today
+sudo ausearch -k skeletonkey-copy-fail -ts today
+sudo ausearch -k skeletonkey-dirty-pipe -ts today
+sudo ausearch -k skeletonkey-pwnkit -ts today
+sudo ausearch -k skeletonkey-nf-tables-userns -ts today
+sudo ausearch -k skeletonkey-overlayfs -ts today
 
-# Anything iamroot-tagged in the last hour
-sudo ausearch -k 'iamroot-*' -ts recent
+# Anything skeletonkey-tagged in the last hour
+sudo ausearch -k 'skeletonkey-*' -ts recent
 
 # Forward to syslog (rsyslog example)
-# /etc/rsyslog.d/iamroot.conf:
-:msg, contains, "iamroot-" @@your-siem.example.com:514
+# /etc/rsyslog.d/skeletonkey.conf:
+:msg, contains, "skeletonkey-" @@your-siem.example.com:514
 ```
 
 ### When a VULNERABLE result fires
@@ -208,11 +208,11 @@ A scan reports VULNERABLE for module X
 │
 ├── Q: Can I patch the underlying kernel / package?
 │   ├── YES → schedule patch window. In the meantime:
-│   │        iamroot --mitigate X (if supported)
+│   │        skeletonkey --mitigate X (if supported)
 │   │        Verify auditd rule for X is loaded.
 │   │        Monitor for the rule key.
 │   └── NO (legacy LTS, embedded device, prod freeze) →
-│            iamroot --mitigate X (essential)
+│            skeletonkey --mitigate X (essential)
 │            Compensating control: tighten LSM (SELinux/AppArmor)
 │            Document in risk register
 │
@@ -238,7 +238,7 @@ If you applied a mitigation and now need to revert (e.g., the kernel
 patch has rolled out fleet-wide):
 
 ```bash
-sudo iamroot --cleanup copy_fail
+sudo skeletonkey --cleanup copy_fail
 # OR manually:
 sudo rm /etc/modprobe.d/dirtyfail-mitigations.conf
 sudo rm /etc/sysctl.d/99-dirtyfail-mitigations.conf
@@ -249,11 +249,11 @@ sudo rm /etc/sysctl.d/99-dirtyfail-mitigations.conf
 
 | Rule key | False positive | Fix |
 |---|---|---|
-| `iamroot-copy-fail-afalg` | strongSwan, libcrypto using kernel crypto | `-F auid=` exclude service account UIDs |
-| `iamroot-dirty-pipe-splice` | nginx, HAProxy, kTLS | `-F gid!=33 -F gid!=99` exclude web service accounts |
-| `iamroot-pwnkit-execve` | gnome-software, polkit's own re-exec | Correlate by parent process; pkexec via gnome dbus is benign |
-| `iamroot-nf-tables-userns` | docker rootless, podman, snap confined apps | Whitelist known userns-using service GIDs |
-| `iamroot-overlayfs` | docker / containerd mounting overlayfs as root | The rule is intended for unprivileged-userns overlayfs mounts; add `-F auid>=1000` |
+| `skeletonkey-copy-fail-afalg` | strongSwan, libcrypto using kernel crypto | `-F auid=` exclude service account UIDs |
+| `skeletonkey-dirty-pipe-splice` | nginx, HAProxy, kTLS | `-F gid!=33 -F gid!=99` exclude web service accounts |
+| `skeletonkey-pwnkit-execve` | gnome-software, polkit's own re-exec | Correlate by parent process; pkexec via gnome dbus is benign |
+| `skeletonkey-nf-tables-userns` | docker rootless, podman, snap confined apps | Whitelist known userns-using service GIDs |
+| `skeletonkey-overlayfs` | docker / containerd mounting overlayfs as root | The rule is intended for unprivileged-userns overlayfs mounts; add `-F auid>=1000` |
 
 ## Pre-patch quarantine pattern
 
@@ -261,13 +261,13 @@ If a CVE is in active exploitation and you can't patch immediately:
 
 ```bash
 # Stage 1: detect
-sudo iamroot --scan --json | jq '.modules[] | select(.cve == "CVE-XXXX")'
+sudo skeletonkey --scan --json | jq '.modules[] | select(.cve == "CVE-XXXX")'
 
 # Stage 2: mitigate (where supported)
-sudo iamroot --mitigate <module>
+sudo skeletonkey --mitigate <module>
 
 # Stage 3: monitor — auditd rules already deployed
-sudo ausearch -k 'iamroot-*' -ts today | grep <module>
+sudo ausearch -k 'skeletonkey-*' -ts today | grep <module>
 
 # Stage 4: contain — temporarily restrict the trigger surface
 # e.g., for nf_tables CVE-2024-1086:
@@ -281,7 +281,7 @@ sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
 
 ## Maintenance contract
 
-When IAMROOT ships a new module:
+When SKELETONKEY ships a new module:
 
 1. CI test passes on at least one vulnerable + patched kernel pair
 2. Detection rules ship alongside (auditd + sigma minimum)
@@ -293,7 +293,7 @@ Treat these as the SLA for any blue-team-facing deliverable.
 
 ## When you find a new false positive
 
-File an issue at https://github.com/KaraZajac/IAMROOT/issues with:
+File an issue at https://github.com/KaraZajac/SKELETONKEY/issues with:
 - The exact ausearch line that fired
 - The legitimate process that produced it
 - Distro / kernel version

@@ -20,12 +20,12 @@ Upstream fix: mainline 6.4-rc4 (commit `c1592a89942e9`, May 2023).
 Branch backports: 6.3.2 / 6.2.15 / 6.1.28 / 5.15.111 / 5.10.180 /
 5.4.243 / 4.19.283.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Hand-rolled nfnetlink batch: NEWTABLE → NEWCHAIN (base, LOCAL_OUT
 hook) → NEWSET (ANON|EVAL|CONSTANT) → NEWRULE (nft_lookup
 referencing the set by `NFTA_LOOKUP_SET_ID`) → DELSET → DELRULE
-in the same transaction. msg_msg cg-512 spray with `IAMROOT_SET`
+in the same transaction. msg_msg cg-512 spray with `SKELETONKEY_SET`
 tags.
 
 `--full-chain` forges a freed-set with `set->data = kaddr` at the

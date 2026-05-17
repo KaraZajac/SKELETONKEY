@@ -15,18 +15,18 @@ commitments.
 
 ## Phase 1 — Make the bundling real (DONE 2026-05-16)
 
-- [x] Top-level `iamroot` dispatcher CLI (`iamroot.c`) — module
+- [x] Top-level `skeletonkey` dispatcher CLI (`skeletonkey.c`) — module
       registry, route to module's detect/exploit
 - [x] Module interface header (`core/module.h`) — standard
-      `iamroot_module` struct + `iamroot_result_t` (numerically
+      `skeletonkey_module` struct + `skeletonkey_result_t` (numerically
       aligned with copy_fail_family's `df_result_t` for zero-cost
       bridging)
 - [x] `core/registry.{c,h}` — flat-array registry with `find_by_name`
-- [x] `modules/copy_fail_family/iamroot_modules.{c,h}` — bridge layer
+- [x] `modules/copy_fail_family/skeletonkey_modules.{c,h}` — bridge layer
       exposing 5 modules
 - [x] Top-level `Makefile` that builds all modules into one binary
-- [x] Smoke test: `iamroot --scan --json` produces ingest-ready JSON;
-      `iamroot --list` prints the module inventory
+- [x] Smoke test: `skeletonkey --scan --json` produces ingest-ready JSON;
+      `skeletonkey --list` prints the module inventory
 - [ ] **Deferred to Phase 1.5**: extract `apparmor_bypass.c`,
       `exploit_su.c`, `common.c`, `fcrypt.c` into `core/` (shared
       across families). Phase 1 keeps them inside copy_fail_family/src/
@@ -35,7 +35,7 @@ commitments.
 
 ## Phase 2 — Add Dirty Pipe (CVE-2022-0847) — PARTIAL (DETECT done 2026-05-16)
 
-Public PoC, well-understood, useful for completeness — IAMROOT
+Public PoC, well-understood, useful for completeness — SKELETONKEY
 without Dirty Pipe is incomplete as a "historical bundle." Affects
 kernels ≤5.16.11/≤5.15.25/≤5.10.102 so coverage is older
 deployments (worth bundling — many production boxes still run
@@ -49,7 +49,7 @@ these).
       branch-backport thresholds (5.10.102 / 5.15.25 / 5.16.11 / 5.17+)
 - [x] Detection rules: `auditd.rules` (splice() syscall + passwd/shadow
       watches) and `sigma.yml` (non-root modification of sensitive files)
-- [x] Registered in `iamroot --list` / `--scan` output. Verified on
+- [x] Registered in `skeletonkey --list` / `--scan` output. Verified on
       kernel 6.12.86 → correctly reports OK (patched).
 - [x] **Phase 2 complete (2026-05-16)**: full exploit landed. Inline
       passwd-UID and page-cache-revert helpers in the module (~80 lines).
@@ -76,12 +76,12 @@ primitive** that other modules can chain. Bundled because:
 
 - [x] `modules/entrybleed_cve_2023_0458/` — leak primitive + detect
 - [x] Exposed as a library helper: other modules can call
-      `entrybleed_leak_kbase_lib()` (declared in iamroot_modules.h)
-- [x] Wired into iamroot.c registry; `iamroot --exploit entrybleed
+      `entrybleed_leak_kbase_lib()` (declared in skeletonkey_modules.h)
+- [x] Wired into skeletonkey.c registry; `skeletonkey --exploit entrybleed
       --i-know` produces a kbase leak. Verified on kctf-mgr:
       leaked `0xffffffff8d800000` with KASLR slide `0xc800000`.
 - [x] `entry_SYSCALL_64` slot offset configurable via
-      `IAMROOT_ENTRYBLEED_OFFSET` env var (default matches lts-6.12.x).
+      `SKELETONKEY_ENTRYBLEED_OFFSET` env var (default matches lts-6.12.x).
       Future enhancement: auto-detect via /boot/System.map or
       /proc/kallsyms if accessible.
 
@@ -104,28 +104,28 @@ primitive** that other modules can chain. Bundled because:
 
 ## Phase 5 — Detection signature export (DONE 2026-05-16)
 
-- [x] `iamroot --detect-rules --format=auditd` — embedded auditd rules
+- [x] `skeletonkey --detect-rules --format=auditd` — embedded auditd rules
       across all modules (deduped — family-shared rules emit once)
-- [x] `iamroot --detect-rules --format=sigma` — embedded Sigma rules
+- [x] `skeletonkey --detect-rules --format=sigma` — embedded Sigma rules
 - [x] `--format=yara` and `--format=falco` flags accepted; per-module
       strings can be added when authors ship them. Currently no module
       ships YARA or Falco rules (skipped cleanly).
-- [x] `struct iamroot_module` gained `detect_auditd`, `detect_sigma`,
+- [x] `struct skeletonkey_module` gained `detect_auditd`, `detect_sigma`,
       `detect_yara`, `detect_falco` fields — each NULL or pointer to
       embedded C string. Self-contained binary, no data-dir install needed.
 - [ ] Sample SOC playbook in `docs/DETECTION_PLAYBOOK.md` — followup
 
 ## Phase 6 — Mitigation mode (PARTIAL — copy_fail_family bridged 2026-05-16)
 
-- [x] copy_fail_family: `iamroot --mitigate copy_fail` (or any family
+- [x] copy_fail_family: `skeletonkey --mitigate copy_fail` (or any family
       member) blacklists algif_aead + esp4 + esp6 + rxrpc, sets
       `kernel.apparmor_restrict_unprivileged_userns=1`, drops page
       cache. Bridged from existing DIRTYFAIL `mitigate_apply()`.
-- [x] copy_fail_family: `iamroot --cleanup <name>` routes by visible
+- [x] copy_fail_family: `skeletonkey --cleanup <name>` routes by visible
       state: if `/etc/modprobe.d/dirtyfail-mitigations.conf` exists →
       `mitigate_revert()`; else evict /etc/passwd page cache. Heuristic
       sufficient for common usage patterns.
-- [x] dirty_pipe: `iamroot --cleanup dirty_pipe` evicts /etc/passwd
+- [x] dirty_pipe: `skeletonkey --cleanup dirty_pipe` evicts /etc/passwd
       (already landed in Phase 2 complete).
 - [ ] dirty_pipe `--mitigate`: only real fix is "upgrade your kernel";
       no automated mitigation possible. Document and skip.
@@ -178,7 +178,7 @@ cred-overwrite. Promotion to 🟢 means landing the leak → R/W →
 modprobe_path-or-cred-rewrite stage on at least one tracked kernel.
 None requires fresh research — each has a public reference exploit;
 the work is porting the per-kernel offset dance into a portable
-shape compatible with IAMROOT's "no-fabricated-offsets" rule (most
+shape compatible with SKELETONKEY's "no-fabricated-offsets" rule (most
 likely as an env-var override table per distro+kernel, with offset
 auto-resolve via System.map / kallsyms when accessible).
 
@@ -190,7 +190,7 @@ race window makes it inherently low-yield.
 
 ## Non-goals
 
-- **No 0-day shipment.** Everything in IAMROOT is post-patch.
+- **No 0-day shipment.** Everything in SKELETONKEY is post-patch.
 - **No automated mass-targeting.** No host-list mode. No automatic
   pivoting.
 - **No persistence beyond `--exploit-backdoor`'s

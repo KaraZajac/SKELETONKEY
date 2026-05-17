@@ -18,7 +18,7 @@ Public PoC: <https://github.com/Crusaders-of-Rust/CVE-2022-0185>
 Upstream fix: mainline 5.16.2 (Jan 2022).
 Branch backports: 5.16.2 / 5.15.14 / 5.10.91 / 5.4.171.
 
-## IAMROOT role
+## SKELETONKEY role
 
 userns+mountns reach, `fsopen("cgroup2")` + double
 `fsconfig(FSCONFIG_SET_STRING, "source", ...)` fires the 4k OOB,

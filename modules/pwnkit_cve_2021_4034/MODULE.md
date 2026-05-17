@@ -25,10 +25,10 @@ polkit until 0.121 (or distro backport).
   - Debian: 0.105-31+deb11u1 (bullseye), 0.105-26+deb10u1 (buster)
   - RHEL: polkit-0.115-13.el7_9 (RHEL 7), polkit-0.117-9.el8_5.1 (RHEL 8)
 
-## IAMROOT detect logic (current)
+## SKELETONKEY detect logic (current)
 
 1. Resolve pkexec binary (`/usr/bin/pkexec` or `which pkexec`)
-2. If not present → IAMROOT_OK (no attack surface)
+2. If not present → SKELETONKEY_OK (no attack surface)
 3. Run `pkexec --version` and parse version
 4. Compare to known-fixed thresholds; report VULNERABLE if below
 

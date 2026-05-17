@@ -14,10 +14,10 @@ Discovered by **Will Findlay**. Formally presented at USENIX Security '23:
 
 Mainline status: no canonical patch — partial mitigations only.
 
-## IAMROOT role
+## SKELETONKEY role
 
 This is a **stage-1 leak primitive**, not a standalone LPE. Other
 modules can call `entrybleed_leak_kbase_lib()` to obtain a KASLR
 slide and feed it to the offset resolver in `core/offsets.c`. x86_64
 only; the `entry_SYSCALL_64` slot offset is configurable via the
-`IAMROOT_ENTRYBLEED_OFFSET` env var.
+`SKELETONKEY_ENTRYBLEED_OFFSET` env var.

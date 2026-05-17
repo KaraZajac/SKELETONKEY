@@ -13,7 +13,7 @@ Original advisory: <https://dirtypipe.cm4all.com/>
 
 Upstream fix: mainline 5.17 (commit `9d2231c5d74e`, Feb 2022).
 
-## IAMROOT role
+## SKELETONKEY role
 
 This module bundles the canonical splice-into-pipe primitive that
 writes UID=0 into `/etc/passwd`'s page cache, then drops a root shell

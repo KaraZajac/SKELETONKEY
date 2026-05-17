@@ -18,7 +18,7 @@ Upstream fix: mainline 6.6-rc1 (commit `0cabe18a8b80c`, Aug 2023).
 Branch backports: 4.14.326 / 4.19.295 / 5.4.257 / 5.10.197 /
 5.15.130 / 6.1.51 / 6.5.0.
 
-## IAMROOT role
+## SKELETONKEY role
 
 **Widest deployment of any module in the corpus** — bug present
 in every Linux kernel below the fix (back to ~2.0 era).

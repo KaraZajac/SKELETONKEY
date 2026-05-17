@@ -14,7 +14,7 @@ Original advisory:
 
 Upstream fix: polkit 0.121 (Jan 2022).
 
-## IAMROOT role
+## SKELETONKEY role
 
 The exploit module follows the canonical Qualys-style chain: writes
 payload.c + gconv-modules cache, compiles via the target's gcc,
@@ -22,4 +22,4 @@ execve's pkexec with NULL argv and crafted envp. Handles both the
 legacy ("0.105") and modern ("126") polkit version string formats.
 Falls back gracefully on hosts without a compiler.
 
-This is IAMROOT's first **userspace** LPE — not a kernel bug.
+This is SKELETONKEY's first **userspace** LPE — not a kernel bug.

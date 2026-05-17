@@ -7,7 +7,7 @@ name: release
 # Maintainer flow:
 #   git tag v0.1.0
 #   git push origin v0.1.0
-#   → CI builds + publishes release with iamroot-x86_64 + iamroot-arm64
+#   → CI builds + publishes release with skeletonkey-x86_64 + skeletonkey-arm64
 
 on:
   push:
@@ -44,20 +44,20 @@ jobs:
           CC: ${{ matrix.cc }}
         run: |
           make
-          file iamroot
-          ls -la iamroot
+          file skeletonkey
+          ls -la skeletonkey
 
       - name: rename + checksum
         run: |
-          mv iamroot iamroot-${{ matrix.target }}
-          sha256sum iamroot-${{ matrix.target }} > iamroot-${{ matrix.target }}.sha256
+          mv skeletonkey skeletonkey-${{ matrix.target }}
+          sha256sum skeletonkey-${{ matrix.target }} > skeletonkey-${{ matrix.target }}.sha256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: iamroot-${{ matrix.target }}
+          name: skeletonkey-${{ matrix.target }}
           path: |
-            iamroot-${{ matrix.target }}
-            iamroot-${{ matrix.target }}.sha256
+            skeletonkey-${{ matrix.target }}
+            skeletonkey-${{ matrix.target }}.sha256
 
   release:
     needs: build
@@ -72,7 +72,7 @@ jobs:
       - name: flatten artifacts
         run: |
           find dist -type f -exec mv {} . \;
-          ls -la iamroot-*
+          ls -la skeletonkey-*
 
       - name: collect release notes
         id: notes
@@ -81,16 +81,16 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           # Pull the latest entry from CVES.md / ROADMAP.md for the body
           {
-            echo "## IAMROOT $tag"
+            echo "## SKELETONKEY $tag"
             echo
             echo "Pre-built binaries for x86_64 and arm64. Checksums alongside."
             echo
             echo "### Install"
             echo
             echo '```bash'
-            echo "curl -sSLfo /tmp/iamroot https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/iamroot-\$(uname -m | sed s/aarch64/arm64/)"
-            echo "chmod +x /tmp/iamroot && sudo mv /tmp/iamroot /usr/local/bin/iamroot"
-            echo "iamroot --version"
+            echo "curl -sSLfo /tmp/skeletonkey https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/skeletonkey-\$(uname -m | sed s/aarch64/arm64/)"
+            echo "chmod +x /tmp/skeletonkey && sudo mv /tmp/skeletonkey /usr/local/bin/skeletonkey"
+            echo "skeletonkey --version"
             echo '```'
             echo
             echo "Or one-shot via the install script:"
@@ -109,12 +109,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.notes.outputs.tag }}
-          name: IAMROOT ${{ steps.notes.outputs.tag }}
+          name: SKELETONKEY ${{ steps.notes.outputs.tag }}
           body_path: release-notes.md
           files: |
-            iamroot-x86_64
-            iamroot-x86_64.sha256
-            iamroot-arm64
-            iamroot-arm64.sha256
+            skeletonkey-x86_64
+            skeletonkey-x86_64.sha256
+            skeletonkey-arm64
+            skeletonkey-arm64.sha256
             install.sh
           fail_on_unmatched_files: false   # install.sh may not exist at first tag

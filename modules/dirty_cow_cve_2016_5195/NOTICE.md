@@ -13,7 +13,7 @@ the kernel since ~2007.
 Original advisory: <https://dirtycow.ninja/>
 Upstream fix: mainline 4.9 (commit `19be0eaffa3a`, Oct 2016).
 
-## IAMROOT role
+## SKELETONKEY role
 
 Two-thread Phil-Oester-style race: writer thread via
 `/proc/self/mem` vs. madvise(MADV_DONTNEED) thread. Targets the

@@ -18,7 +18,7 @@ Upstream fix: mainline 5.12 / 5.11.10 (April 2021).
 Branch backports: 5.11.10 / 5.10.27 / 5.4.110 / 4.19.185 / 4.14.230 /
 4.9.266 / 4.4.266.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Userns+netns reach, hand-rolled `ipt_replace` blob, `setsockopt`
 `IPT_SO_SET_REPLACE` fires the 4-byte OOB at heap+0x4. msg_msg

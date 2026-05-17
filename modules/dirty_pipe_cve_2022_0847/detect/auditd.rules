@@ -13,14 +13,14 @@
 # Watch /etc/passwd, /etc/shadow, /etc/sudoers, /etc/sudoers.d/* for
 # any modification by non-root — the Dirty Pipe payload typically
 # overwrites these to gain root.
--w /etc/passwd      -p wa -k iamroot-dirty-pipe
--w /etc/shadow      -p wa -k iamroot-dirty-pipe
--w /etc/sudoers     -p wa -k iamroot-dirty-pipe
--w /etc/sudoers.d   -p wa -k iamroot-dirty-pipe
+-w /etc/passwd      -p wa -k skeletonkey-dirty-pipe
+-w /etc/shadow      -p wa -k skeletonkey-dirty-pipe
+-w /etc/sudoers     -p wa -k skeletonkey-dirty-pipe
+-w /etc/sudoers.d   -p wa -k skeletonkey-dirty-pipe
 
 # Watch every splice() syscall — combined with the file watches above
 # this catches the canonical exploit shape. (High volume on servers
 # using nginx/HAProxy; consider scoping with -F gid!=33 -F gid!=99 to
 # exclude web servers.)
--a always,exit -F arch=b64 -S splice -k iamroot-dirty-pipe-splice
--a always,exit -F arch=b32 -S splice -k iamroot-dirty-pipe-splice
+-a always,exit -F arch=b64 -S splice -k skeletonkey-dirty-pipe-splice
+-a always,exit -F arch=b32 -S splice -k skeletonkey-dirty-pipe-splice

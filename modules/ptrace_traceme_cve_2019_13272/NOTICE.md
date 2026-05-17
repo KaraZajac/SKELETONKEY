@@ -15,7 +15,7 @@ Upstream fix: mainline 5.1.17 (commit `6994eefb0053`, June 2019).
 
 Branch backports: 4.4.182 / 4.9.182 / 4.14.131 / 4.19.58 / 5.0.20 / 5.1.17.
 
-## IAMROOT role
+## SKELETONKEY role
 
 Full jannh-style chain: fork → child `PTRACE_TRACEME` → child
 sleep+attach → parent `execve` setuid bin (pkexec/su/passwd

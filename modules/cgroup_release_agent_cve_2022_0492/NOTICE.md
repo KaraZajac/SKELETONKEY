@@ -16,7 +16,7 @@ Original writeup:
 
 Upstream fix: mainline 5.17 (commit `24f6008564183`, March 2022).
 
-## IAMROOT role
+## SKELETONKEY role
 
 **Universal structural exploit — no per-kernel offsets, no race.**
 unshare(USER | MOUNT | CGROUP), mount cgroup v1 RDP controller,

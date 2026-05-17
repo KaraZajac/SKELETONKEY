@@ -1,44 +1,44 @@
 /*
- * IAMROOT — module registry
+ * SKELETONKEY — module registry
  *
  * Global list of registered modules. Each family contributes via
- * register_<family>_modules() called from iamroot main() at startup.
+ * register_<family>_modules() called from skeletonkey main() at startup.
  */
 
-#ifndef IAMROOT_REGISTRY_H
-#define IAMROOT_REGISTRY_H
+#ifndef SKELETONKEY_REGISTRY_H
+#define SKELETONKEY_REGISTRY_H
 
 #include "module.h"
 
-void iamroot_register(const struct iamroot_module *m);
+void skeletonkey_register(const struct skeletonkey_module *m);
 
-size_t iamroot_module_count(void);
-const struct iamroot_module *iamroot_module_at(size_t i);
+size_t skeletonkey_module_count(void);
+const struct skeletonkey_module *skeletonkey_module_at(size_t i);
 
 /* Find a module by name. Returns NULL if not found. */
-const struct iamroot_module *iamroot_module_find(const char *name);
+const struct skeletonkey_module *skeletonkey_module_find(const char *name);
 
 /* Each module family declares one of these in its public header. The
- * top-level iamroot main() calls them in order at startup. */
-void iamroot_register_copy_fail_family(void);
-void iamroot_register_dirty_pipe(void);
-void iamroot_register_entrybleed(void);
-void iamroot_register_pwnkit(void);
-void iamroot_register_nf_tables(void);
-void iamroot_register_overlayfs(void);
-void iamroot_register_cls_route4(void);
-void iamroot_register_dirty_cow(void);
-void iamroot_register_ptrace_traceme(void);
-void iamroot_register_netfilter_xtcompat(void);
-void iamroot_register_af_packet(void);
-void iamroot_register_fuse_legacy(void);
-void iamroot_register_stackrot(void);
-void iamroot_register_af_packet2(void);
-void iamroot_register_cgroup_release_agent(void);
-void iamroot_register_overlayfs_setuid(void);
-void iamroot_register_nft_set_uaf(void);
-void iamroot_register_af_unix_gc(void);
-void iamroot_register_nft_fwd_dup(void);
-void iamroot_register_nft_payload(void);
+ * top-level skeletonkey main() calls them in order at startup. */
+void skeletonkey_register_copy_fail_family(void);
+void skeletonkey_register_dirty_pipe(void);
+void skeletonkey_register_entrybleed(void);
+void skeletonkey_register_pwnkit(void);
+void skeletonkey_register_nf_tables(void);
+void skeletonkey_register_overlayfs(void);
+void skeletonkey_register_cls_route4(void);
+void skeletonkey_register_dirty_cow(void);
+void skeletonkey_register_ptrace_traceme(void);
+void skeletonkey_register_netfilter_xtcompat(void);
+void skeletonkey_register_af_packet(void);
+void skeletonkey_register_fuse_legacy(void);
+void skeletonkey_register_stackrot(void);
+void skeletonkey_register_af_packet2(void);
+void skeletonkey_register_cgroup_release_agent(void);
+void skeletonkey_register_overlayfs_setuid(void);
+void skeletonkey_register_nft_set_uaf(void);
+void skeletonkey_register_af_unix_gc(void);
+void skeletonkey_register_nft_fwd_dup(void);
+void skeletonkey_register_nft_payload(void);
 
-#endif /* IAMROOT_REGISTRY_H */
+#endif /* SKELETONKEY_REGISTRY_H */

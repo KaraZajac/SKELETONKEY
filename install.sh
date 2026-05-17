@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# IAMROOT one-shot installer.
+# SKELETONKEY one-shot installer.
 #
 # Usage:
-#   curl -sSL https://github.com/KaraZajac/IAMROOT/releases/latest/download/install.sh | sh
+#   curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh
 #
 # Or with explicit version:
-#   IAMROOT_VERSION=v0.1.0 curl ... | sh
+#   SKELETONKEY_VERSION=v0.1.0 curl ... | sh
 #
 # Or install to a different prefix:
-#   IAMROOT_PREFIX=$HOME/.local/bin curl ... | sh
+#   SKELETONKEY_PREFIX=$HOME/.local/bin curl ... | sh
 #
 # Environment:
-#   IAMROOT_VERSION   release tag (default: latest)
-#   IAMROOT_PREFIX    install dir   (default: /usr/local/bin if writable, else error)
-#   IAMROOT_REPO      override repo (default: KaraZajac/IAMROOT)
+#   SKELETONKEY_VERSION   release tag (default: latest)
+#   SKELETONKEY_PREFIX    install dir   (default: /usr/local/bin if writable, else error)
+#   SKELETONKEY_REPO      override repo (default: KaraZajac/SKELETONKEY)
 #
 # Exit codes:
 #   0 — installed successfully
@@ -21,9 +21,9 @@
 
 set -euo pipefail
 
-REPO="${IAMROOT_REPO:-KaraZajac/IAMROOT}"
-VERSION="${IAMROOT_VERSION:-latest}"
-PREFIX="${IAMROOT_PREFIX:-/usr/local/bin}"
+REPO="${SKELETONKEY_REPO:-KaraZajac/SKELETONKEY}"
+VERSION="${SKELETONKEY_VERSION:-latest}"
+PREFIX="${SKELETONKEY_PREFIX:-/usr/local/bin}"
 
 log()   { printf '[\033[1;36m*\033[0m] %s\n' "$*" >&2; }
 ok()    { printf '[\033[1;32m+\033[0m] %s\n' "$*" >&2; }
@@ -40,11 +40,11 @@ log "detected arch: $target"
 
 # Resolve version → download URL
 if [ "$VERSION" = "latest" ]; then
-    url="https://github.com/${REPO}/releases/latest/download/iamroot-${target}"
-    sha_url="https://github.com/${REPO}/releases/latest/download/iamroot-${target}.sha256"
+    url="https://github.com/${REPO}/releases/latest/download/skeletonkey-${target}"
+    sha_url="https://github.com/${REPO}/releases/latest/download/skeletonkey-${target}.sha256"
 else
-    url="https://github.com/${REPO}/releases/download/${VERSION}/iamroot-${target}"
-    sha_url="https://github.com/${REPO}/releases/download/${VERSION}/iamroot-${target}.sha256"
+    url="https://github.com/${REPO}/releases/download/${VERSION}/skeletonkey-${target}"
+    sha_url="https://github.com/${REPO}/releases/download/${VERSION}/skeletonkey-${target}.sha256"
 fi
 log "downloading from: $url"
 
@@ -56,18 +56,18 @@ fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-if ! curl -fsSLo "$tmp/iamroot" "$url"; then
+if ! curl -fsSLo "$tmp/skeletonkey" "$url"; then
     fail "download failed. Check the version exists at https://github.com/${REPO}/releases"
 fi
 
 # Verify checksum if available
-if curl -fsSLo "$tmp/iamroot.sha256" "$sha_url" 2>/dev/null; then
+if curl -fsSLo "$tmp/skeletonkey.sha256" "$sha_url" 2>/dev/null; then
     # The .sha256 file has the binary's original name; normalize for our local copy
-    expected=$(awk '{print $1}' "$tmp/iamroot.sha256")
+    expected=$(awk '{print $1}' "$tmp/skeletonkey.sha256")
     if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$tmp/iamroot" | awk '{print $1}')
+        actual=$(sha256sum "$tmp/skeletonkey" | awk '{print $1}')
     elif command -v shasum >/dev/null 2>&1; then
-        actual=$(shasum -a 256 "$tmp/iamroot" | awk '{print $1}')
+        actual=$(shasum -a 256 "$tmp/skeletonkey" | awk '{print $1}')
     else
         actual=""
         log "no sha256sum/shasum available — skipping checksum verification"
@@ -83,17 +83,17 @@ else
     log "no checksum file at $sha_url — skipping verification"
 fi
 
-chmod +x "$tmp/iamroot"
+chmod +x "$tmp/skeletonkey"
 
 # Install. Try $PREFIX directly; if not writable, sudo.
-target_path="$PREFIX/iamroot"
+target_path="$PREFIX/skeletonkey"
 if [ -w "$PREFIX" ] || [ "$(id -u)" -eq 0 ]; then
-    mv "$tmp/iamroot" "$target_path"
+    mv "$tmp/skeletonkey" "$target_path"
 elif command -v sudo >/dev/null 2>&1; then
     log "$PREFIX needs sudo; you may be prompted for password"
-    sudo mv "$tmp/iamroot" "$target_path"
+    sudo mv "$tmp/skeletonkey" "$target_path"
 else
-    fail "$PREFIX not writable and sudo not available. Try IAMROOT_PREFIX=\$HOME/.local/bin"
+    fail "$PREFIX not writable and sudo not available. Try SKELETONKEY_PREFIX=\$HOME/.local/bin"
 fi
 
 ok "installed: $target_path"
@@ -104,10 +104,10 @@ cat >&2 <<EOF
 [\033[1;33m!\033[0m] AUTHORIZED TESTING ONLY — see https://github.com/${REPO}/blob/main/docs/ETHICS.md
 
 Quickstart:
-    sudo iamroot --scan                                 # what's this box vulnerable to?
-    sudo iamroot --audit                                # broader system hygiene
-    sudo iamroot --detect-rules --format=auditd \\
-       | sudo tee /etc/audit/rules.d/99-iamroot.rules   # deploy detection rules
+    sudo skeletonkey --scan                                 # what's this box vulnerable to?
+    sudo skeletonkey --audit                                # broader system hygiene
+    sudo skeletonkey --detect-rules --format=auditd \\
+       | sudo tee /etc/audit/rules.d/99-skeletonkey.rules   # deploy detection rules
 
-See \`iamroot --help\` for all commands.
+See \`skeletonkey --help\` for all commands.
 EOF

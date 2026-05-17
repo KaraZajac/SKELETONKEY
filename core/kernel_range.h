@@ -1,5 +1,5 @@
 /*
- * IAMROOT — kernel version range matching
+ * SKELETONKEY — kernel version range matching
  *
  * Every CVE module needs to answer "is the host kernel in the affected
  * range?". This file centralizes that.
@@ -17,8 +17,8 @@
  * patch version is at or above the threshold.
  */
 
-#ifndef IAMROOT_KERNEL_RANGE_H
-#define IAMROOT_KERNEL_RANGE_H
+#ifndef SKELETONKEY_KERNEL_RANGE_H
+#define SKELETONKEY_KERNEL_RANGE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -56,4 +56,4 @@ bool kernel_version_current(struct kernel_version *out);
 bool kernel_range_is_patched(const struct kernel_range *r,
                              const struct kernel_version *v);
 
-#endif /* IAMROOT_KERNEL_RANGE_H */
+#endif /* SKELETONKEY_KERNEL_RANGE_H */

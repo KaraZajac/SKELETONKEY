@@ -37,22 +37,22 @@ jobs:
             make
           fi
 
-      - name: sanity — iamroot --version
-        run: ./iamroot --version
+      - name: sanity — skeletonkey --version
+        run: ./skeletonkey --version
 
-      - name: sanity — iamroot --list
-        run: ./iamroot --list
+      - name: sanity — skeletonkey --list
+        run: ./skeletonkey --list
 
-      - name: sanity — iamroot --scan (no exploit; just detect)
-        run: ./iamroot --scan --no-color || true
+      - name: sanity — skeletonkey --scan (no exploit; just detect)
+        run: ./skeletonkey --scan --no-color || true
         # exit code may be nonzero (vulnerable host = exit 2, missing
         # precond = exit 4) — that's diagnostic data, not CI failure
 
       - name: sanity — --detect-rules auditd
-        run: ./iamroot --detect-rules --format=auditd | head -50
+        run: ./skeletonkey --detect-rules --format=auditd | head -50
 
       - name: sanity — --detect-rules sigma
-        run: ./iamroot --detect-rules --format=sigma | head -50
+        run: ./skeletonkey --detect-rules --format=sigma | head -50
 
   # Static build job: ensures the project links cleanly when -static is
   # requested. Useful for deployment to minimal containers / fleet scans
@@ -75,7 +75,7 @@ jobs:
         # gate the merge on it. Migrate to musl-gcc when we want a
         # truly portable static binary.
         continue-on-error: true
-        run: make static && ls -la iamroot
+        run: make static && ls -la skeletonkey
 
   # Phase 4 followup (placeholder): kernel-VM matrix. Each entry runs
   # the binary against a VM running a specific (vulnerable or patched)
