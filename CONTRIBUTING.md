@@ -48,7 +48,7 @@ Use any existing module as a template. Lightest-weight reference:
 Mandatory:
 - Detect short-circuits cleanly on patched kernels (we test this)
 - `--i-know` gate on exploit
-- Honest scope: `IAMROOT_EXPLOIT_OK` only after empirical root,
+- Honest scope: `SKELETONKEY_EXPLOIT_OK` only after empirical root,
   otherwise `EXPLOIT_FAIL` with diagnostic
 - `NOTICE.md` crediting the original CVE reporter + PoC author
 
@@ -72,7 +72,7 @@ vulnerable.
 
 ## What we don't accept
 
-- Untested code paths claiming `IAMROOT_EXPLOIT_OK`
+- Untested code paths claiming `SKELETONKEY_EXPLOIT_OK`
 - Per-kernel offsets fabricated without verification
 - Modules without detection rules
 - 0day disclosures (responsible disclosure first; bundle here
