@@ -51,13 +51,18 @@ these).
       watches) and `sigma.yml` (non-root modification of sensitive files)
 - [x] Registered in `iamroot --list` / `--scan` output. Verified on
       kernel 6.12.86 → correctly reports OK (patched).
-- [ ] **Phase 1.5 / Phase 2 followup**: actual exploit. Needs
-      extraction of `find_passwd_uid_field` + `try_revert_passwd_page_cache`
-      + `exploit_su` into `core/` so dirty_pipe can call them without
-      duplicating the copy_fail_family helpers.
+- [x] **Phase 2 complete (2026-05-16)**: full exploit landed. Inline
+      passwd-UID and page-cache-revert helpers in the module (~80 lines).
+      Extraction into `core/host` is Phase 1.5 work — deferred until a
+      third module needs the same helpers. (Two-of-two duplication is
+      acceptable; three-of-three triggers extraction.)
+- [x] Exploit refuses to fire when detect() reports patched (verified
+      end-to-end on kernel 6.12.86 — refuses cleanly).
+- [x] Cleanup function (`dirty_pipe --cleanup`) added: evicts
+      /etc/passwd via POSIX_FADV_DONTNEED + drop_caches.
 - [ ] CI matrix: Ubuntu 20.04 with kernel 5.13 (vulnerable),
       Debian 11 with 5.10.0-8 (vulnerable), Debian 13 with 6.12.x
-      (patched — should detect as OK)
+      (patched — should detect as OK). Phase 4 work.
 
 ## Phase 3 — EntryBleed (CVE-2023-0458) as stage-1 leak brick (DONE 2026-05-16)
 
