@@ -28,5 +28,7 @@ void iamroot_register_nf_tables(void);
 void iamroot_register_overlayfs(void);
 void iamroot_register_cls_route4(void);
 void iamroot_register_dirty_cow(void);
+void iamroot_register_ptrace_traceme(void);
+void iamroot_register_netfilter_xtcompat(void);
 
 #endif /* IAMROOT_REGISTRY_H */

@@ -66,10 +66,20 @@ DCOW_DIR  := modules/dirty_cow_cve_2016_5195
 DCOW_SRCS := $(DCOW_DIR)/iamroot_modules.c
 DCOW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(DCOW_SRCS))
 
+# Family: ptrace_traceme (CVE-2019-13272)
+PTM_DIR  := modules/ptrace_traceme_cve_2019_13272
+PTM_SRCS := $(PTM_DIR)/iamroot_modules.c
+PTM_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PTM_SRCS))
+
+# Family: netfilter_xtcompat (CVE-2021-22555)
+NXC_DIR  := modules/netfilter_xtcompat_cve_2021_22555
+NXC_SRCS := $(NXC_DIR)/iamroot_modules.c
+NXC_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NXC_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS)
 
 .PHONY: all clean debug static help
 
