@@ -28,28 +28,13 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.4.4"
+#define SKELETONKEY_VERSION "0.4.5"
 
 static const char BANNER[] =
 "\n"
-"       ,d8888b,\n"
-"      d88'  `88b\n"
-"     d88' ,db, `88b\n"
-"     888  d8''8b  888===========================================╗\n"
-"     888  88  88  888                                           ║\n"
-"     888  `8bd8'  888                                        ╔══╩═╗\n"
-"     `88b  `\"\"'  d88'                                        ║    ╠═╗\n"
-"      `Y8,      ,8P'                                         ║    ║ ║\n"
-"        `\"Y8P\"'                                              ║    ╠═╝\n"
-"                                                             ║    ║\n"
-"                                                             ║    ╠═╗\n"
-"                                                             ║    ║ ║\n"
-"                                                             ║    ╠═╝\n"
-"                                                             ╚════╝\n"
-"\n"
-"                       S K E L E T O N K E Y\n"
-"           Curated Linux kernel LPE corpus — v" SKELETONKEY_VERSION "\n"
-"                AUTHORIZED TESTING ONLY — see docs/ETHICS.md\n";
+"SKELETONKEY — Curated Linux kernel LPE corpus — v" SKELETONKEY_VERSION "\n"
+"AUTHORIZED TESTING ONLY — see docs/ETHICS.md\n"
+"\n";
 
 static void usage(const char *prog)
 {

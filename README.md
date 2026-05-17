@@ -6,25 +6,6 @@
 > it tells you which historical and recent CVEs that system is still
 > vulnerable to, and — with explicit confirmation — gets you root.
 
-```
-       ,d8888b,
-      d88'  `88b
-     d88' ,db, `88b
-     888  d8''8b  888===========================================╗
-     888  88  88  888                                           ║
-     888  `8bd8'  888                                        ╔══╩═╗
-     `88b  `""'  d88'                                        ║    ╠═╗
-      `Y8,      ,8P'                                         ║    ║ ║
-        `"Y8P"'                                              ║    ╠═╝
-                                                             ║    ║
-                                                             ║    ╠═╗
-                                                             ║    ║ ║
-                                                             ║    ╠═╝
-                                                             ╚════╝
-
-                       S K E L E T O N K E Y
-```
-
 > ⚠️ **Authorized testing only.** SKELETONKEY is a research and red-team
 > tool. By using it you assert you have explicit authorization to test
 > the target system. See [`docs/ETHICS.md`](docs/ETHICS.md).
