@@ -19,6 +19,29 @@
 > tool. By using it you assert you have explicit authorization to test
 > the target system. See [`docs/ETHICS.md`](docs/ETHICS.md).
 
+## Quickstart
+
+```bash
+# One-shot install (x86_64 / arm64; checksum-verified)
+curl -sSL https://github.com/KaraZajac/IAMROOT/releases/latest/download/install.sh | sh
+
+# What's this box vulnerable to?
+sudo iamroot --scan
+
+# Broader system hygiene (setuid binaries, world-writable, capabilities, sudo)
+sudo iamroot --audit
+
+# Deploy detection rules across every bundled module
+sudo iamroot --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-iamroot.rules
+
+# Fleet scan (any-sized host list via SSH; aggregated JSON for SIEM)
+./tools/iamroot-fleet-scan.sh --binary iamroot --ssh-key ~/.ssh/id_rsa hosts.txt
+```
+
+`iamroot --help` lists every command. See [`CVES.md`](CVES.md) for the
+curated CVE inventory and [`docs/DEFENDERS.md`](docs/DEFENDERS.md) for
+the blue-team deployment guide.
+
 ## What this is
 
 Most Linux LPE references are dead repos, broken PoCs, or single-CVE
