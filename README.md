@@ -63,14 +63,24 @@ The same binary covers offense and defense:
 
 ## Status
 
-**Active. Bootstrap phase as of 2026-05-16.** First module
-(`copy_fail_family`) absorbed from the standalone DIRTYFAIL project
-and is verified working end-to-end on Ubuntu 26.04 + Alma 9 + Debian
-13 with full AppArmor bypass + container escape demo + persistent
-backdoor mode.
+**Active — v0.1.0 cut 2026-05-16.** Corpus covers **20 modules**
+across the 2016 → 2026 LPE timeline:
 
-See [`CVES.md`](CVES.md) for the full curated CVE list with patch
-status. See [`ROADMAP.md`](ROADMAP.md) for the next planned modules.
+- 🟢 **13 modules land root** end-to-end on a vulnerable host
+  (copy_fail family ×5, dirty_pipe, entrybleed leak, pwnkit,
+  overlayfs CVE-2021-3493, dirty_cow, ptrace_traceme,
+  cgroup_release_agent, overlayfs_setuid CVE-2023-0386).
+- 🟡 **7 modules fire the kernel primitive** (trigger + slab groom +
+  empirical witness) but stop short of the full cred-overwrite /
+  R/W chain — they return `EXPLOIT_FAIL` honestly rather than
+  fabricate per-kernel offsets. Useful as vuln-verification probes.
+  (af_packet, af_packet2, cls_route4, fuse_legacy, nf_tables,
+  netfilter_xtcompat, stackrot.)
+- Detection rules ship inline (auditd / sigma / yara / falco) and
+  are exported via `iamroot --detect-rules --format=…`.
+
+See [`CVES.md`](CVES.md) for the per-CVE inventory + patch status.
+See [`ROADMAP.md`](ROADMAP.md) for the next planned modules.
 
 ## Why this exists
 

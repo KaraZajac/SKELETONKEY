@@ -133,30 +133,60 @@ primitive** that other modules can chain. Bundled because:
 - [ ] Idempotent re-run safety: copy_fail_family's apply is already
       idempotent (overwrites conf files). Re-verify per module.
 
-## Phase 7+ — More modules (started 2026-05-16)
+## Phase 7+ — More modules (started 2026-05-16, v0.1.0 cut 2026-05-16)
 
-Backfill of historical and recent LPEs as time allows:
+Backfill of historical and recent LPEs as time allows.
 
-- [ ] **CVE-2021-3493** — overlayfs nested-userns LPE
-- [x] **CVE-2021-4034** — Pwnkit (pkexec env handling): 🟢 FULL detect
-      + exploit + cleanup. Detect handles legacy ("0.105") and modern
-      ("126") version strings. Exploit: canonical Qualys-style — writes
-      payload.c, compiles via target's gcc, builds gconv-modules cache,
-      execve(pkexec, NULL_argv, crafted_envp). Auto-refuses on patched
-      kernels. Cleanup removes /tmp/iamroot-pwnkit-* workdirs.
-      Falls back gracefully on hosts without cc.
-- [ ] **CVE-2022-2588** — net/sched route4 dead UAF
+**Landed in v0.1.0:**
+
+- [x] **CVE-2016-5195** — Dirty COW: 🟢 FULL Phil-Oester-style race.
+- [x] **CVE-2017-7308** — AF_PACKET TPACKET_V3: 🟡 PRIMITIVE
+      (overflow + skb spray + cred-race attempt, no portable cred R/W).
+- [x] **CVE-2019-13272** — PTRACE_TRACEME: 🟢 FULL jannh-style chain.
+- [x] **CVE-2020-14386** — AF_PACKET tp_reserve: 🟡 PRIMITIVE-DEMO.
+- [x] **CVE-2021-3493** — Ubuntu overlayfs userns: 🟢 FULL vsh-style.
+- [x] **CVE-2021-4034** — Pwnkit: 🟢 FULL Qualys-style.
+- [x] **CVE-2021-22555** — xt_compat heap-OOB: 🟡 PRIMITIVE (trigger
+      + msg_msg cross-cache groom + MSG_COPY witness, no
+      modprobe_path overwrite).
+- [x] **CVE-2022-0185** — fsconfig 4k OOB: 🟡 PRIMITIVE (trigger
+      + cross-cache groom + neighbour-detect, no MSG_COPY arb-read
+      finisher).
+- [x] **CVE-2022-0492** — cgroup_release_agent: 🟢 FULL universal
+      structural exploit (no offsets, no race).
+- [x] **CVE-2022-2588** — cls_route4 dangling UAF: 🟡 PRIMITIVE
+      (tc/ip add+rm + msg_msg spray + classify drive, no cred chain).
+- [x] **CVE-2023-0386** — overlayfs setuid copy-up: 🟢 FULL
+      distro-agnostic.
+- [x] **CVE-2023-3269** — StackRot: 🟡 PRIMITIVE/RACE (driver +
+      groom; ~<1% race-win per run, honest in module header).
+- [x] **CVE-2024-1086** — nf_tables verdict UAF: 🟡 PRIMITIVE
+      (hand-rolled nfnetlink, NFT_GOTO+DROP malformed verdict,
+      msg_msg kmalloc-cg-96 groom, no pipapo R/W chain).
+
+**Carry-overs:**
+
 - [ ] **CVE-2023-2008** — vmwgfx OOB write
-- [x] **CVE-2024-1086** — nf_tables UAF: 🔵 detect-only landed
-      (2026-05-16). Branch-backport thresholds for 5.4 / 5.10 / 5.15 /
-      6.1 / 6.6 / 6.7 plus mainline 6.8. Detect also probes
-      unprivileged user_ns clone availability — kernel-vulnerable hosts
-      with userns locked down get IAMROOT_PRECOND_FAIL (kernel still
-      needs patching but unprivileged-exploit path is closed). Full
-      Notselwyn-style exploit follows.
 - [ ] Fragnesia (if it lands as a CVE)
 - [ ] Anything we ourselves disclose — bundled AFTER upstream patch
       ships (responsible-disclosure-first)
+
+## Phase 8 — Full-chain promotions (post v0.1.0)
+
+The 7 🟡 PRIMITIVE modules each stop one or two steps short of full
+cred-overwrite. Promotion to 🟢 means landing the leak → R/W →
+modprobe_path-or-cred-rewrite stage on at least one tracked kernel.
+None requires fresh research — each has a public reference exploit;
+the work is porting the per-kernel offset dance into a portable
+shape compatible with IAMROOT's "no-fabricated-offsets" rule (most
+likely as an env-var override table per distro+kernel, with offset
+auto-resolve via System.map / kallsyms when accessible).
+
+Priority order: nf_tables (Notselwyn pipapo R/W), netfilter_xtcompat
+(Andy Nguyen modprobe_path), af_packet (xairy sk_buff cred chase).
+The other four are lower priority — fuse_legacy and cls_route4 have
+narrower distro reach; af_packet2 piggybacks on af_packet; stackrot's
+race window makes it inherently low-yield.
 
 ## Non-goals
 

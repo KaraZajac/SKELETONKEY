@@ -25,7 +25,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define IAMROOT_VERSION "0.1.0-phase1"
+#define IAMROOT_VERSION "0.1.0"
 
 static const char BANNER[] =
 "\n"
