@@ -8,18 +8,22 @@ Status legend:
 
 - 🟢 **WORKING** — module verified to land root on a vulnerable host
 - 🟡 **PRIMITIVE** — fires the kernel primitive (trigger + slab groom
-  + empirical witness) on a vulnerable host, but stops short of the
-  full cred-overwrite / R/W chain. Returns `EXPLOIT_FAIL` honestly;
-  useful as a vuln-verification probe and a continuation point for
-  full chains. Per-kernel offsets deliberately not shipped.
+  + empirical witness) on a vulnerable host. By default returns
+  `EXPLOIT_FAIL` honestly (no fabricated offsets). Pass `--full-chain`
+  to additionally attempt root pop via the shared `modprobe_path`
+  finisher (`core/finisher.{c,h}`) — requires kernel offsets via
+  env vars / `/proc/kallsyms` / `/boot/System.map`; see
+  [`docs/OFFSETS.md`](docs/OFFSETS.md). On success returns
+  `EXPLOIT_OK` and drops a root shell; on failure returns
+  `EXPLOIT_FAIL` — never claims root without an empirical
+  setuid-bash sentinel.
 - 🔵 **DETECT-ONLY** — module fingerprints presence/absence but no
-  exploit. (No module is currently in this state — every registered
-  module now fires either a full chain or a primitive.)
+  exploit. (No module is currently in this state.)
 - ⚪ **PLANNED** — stub exists, work not started
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts (v0.1.0):** 🟢 13 · 🟡 7 · 🔵 0 · ⚪ 1 · 🔴 0
+**Counts (v0.2.0):** 🟢 13 · 🟡 7 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
 
 ## Inventory
 

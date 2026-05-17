@@ -94,19 +94,20 @@ The same binary covers offense and defense:
 
 ## Status
 
-**Active — v0.1.0 cut 2026-05-16.** Corpus covers **20 modules**
+**Active — v0.2.0 cut 2026-05-16.** Corpus covers **20 modules**
 across the 2016 → 2026 LPE timeline:
 
 - 🟢 **13 modules land root** end-to-end on a vulnerable host
   (copy_fail family ×5, dirty_pipe, entrybleed leak, pwnkit,
   overlayfs CVE-2021-3493, dirty_cow, ptrace_traceme,
   cgroup_release_agent, overlayfs_setuid CVE-2023-0386).
-- 🟡 **7 modules fire the kernel primitive** (trigger + slab groom +
-  empirical witness) but stop short of the full cred-overwrite /
-  R/W chain — they return `EXPLOIT_FAIL` honestly rather than
-  fabricate per-kernel offsets. Useful as vuln-verification probes.
-  (af_packet, af_packet2, cls_route4, fuse_legacy, nf_tables,
-  netfilter_xtcompat, stackrot.)
+- 🟡 **7 modules fire the kernel primitive** by default and refuse to
+  claim root without empirical confirmation. Pass `--full-chain` to
+  engage the shared `modprobe_path` finisher and attempt root pop —
+  requires kernel offsets via env vars / `/proc/kallsyms` /
+  `/boot/System.map`; see [`docs/OFFSETS.md`](docs/OFFSETS.md).
+  Modules: af_packet, af_packet2, cls_route4, fuse_legacy, nf_tables,
+  netfilter_xtcompat, stackrot.
 - Detection rules ship inline (auditd / sigma / yara / falco) and
   are exported via `iamroot --detect-rules --format=…`.
 
