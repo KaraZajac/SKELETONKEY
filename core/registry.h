@@ -25,5 +25,6 @@ void iamroot_register_dirty_pipe(void);
 void iamroot_register_entrybleed(void);
 void iamroot_register_pwnkit(void);
 void iamroot_register_nf_tables(void);
+void iamroot_register_overlayfs(void);
 
 #endif /* IAMROOT_REGISTRY_H */

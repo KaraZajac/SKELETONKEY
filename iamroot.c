@@ -222,6 +222,7 @@ int main(int argc, char **argv)
     iamroot_register_entrybleed();
     iamroot_register_pwnkit();
     iamroot_register_nf_tables();
+    iamroot_register_overlayfs();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};

@@ -51,10 +51,15 @@ NFT_DIR  := modules/nf_tables_cve_2024_1086
 NFT_SRCS := $(NFT_DIR)/iamroot_modules.c
 NFT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NFT_SRCS))
 
+# Family: overlayfs (CVE-2021-3493)
+OVL_DIR  := modules/overlayfs_cve_2021_3493
+OVL_SRCS := $(OVL_DIR)/iamroot_modules.c
+OVL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(OVL_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS)
 
 .PHONY: all clean debug static help
 
