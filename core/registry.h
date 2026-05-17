@@ -36,5 +36,9 @@ void iamroot_register_stackrot(void);
 void iamroot_register_af_packet2(void);
 void iamroot_register_cgroup_release_agent(void);
 void iamroot_register_overlayfs_setuid(void);
+void iamroot_register_nft_set_uaf(void);
+void iamroot_register_af_unix_gc(void);
+void iamroot_register_nft_fwd_dup(void);
+void iamroot_register_nft_payload(void);
 
 #endif /* IAMROOT_REGISTRY_H */

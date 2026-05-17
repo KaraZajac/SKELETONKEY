@@ -106,10 +106,30 @@ OSU_DIR  := modules/overlayfs_setuid_cve_2023_0386
 OSU_SRCS := $(OSU_DIR)/iamroot_modules.c
 OSU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(OSU_SRCS))
 
+# Family: nft_set_uaf (CVE-2023-32233)
+NSU_DIR  := modules/nft_set_uaf_cve_2023_32233
+NSU_SRCS := $(NSU_DIR)/iamroot_modules.c
+NSU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NSU_SRCS))
+
+# Family: af_unix_gc (CVE-2023-4622)
+AUG_DIR  := modules/af_unix_gc_cve_2023_4622
+AUG_SRCS := $(AUG_DIR)/iamroot_modules.c
+AUG_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(AUG_SRCS))
+
+# Family: nft_fwd_dup (CVE-2022-25636)
+NFD_DIR  := modules/nft_fwd_dup_cve_2022_25636
+NFD_SRCS := $(NFD_DIR)/iamroot_modules.c
+NFD_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NFD_SRCS))
+
+# Family: nft_payload (CVE-2023-0179)
+NPL_DIR  := modules/nft_payload_cve_2023_0179
+NPL_SRCS := $(NPL_DIR)/iamroot_modules.c
+NPL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NPL_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS)
 
 .PHONY: all clean debug static help
 

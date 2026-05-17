@@ -590,6 +590,10 @@ int main(int argc, char **argv)
     iamroot_register_af_packet2();
     iamroot_register_cgroup_release_agent();
     iamroot_register_overlayfs_setuid();
+    iamroot_register_nft_set_uaf();
+    iamroot_register_af_unix_gc();
+    iamroot_register_nft_fwd_dup();
+    iamroot_register_nft_payload();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};
