@@ -126,10 +126,26 @@ NPL_DIR  := modules/nft_payload_cve_2023_0179
 NPL_SRCS := $(NPL_DIR)/skeletonkey_modules.c
 NPL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NPL_SRCS))
 
+SAM_DIR  := modules/sudo_samedit_cve_2021_3156
+SAM_SRCS := $(SAM_DIR)/skeletonkey_modules.c
+SAM_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SAM_SRCS))
+
+SEQ_DIR  := modules/sequoia_cve_2021_33909
+SEQ_SRCS := $(SEQ_DIR)/skeletonkey_modules.c
+SEQ_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SEQ_SRCS))
+
+SUE_DIR  := modules/sudoedit_editor_cve_2023_22809
+SUE_SRCS := $(SUE_DIR)/skeletonkey_modules.c
+SUE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SUE_SRCS))
+
+VMW_DIR  := modules/vmwgfx_cve_2023_2008
+VMW_SRCS := $(VMW_DIR)/skeletonkey_modules.c
+VMW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(VMW_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS)
 
 .PHONY: all clean debug static help
 

@@ -40,5 +40,9 @@ void skeletonkey_register_nft_set_uaf(void);
 void skeletonkey_register_af_unix_gc(void);
 void skeletonkey_register_nft_fwd_dup(void);
 void skeletonkey_register_nft_payload(void);
+void skeletonkey_register_sudo_samedit(void);
+void skeletonkey_register_sequoia(void);
+void skeletonkey_register_sudoedit_editor(void);
+void skeletonkey_register_vmwgfx(void);
 
 #endif /* SKELETONKEY_REGISTRY_H */

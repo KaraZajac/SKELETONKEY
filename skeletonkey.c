@@ -695,6 +695,10 @@ int main(int argc, char **argv)
     skeletonkey_register_af_unix_gc();
     skeletonkey_register_nft_fwd_dup();
     skeletonkey_register_nft_payload();
+    skeletonkey_register_sudo_samedit();
+    skeletonkey_register_sequoia();
+    skeletonkey_register_sudoedit_editor();
+    skeletonkey_register_vmwgfx();
 
     enum mode mode = MODE_SCAN;
     struct skeletonkey_ctx ctx = {0};
