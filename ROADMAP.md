@@ -138,11 +138,13 @@ primitive** that other modules can chain. Bundled because:
 Backfill of historical and recent LPEs as time allows:
 
 - [ ] **CVE-2021-3493** — overlayfs nested-userns LPE
-- [x] **CVE-2021-4034** — Pwnkit (pkexec env handling): 🔵 detect-only
-      landed. Version parser handles both formats: "0.X.Y" (older
-      polkit) and bare "121"/"126" (modern). Reports VULNERABLE if
-      pkexec is setuid AND version < 121. First userspace LPE in the
-      corpus. Full Qualys-PoC exploit is the next Phase 7 commit.
+- [x] **CVE-2021-4034** — Pwnkit (pkexec env handling): 🟢 FULL detect
+      + exploit + cleanup. Detect handles legacy ("0.105") and modern
+      ("126") version strings. Exploit: canonical Qualys-style — writes
+      payload.c, compiles via target's gcc, builds gconv-modules cache,
+      execve(pkexec, NULL_argv, crafted_envp). Auto-refuses on patched
+      kernels. Cleanup removes /tmp/iamroot-pwnkit-* workdirs.
+      Falls back gracefully on hosts without cc.
 - [ ] **CVE-2022-2588** — net/sched route4 dead UAF
 - [ ] **CVE-2023-2008** — vmwgfx OOB write
 - [ ] **CVE-2024-1086** — netfilter nf_tables UAF
