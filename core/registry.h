@@ -30,5 +30,7 @@ void iamroot_register_cls_route4(void);
 void iamroot_register_dirty_cow(void);
 void iamroot_register_ptrace_traceme(void);
 void iamroot_register_netfilter_xtcompat(void);
+void iamroot_register_af_packet(void);
+void iamroot_register_fuse_legacy(void);
 
 #endif /* IAMROOT_REGISTRY_H */

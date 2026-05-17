@@ -76,10 +76,20 @@ NXC_DIR  := modules/netfilter_xtcompat_cve_2021_22555
 NXC_SRCS := $(NXC_DIR)/iamroot_modules.c
 NXC_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NXC_SRCS))
 
+# Family: af_packet (CVE-2017-7308)
+AFP_DIR  := modules/af_packet_cve_2017_7308
+AFP_SRCS := $(AFP_DIR)/iamroot_modules.c
+AFP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(AFP_SRCS))
+
+# Family: fuse_legacy (CVE-2022-0185)
+FUL_DIR  := modules/fuse_legacy_cve_2022_0185
+FUL_SRCS := $(FUL_DIR)/iamroot_modules.c
+FUL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(FUL_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS)
 
 .PHONY: all clean debug static help
 

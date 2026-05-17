@@ -349,6 +349,8 @@ int main(int argc, char **argv)
     iamroot_register_dirty_cow();
     iamroot_register_ptrace_traceme();
     iamroot_register_netfilter_xtcompat();
+    iamroot_register_af_packet();
+    iamroot_register_fuse_legacy();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};
