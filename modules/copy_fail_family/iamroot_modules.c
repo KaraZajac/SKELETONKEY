@@ -24,6 +24,9 @@
 #include "src/dirtyfrag_esp.h"
 #include "src/dirtyfrag_esp6.h"
 #include "src/dirtyfrag_rxrpc.h"
+#include "src/mitigate.h"
+
+#include <sys/stat.h>
 
 static void apply_ctx(const struct iamroot_ctx *ctx)
 {
@@ -32,6 +35,47 @@ static void apply_ctx(const struct iamroot_ctx *ctx)
     dirtyfail_json          = ctx->json;
     /* dirtyfail_no_revert is intentionally not driven from ctx —
      * it's a debug knob; default stays off. */
+}
+
+/* ----- Family-wide --mitigate / --cleanup -----
+ *
+ * The family-wide mitigation (blacklist algif_aead + esp4 + esp6 + rxrpc,
+ * set apparmor_restrict_unprivileged_userns=1, drop_caches) is the same
+ * for every member of this family. All 5 modules' .mitigate fields
+ * therefore point at the same wrapper.
+ *
+ * For .cleanup we route based on visible state:
+ *   - If the mitigation conf file is present, the user most recently
+ *     ran --mitigate → revert that.
+ *   - Otherwise the user ran --exploit → evict /etc/passwd from page
+ *     cache.
+ * This is a heuristic, not a state machine. Sufficient for the common
+ * usage patterns. */
+
+#define CFF_MITIGATE_CONF "/etc/modprobe.d/dirtyfail-mitigations.conf"
+
+static iamroot_result_t copy_fail_family_mitigate(const struct iamroot_ctx *ctx)
+{
+    apply_ctx(ctx);
+    return (iamroot_result_t)mitigate_apply();
+}
+
+static iamroot_result_t copy_fail_family_cleanup(const struct iamroot_ctx *ctx)
+{
+    apply_ctx(ctx);
+    struct stat st;
+    if (stat(CFF_MITIGATE_CONF, &st) == 0) {
+        if (!ctx->json) {
+            fprintf(stderr, "[*] copy_fail_family: detected mitigation conf "
+                            "(%s); reverting mitigation\n", CFF_MITIGATE_CONF);
+        }
+        return (iamroot_result_t)mitigate_revert();
+    }
+    if (!ctx->json) {
+        fprintf(stderr, "[*] copy_fail_family: no mitigation conf; "
+                        "evicting /etc/passwd from page cache\n");
+    }
+    return try_revert_passwd_page_cache() ? IAMROOT_OK : IAMROOT_TEST_ERROR;
 }
 
 /* ----- copy_fail (CVE-2026-31431) ----- */
@@ -91,8 +135,8 @@ const struct iamroot_module copy_fail_module = {
     .kernel_range   = "≤ 6.12.84, fixed mainline 2026-04-22",
     .detect         = copy_fail_detect_wrap,
     .exploit        = copy_fail_exploit_wrap,
-    .mitigate       = NULL,
-    .cleanup        = NULL,
+    .mitigate       = copy_fail_family_mitigate,
+    .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = NULL,
@@ -121,8 +165,8 @@ const struct iamroot_module copy_fail_gcm_module = {
     .kernel_range = "same as copy_fail; rfc4106(gcm(aes)) not in modprobe blacklist",
     .detect       = copy_fail_gcm_detect_wrap,
     .exploit      = copy_fail_gcm_exploit_wrap,
-    .mitigate       = NULL,
-    .cleanup        = NULL,
+    .mitigate       = copy_fail_family_mitigate,
+    .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = NULL,
@@ -151,8 +195,8 @@ const struct iamroot_module dirty_frag_esp_module = {
     .kernel_range = "same family as copy_fail; xfrm-ESP path",
     .detect       = dirty_frag_esp_detect_wrap,
     .exploit      = dirty_frag_esp_exploit_wrap,
-    .mitigate       = NULL,
-    .cleanup        = NULL,
+    .mitigate       = copy_fail_family_mitigate,
+    .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = NULL,
@@ -181,8 +225,8 @@ const struct iamroot_module dirty_frag_esp6_module = {
     .kernel_range = "same family as copy_fail; xfrm-ESP6 path; V6 STORE shift auto-calibrated",
     .detect       = dirty_frag_esp6_detect_wrap,
     .exploit      = dirty_frag_esp6_exploit_wrap,
-    .mitigate       = NULL,
-    .cleanup        = NULL,
+    .mitigate       = copy_fail_family_mitigate,
+    .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = NULL,
@@ -211,8 +255,8 @@ const struct iamroot_module dirty_frag_rxrpc_module = {
     .kernel_range = "kernels exposing AF_RXRPC + rxkad with fcrypt fallback",
     .detect       = dirty_frag_rxrpc_detect_wrap,
     .exploit      = dirty_frag_rxrpc_exploit_wrap,
-    .mitigate       = NULL,
-    .cleanup        = NULL,
+    .mitigate       = copy_fail_family_mitigate,
+    .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = NULL,

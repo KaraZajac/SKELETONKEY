@@ -28,6 +28,20 @@ Status legend:
 | CVE-2026-31402 | NFS replay-cache heap overflow | LPE (NFS server) | mainline 2026-04-03 | — | ⚪ | Candidate. Different audience (NFS servers) — TBD whether in-scope. |
 | CVE-TBD | Fragnesia (ESP shared-frag in-place encrypt) | LPE (page-cache write) | mainline TBD | `_stubs/fragnesia_TBD` | ⚪ | Stub. Per `findings/audit_leak_write_modprobe_backups_2026-05-16.md`, requires CAP_NET_ADMIN in userns netns — may or may not be in-scope depending on target environment. |
 
+## Operations supported per module
+
+Symbols: ✓ = supported, — = not applicable / no automated path.
+
+| Module | --scan (detect) | --exploit | --mitigate | --cleanup | --detect-rules |
+|---|---|---|---|---|---|
+| copy_fail | ✓ | ✓ | ✓ (blacklist algif_aead + AA sysctl) | ✓ (revert mit or evict page cache) | ✓ (auditd + sigma) |
+| copy_fail_gcm | ✓ | ✓ | ✓ (same family-wide) | ✓ | ✓ |
+| dirty_frag_esp | ✓ | ✓ | ✓ (same family-wide) | ✓ | ✓ |
+| dirty_frag_esp6 | ✓ | ✓ | ✓ (same family-wide) | ✓ | ✓ |
+| dirty_frag_rxrpc | ✓ | ✓ | ✓ (same family-wide) | ✓ | ✓ |
+| dirty_pipe | ✓ | ✓ | — (only fix is upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
+| entrybleed | ✓ | ✓ (leak kbase) | — (no canonical patch) | — | ✓ (sigma informational) |
+
 ## Pipeline for additions
 
 1. Bug must be **patched in upstream mainline** (we don't bundle

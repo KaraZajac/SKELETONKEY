@@ -115,12 +115,23 @@ primitive** that other modules can chain. Bundled because:
       embedded C string. Self-contained binary, no data-dir install needed.
 - [ ] Sample SOC playbook in `docs/DETECTION_PLAYBOOK.md` — followup
 
-## Phase 6 — Mitigation mode
+## Phase 6 — Mitigation mode (PARTIAL — copy_fail_family bridged 2026-05-16)
 
-- [ ] `iamroot --mitigate` walks the host's vulnerabilities, applies
-      temporary sysctl / module-blacklist / LSM workarounds
-- [ ] Per-CVE rollback procedure if the mitigation breaks something
-- [ ] Idempotent: running twice is safe
+- [x] copy_fail_family: `iamroot --mitigate copy_fail` (or any family
+      member) blacklists algif_aead + esp4 + esp6 + rxrpc, sets
+      `kernel.apparmor_restrict_unprivileged_userns=1`, drops page
+      cache. Bridged from existing DIRTYFAIL `mitigate_apply()`.
+- [x] copy_fail_family: `iamroot --cleanup <name>` routes by visible
+      state: if `/etc/modprobe.d/dirtyfail-mitigations.conf` exists →
+      `mitigate_revert()`; else evict /etc/passwd page cache. Heuristic
+      sufficient for common usage patterns.
+- [x] dirty_pipe: `iamroot --cleanup dirty_pipe` evicts /etc/passwd
+      (already landed in Phase 2 complete).
+- [ ] dirty_pipe `--mitigate`: only real fix is "upgrade your kernel";
+      no automated mitigation possible. Document and skip.
+- [ ] entrybleed `--mitigate`: same — no canonical patch; document.
+- [ ] Idempotent re-run safety: copy_fail_family's apply is already
+      idempotent (overwrites conf files). Re-verify per module.
 
 ## Phase 7+ — More modules
 
