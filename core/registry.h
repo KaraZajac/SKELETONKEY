@@ -34,5 +34,6 @@ void iamroot_register_af_packet(void);
 void iamroot_register_fuse_legacy(void);
 void iamroot_register_stackrot(void);
 void iamroot_register_af_packet2(void);
+void iamroot_register_cgroup_release_agent(void);
 
 #endif /* IAMROOT_REGISTRY_H */

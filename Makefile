@@ -96,10 +96,15 @@ AFP2_DIR  := modules/af_packet2_cve_2020_14386
 AFP2_SRCS := $(AFP2_DIR)/iamroot_modules.c
 AFP2_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(AFP2_SRCS))
 
+# Family: cgroup_release_agent (CVE-2022-0492)
+CRA_DIR  := modules/cgroup_release_agent_cve_2022_0492
+CRA_SRCS := $(CRA_DIR)/iamroot_modules.c
+CRA_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CRA_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS)
 
 .PHONY: all clean debug static help
 
