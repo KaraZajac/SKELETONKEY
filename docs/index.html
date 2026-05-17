@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKELETONKEY — Curated Linux LPE corpus with detection rules</title>
+<meta name="description" content="One curated binary. 28 Linux privilege-escalation exploits from 2016 → 2026. Auditd + sigma + yara + falco rules in the box. One command picks the safest LPE and runs it.">
+<meta property="og:title" content="SKELETONKEY — Curated Linux LPE corpus">
+<meta property="og:description" content="28 Linux LPE exploits, 2016 → 2026, with detection rules in the box. One command picks the safest one and runs it.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://karazajac.github.io/SKELETONKEY/">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <span class="nav-brand">SKELETONKEY</span>
+  <div class="nav-links">
+    <a href="https://github.com/KaraZajac/SKELETONKEY">GitHub</a>
+    <a href="https://github.com/KaraZajac/SKELETONKEY/releases/latest">Releases</a>
+    <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">CVEs</a>
+    <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/DEFENDERS.md">Defenders</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="container">
+    <h1>SKELETONKEY</h1>
+    <p class="tag">
+      One curated binary. <strong>28 Linux LPE exploits</strong> from
+      2016 → 2026. Detection rules in the box.
+      <strong>One command picks the safest one and runs it.</strong>
+    </p>
+
+    <div class="install-block">
+      <button class="copy" onclick="copyInstall(this)">copy</button>
+<pre id="install-cmd"><span class="prompt">$</span> curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
+  &amp;&amp; skeletonkey --auto --i-know</pre>
+    </div>
+
+    <p class="warn">⚠ Authorized testing only — see <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ETHICS.md">ETHICS.md</a></p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/KaraZajac/SKELETONKEY/releases/latest">Latest release</a>
+      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY">View on GitHub</a>
+      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">Full CVE inventory</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="container">
+    <h2>Why this exists</h2>
+    <p class="lead">
+      Most Linux privesc tooling is broken in one of three ways:
+    </p>
+    <ul class="tight">
+      <li><strong>linux-exploit-suggester / linpeas</strong> — tell you what <em>might</em> work, run nothing</li>
+      <li><strong>auto-root-exploit / kernelpop</strong> — bundle exploits but ship no detection signatures and went stale years ago</li>
+      <li><strong>Per-CVE PoC repos</strong> — one author, one distro, abandoned within months</li>
+    </ul>
+    <p class="lead" style="margin-top:1rem">
+      SKELETONKEY is one binary, actively maintained, with detection
+      rules for every CVE it bundles — same project for red and blue
+      teams.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Corpus at a glance</h2>
+
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-num">28</span>
+        <span class="stat-label">total modules</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num green">14</span>
+        <span class="stat-label">🟢 land root by default</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num yellow">14</span>
+        <span class="stat-label">🟡 primitive + opt-in chain</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num">10y</span>
+        <span class="stat-label">2016 → 2026 coverage</span>
+      </div>
+    </div>
+
+    <h3 style="color: var(--green);">🟢 Lands root on a vulnerable host</h3>
+    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Structural exploits + page-cache writes. No per-kernel offsets needed.</p>
+    <div class="pills">
+      <span class="pill green">copy_fail</span>
+      <span class="pill green">copy_fail_gcm</span>
+      <span class="pill green">dirty_frag_esp</span>
+      <span class="pill green">dirty_frag_esp6</span>
+      <span class="pill green">dirty_frag_rxrpc</span>
+      <span class="pill green">dirty_pipe</span>
+      <span class="pill green">dirty_cow</span>
+      <span class="pill green">pwnkit</span>
+      <span class="pill green">overlayfs</span>
+      <span class="pill green">overlayfs_setuid</span>
+      <span class="pill green">cgroup_release_agent</span>
+      <span class="pill green">ptrace_traceme</span>
+      <span class="pill green">sudoedit_editor</span>
+      <span class="pill green">entrybleed</span>
+    </div>
+
+    <h3 style="color: var(--yellow);">🟡 Fires kernel primitive · opt-in <code>--full-chain</code></h3>
+    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Default returns <code>EXPLOIT_FAIL</code> honestly. With <code>--full-chain</code> + resolved offsets, runs the shared modprobe_path finisher.</p>
+    <div class="pills">
+      <span class="pill yellow">nf_tables</span>
+      <span class="pill yellow">nft_set_uaf</span>
+      <span class="pill yellow">nft_fwd_dup</span>
+      <span class="pill yellow">nft_payload</span>
+      <span class="pill yellow">netfilter_xtcompat</span>
+      <span class="pill yellow">af_packet</span>
+      <span class="pill yellow">af_packet2</span>
+      <span class="pill yellow">af_unix_gc</span>
+      <span class="pill yellow">cls_route4</span>
+      <span class="pill yellow">fuse_legacy</span>
+      <span class="pill yellow">stackrot</span>
+      <span class="pill yellow">sudo_samedit</span>
+      <span class="pill yellow">sequoia</span>
+      <span class="pill yellow">vmwgfx</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Who it's for</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>🔴 Red team / pentesters</h3>
+        <p>One tested binary. <code>--auto</code> ranks vulnerable modules by safety and runs the safest. Honest scope reporting — never claims root it didn't actually get. No more curating stale PoC repos.</p>
+      </div>
+      <div class="card">
+        <h3>🔵 Blue team / SOC</h3>
+        <p>Auditd + sigma + yara + falco rules for every CVE. One command ships SIEM coverage: <code>--detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules</code>.</p>
+      </div>
+      <div class="card">
+        <h3>🛠 Sysadmins</h3>
+        <p><code>skeletonkey --scan</code> (no sudo needed) tells you which boxes still need patching. JSON output for CI gates. Fleet-scan tool included. No SaaS, no telemetry.</p>
+      </div>
+      <div class="card">
+        <h3>🎓 CTF / training</h3>
+        <p>Reproducible LPE environment with public CVEs across a 10-year timeline. Each module documents the bug, the trigger, and the fix. Detection rules let you practice both sides.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>What it looks like</h2>
+    <p class="lead"><code>--auto</code> on a vulnerable Ubuntu 22.04 box:</p>
+
+<pre class="code"><span class="prompt">$</span> id
+uid=1000(kara) gid=1000(kara) groups=1000(kara)
+
+<span class="prompt">$</span> skeletonkey --auto --i-know
+<span class="hl-muted">[*]</span> auto: host=demo kernel=5.15.0-56-generic arch=x86_64
+<span class="hl-muted">[*]</span> auto: scanning 28 modules for vulnerabilities...
+<span class="hl-green">[+]</span> auto: dirty_pipe             <span class="hl-yellow">VULNERABLE</span> (safety rank 90)
+<span class="hl-green">[+]</span> auto: cgroup_release_agent   <span class="hl-yellow">VULNERABLE</span> (safety rank 98)
+<span class="hl-green">[+]</span> auto: pwnkit                 <span class="hl-yellow">VULNERABLE</span> (safety rank 100)
+
+<span class="hl-muted">[*]</span> auto: 3 vulnerable modules found. Safest is <span class="hl-accent">'pwnkit'</span> (rank 100).
+<span class="hl-muted">[*]</span> auto: launching --exploit pwnkit...
+
+<span class="hl-green">[+]</span> pwnkit: writing gconv-modules cache + payload.so...
+<span class="hl-green">[+]</span> pwnkit: execve(pkexec) with NULL argv + crafted envp...
+<span class="hl-green">#</span> id
+uid=0(root) gid=0(root) groups=0(root)</pre>
+
+    <p style="color: var(--text-muted); font-size: 0.92rem; margin-top: 1rem">
+      Safety ranking goes <strong>structural escapes</strong> →
+      <strong>page-cache writes</strong> →
+      <strong>userspace cred-races</strong> →
+      <strong>kernel primitives</strong> →
+      <strong>kernel races</strong>. The goal is to never crash a
+      production box looking for root.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>The verified-vs-claimed bar</h2>
+    <p class="lead">
+      Most public PoC repos hardcode offsets for one kernel build and
+      silently break elsewhere. SKELETONKEY refuses to ship fabricated
+      offsets.
+    </p>
+    <ul class="tight">
+      <li>The shared <code>--full-chain</code> finisher returns <code>EXPLOIT_OK</code> only when a setuid bash sentinel file <em>actually appears</em></li>
+      <li>Modules with a primitive but no portable cred-overwrite chain default to firing the primitive + grooming the slab + recording a witness, then return <code>EXPLOIT_FAIL</code> with diagnostic</li>
+      <li>Operators populate the offset table once per kernel via <code>skeletonkey --dump-offsets</code> (parses <code>/proc/kallsyms</code> or <code>/boot/System.map</code>) and upstream the entry via PR — see <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a></li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Quickstart commands</h2>
+
+<pre class="code"><span class="cmt"># Install (x86_64 / arm64; checksum-verified)</span>
+<span class="prompt">$</span> curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh
+
+<span class="cmt"># What's this box vulnerable to?  (no sudo)</span>
+<span class="prompt">$</span> skeletonkey --scan
+
+<span class="cmt"># Pick the safest LPE and run it</span>
+<span class="prompt">$</span> skeletonkey --auto --i-know
+
+<span class="cmt"># Deploy detection rules (needs sudo to write into /etc/audit/rules.d/)</span>
+<span class="prompt">$</span> skeletonkey --detect-rules --format=auditd \
+    | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
+
+<span class="cmt"># Fleet scan — many hosts via SSH, aggregated JSON for SIEM</span>
+<span class="prompt">$</span> ./tools/skeletonkey-fleet-scan.sh --binary skeletonkey \
+    --ssh-key ~/.ssh/id_rsa hosts.txt</pre>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Status</h2>
+    <p class="lead">
+      <strong>v0.5.0</strong> cut 2026-05-17. 28 modules build clean
+      on Debian 13 (kernel 6.12) and refuse cleanly on patched hosts.
+      Empirical end-to-end validation on a vulnerable-kernel VM matrix
+      is the next roadmap item; until then, the corpus is best
+      understood as "compiles + detects + structurally correct +
+      honest on failure."
+    </p>
+    <p style="margin-top:1rem">
+      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/ROADMAP.md">Read the roadmap</a>
+      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">How to contribute</a>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      Each module credits the original CVE reporter and PoC author in its
+      <code>NOTICE.md</code>. The research credit belongs to the people
+      who found the bugs.
+    </p>
+    <p>
+      MIT licensed ·
+      <a href="https://github.com/KaraZajac/SKELETONKEY">github.com/KaraZajac/SKELETONKEY</a>
+    </p>
+  </div>
+</footer>
+
+<script>
+function copyInstall(btn) {
+  var cmd = document.getElementById('install-cmd').innerText.replace(/^\$\s*/, '');
+  navigator.clipboard.writeText(cmd).then(function() {
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = 'copy';
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+}
+</script>
+
+</body>
+</html>
