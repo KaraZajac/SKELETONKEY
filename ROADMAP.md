@@ -85,11 +85,18 @@ primitive** that other modules can chain. Bundled because:
       Future enhancement: auto-detect via /boot/System.map or
       /proc/kallsyms if accessible.
 
-## Phase 4 — CI matrix
+## Phase 4 — CI matrix (PARTIAL — build-check landed 2026-05-16)
 
+- [x] `.github/workflows/build.yml`: matrix of {gcc, clang} ×
+      {default, debug} builds on every push and PR. Includes smoke
+      tests: `--version`, `--list`, `--scan`, `--detect-rules` in
+      both auditd and sigma formats. Build failure breaks the merge
+      gate. Static-build job runs continue-on-error (glibc + NSS
+      issue; revisit with musl-gcc).
 - [ ] Distro+kernel VM matrix in GitHub Actions (Ubuntu 20.04 /
       22.04 / 24.04 / 26.04, Debian 11 / 12 / 13, Alma 8 / 9 / 10,
-      Fedora 39 / 40 / 41)
+      Fedora 39 / 40 / 41). Needs self-hosted runners or paid VM
+      service; placeholder commented in build.yml.
 - [ ] Each module's exploit runs against matched-vulnerable VMs and
       MUST land root; runs against patched VMs and MUST fail at
       detect step

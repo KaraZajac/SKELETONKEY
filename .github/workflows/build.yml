@@ -1,0 +1,91 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+        flavor: [default, debug]
+    name: build (${{ matrix.cc }} / ${{ matrix.flavor }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang make linux-libc-dev
+
+      - name: show compiler
+        run: ${{ matrix.cc }} --version
+
+      - name: build
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          if [ "${{ matrix.flavor }}" = "debug" ]; then
+            make debug
+          else
+            make
+          fi
+
+      - name: sanity — iamroot --version
+        run: ./iamroot --version
+
+      - name: sanity — iamroot --list
+        run: ./iamroot --list
+
+      - name: sanity — iamroot --scan (no exploit; just detect)
+        run: ./iamroot --scan --no-color || true
+        # exit code may be nonzero (vulnerable host = exit 2, missing
+        # precond = exit 4) — that's diagnostic data, not CI failure
+
+      - name: sanity — --detect-rules auditd
+        run: ./iamroot --detect-rules --format=auditd | head -50
+
+      - name: sanity — --detect-rules sigma
+        run: ./iamroot --detect-rules --format=sigma | head -50
+
+  # Static build job: ensures the project links cleanly when -static is
+  # requested. Useful for deployment to minimal containers / fleet scans
+  # where shared-libc availability isn't guaranteed.
+  static-build:
+    runs-on: ubuntu-latest
+    name: static-build
+    steps:
+      - uses: actions/checkout@v4
+      - name: install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential make linux-libc-dev libc6-dev
+      - name: make static
+        # Glibc static linking pulls in NSS at runtime which breaks
+        # getpwnam; the legacy DIRTYFAIL Makefile noted this. For now,
+        # we allow this job to fail loudly so we know if a regression
+        # makes the regular dynamic build also break, but we don't
+        # gate the merge on it. Migrate to musl-gcc when we want a
+        # truly portable static binary.
+        continue-on-error: true
+        run: make static && ls -la iamroot
+
+  # Phase 4 followup (placeholder): kernel-VM matrix. Each entry runs
+  # the binary against a VM running a specific (vulnerable or patched)
+  # kernel and asserts the correct detect() verdict + exploit behavior.
+  # Requires self-hosted runners or a paid VM service; not enabled yet.
+  #
+  # kernel-vm-matrix:
+  #   strategy:
+  #     matrix:
+  #       distro: [ubuntu-22.04, debian-11, alma-9, fedora-40]
+  #       kernel: [5.10.50, 5.13.0, 5.15.30, 6.1.x, 6.12.x]
+  #   runs-on: [self-hosted, kvm-host]
+  #   ...
