@@ -86,10 +86,20 @@ FUL_DIR  := modules/fuse_legacy_cve_2022_0185
 FUL_SRCS := $(FUL_DIR)/iamroot_modules.c
 FUL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(FUL_SRCS))
 
+# Family: stackrot (CVE-2023-3269)
+STR_DIR  := modules/stackrot_cve_2023_3269
+STR_SRCS := $(STR_DIR)/iamroot_modules.c
+STR_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(STR_SRCS))
+
+# Family: af_packet2 (CVE-2020-14386) — same family as af_packet
+AFP2_DIR  := modules/af_packet2_cve_2020_14386
+AFP2_SRCS := $(AFP2_DIR)/iamroot_modules.c
+AFP2_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(AFP2_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/iamroot.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS)
 
 .PHONY: all clean debug static help
 

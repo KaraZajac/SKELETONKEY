@@ -32,5 +32,7 @@ void iamroot_register_ptrace_traceme(void);
 void iamroot_register_netfilter_xtcompat(void);
 void iamroot_register_af_packet(void);
 void iamroot_register_fuse_legacy(void);
+void iamroot_register_stackrot(void);
+void iamroot_register_af_packet2(void);
 
 #endif /* IAMROOT_REGISTRY_H */

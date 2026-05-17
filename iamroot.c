@@ -580,6 +580,8 @@ int main(int argc, char **argv)
     iamroot_register_netfilter_xtcompat();
     iamroot_register_af_packet();
     iamroot_register_fuse_legacy();
+    iamroot_register_stackrot();
+    iamroot_register_af_packet2();
 
     enum mode mode = MODE_SCAN;
     struct iamroot_ctx ctx = {0};
