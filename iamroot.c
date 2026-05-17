@@ -17,6 +17,9 @@
 
 #include "core/module.h"
 #include "core/registry.h"
+#include "core/offsets.h"
+
+#include <time.h>
 
 #include <getopt.h>
 #include <stdbool.h>
@@ -25,7 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define IAMROOT_VERSION "0.3.0"
+#define IAMROOT_VERSION "0.3.1"
 
 static const char BANNER[] =
 "\n"
@@ -57,6 +60,11 @@ static void usage(const char *prog)
 "                        files in /etc, file capabilities, sudo NOPASSWD\n"
 "                        (complements --scan; answers 'is this box\n"
 "                        generally privesc-exposed?')\n"
+"  --dump-offsets        walk /proc/kallsyms + /boot/System.map and emit a\n"
+"                        C struct-entry ready to paste into core/offsets.c's\n"
+"                        kernel_table[] for the --full-chain finisher.\n"
+"                        Needs root (or kernel.kptr_restrict=0) to read\n"
+"                        kallsyms. See docs/OFFSETS.md.\n"
 "  --version             print version\n"
 "  --help                this message\n"
 "\n"
@@ -89,6 +97,7 @@ enum mode {
     MODE_DETECT_RULES,
     MODE_MODULE_INFO,
     MODE_AUDIT,
+    MODE_DUMP_OFFSETS,
     MODE_HELP,
     MODE_VERSION,
 };
@@ -428,6 +437,103 @@ static int cmd_audit(const struct iamroot_ctx *ctx)
     return 0;
 }
 
+/* --dump-offsets: walk /proc/kallsyms + /boot/System.map for the running
+ * kernel and emit a ready-to-paste C struct entry for kernel_table[] in
+ * core/offsets.c. Operators run this once on a kernel they have root on
+ * (or kptr_restrict=0), then upstream the entry so --full-chain works
+ * out-of-the-box on that build for everyone. */
+static int cmd_dump_offsets(const struct iamroot_ctx *ctx)
+{
+    (void)ctx;
+    struct iamroot_kernel_offsets off;
+    int n = iamroot_offsets_resolve(&off);
+
+    if (off.kbase == 0) {
+        fprintf(stderr,
+"[-] dump-offsets: couldn't resolve a kernel base address.\n"
+"\n"
+"    /proc/kallsyms returned all-zero addresses (kptr_restrict is\n"
+"    enforcing). /boot/System.map-%s wasn't readable either.\n"
+"\n"
+"    Try one of:\n"
+"      sudo iamroot --dump-offsets\n"
+"      sudo sysctl kernel.kptr_restrict=0; iamroot --dump-offsets\n"
+"      sudo chmod 0644 /boot/System.map-$(uname -r); iamroot --dump-offsets\n",
+            off.kernel_release[0] ? off.kernel_release : "$(uname -r)");
+        return 1;
+    }
+    if (n == 0) {
+        fprintf(stderr,
+"[-] dump-offsets: kbase resolved but no symbols. Sources tried: env,\n"
+"    /proc/kallsyms, /boot/System.map. Check that the kernel symbols\n"
+"    you need (modprobe_path / init_task / poweroff_cmd) actually exist\n"
+"    in the symbol files.\n");
+        return 1;
+    }
+
+    time_t now = time(NULL);
+    struct tm tm; localtime_r(&now, &tm);
+
+    fprintf(stdout,
+"/* Generated %04d-%02d-%02d by `iamroot --dump-offsets`.\n"
+" * Host kernel: %s%s%s\n"
+" * Resolved fields: modprobe_path=%s init_task=%s cred=%s\n"
+" * Paste this entry into kernel_table[] in core/offsets.c.\n"
+" */\n",
+        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+        off.kernel_release,
+        off.distro[0] ? "  distro=" : "",
+        off.distro[0] ? off.distro : "",
+        iamroot_offset_source_name(off.source_modprobe),
+        iamroot_offset_source_name(off.source_init_task),
+        iamroot_offset_source_name(off.source_cred));
+
+    fprintf(stdout,
+"{ .release_glob       = \"%s\",\n", off.kernel_release);
+    if (off.distro[0]) {
+        fprintf(stdout,
+"  .distro_match       = \"%s\",\n", off.distro);
+    } else {
+        fprintf(stdout,
+"  .distro_match       = NULL,\n");
+    }
+    if (off.modprobe_path) {
+        fprintf(stdout,
+"  .rel_modprobe_path  = 0x%lx,\n",
+            (unsigned long)(off.modprobe_path - off.kbase));
+    }
+    if (off.poweroff_cmd) {
+        fprintf(stdout,
+"  .rel_poweroff_cmd   = 0x%lx,\n",
+            (unsigned long)(off.poweroff_cmd - off.kbase));
+    }
+    if (off.init_task) {
+        fprintf(stdout,
+"  .rel_init_task      = 0x%lx,\n",
+            (unsigned long)(off.init_task - off.kbase));
+    }
+    if (off.init_cred) {
+        fprintf(stdout,
+"  .rel_init_cred      = 0x%lx,\n",
+            (unsigned long)(off.init_cred - off.kbase));
+    }
+    if (off.cred_offset_real) {
+        fprintf(stdout,
+"  .cred_offset_real   = 0x%x,\n", off.cred_offset_real);
+    }
+    if (off.cred_offset_eff) {
+        fprintf(stdout,
+"  .cred_offset_eff    = 0x%x,\n", off.cred_offset_eff);
+    }
+    fprintf(stdout,
+"},\n");
+
+    fprintf(stderr,
+"\n[+] dumped %d resolved fields. Verify offsets, then upstream this\n"
+"    entry via a PR to https://github.com/KaraZajac/IAMROOT.\n", n);
+    return 0;
+}
+
 /* --module-info <name>: dump everything we know about one module.
  * Human-readable by default, JSON with --json. Includes the full
  * detection-rule text bodies for that module. */
@@ -610,6 +716,7 @@ int main(int argc, char **argv)
         {"detect-rules",  no_argument,       0, 'D'},
         {"module-info",   required_argument, 0, 'I'},
         {"audit",         no_argument,       0, 'A'},
+        {"dump-offsets",  no_argument,       0,  8 },
         {"format",        required_argument, 0,  6 },
         {"i-know",        no_argument,       0,  1 },
         {"active",        no_argument,       0,  2 },
@@ -639,6 +746,7 @@ int main(int argc, char **argv)
         case  4 : ctx.json = true; break;
         case  5 : ctx.no_color = true; break;
         case  7 : ctx.full_chain = true; break;
+        case  8 : mode = MODE_DUMP_OFFSETS; break;
         case  6 :
             if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
             else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;
@@ -665,6 +773,7 @@ int main(int argc, char **argv)
     if (mode == MODE_MODULE_INFO) return cmd_module_info(target, &ctx);
     if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
     if (mode == MODE_AUDIT) return cmd_audit(&ctx);
+    if (mode == MODE_DUMP_OFFSETS) return cmd_dump_offsets(&ctx);
 
     /* --exploit / --mitigate / --cleanup all take a target */
     if (target == NULL) {

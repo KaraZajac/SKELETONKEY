@@ -23,7 +23,12 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts (v0.3.0):** 🟢 13 · 🟡 11 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
+**Counts (v0.3.1):** 🟢 13 · 🟡 11 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
+
+Every module ships a `NOTICE.md` crediting the original CVE
+reporter and PoC author. `iamroot --dump-offsets` populates the
+embedded offset table for new kernel builds — operators with
+root on a host can upstream their kernel's offsets via PR.
 
 ## Inventory
 

