@@ -53,6 +53,10 @@ static void usage(const char *prog)
 "                        (combine with --format=auditd|sigma|yara|falco)\n"
 "  --module-info <name>  full metadata + rule bodies for one module\n"
 "                        (combine with --json for machine-readable output)\n"
+"  --audit               system-hygiene scan: setuid binaries, world-writable\n"
+"                        files in /etc, file capabilities, sudo NOPASSWD\n"
+"                        (complements --scan; answers 'is this box\n"
+"                        generally privesc-exposed?')\n"
 "  --version             print version\n"
 "  --help                this message\n"
 "\n"
@@ -78,6 +82,7 @@ enum mode {
     MODE_CLEANUP,
     MODE_DETECT_RULES,
     MODE_MODULE_INFO,
+    MODE_AUDIT,
     MODE_HELP,
     MODE_VERSION,
 };
@@ -189,6 +194,230 @@ static int cmd_list(const struct iamroot_ctx *ctx)
         const struct iamroot_module *m = iamroot_module_at(i);
         fprintf(stdout, "%-20s %-18s %-25s %s\n",
                 m->name, m->cve, m->family, m->summary);
+    }
+    return 0;
+}
+
+/* --audit: system-hygiene scan beyond per-CVE detect. Inventories
+ * setuid binaries, world-writable system files, capability-bound
+ * non-standard binaries, NOPASSWD sudo entries. Complements --scan;
+ * answers "is this box generally exposed to privesc?" beyond
+ * "does it have any of the known kernel CVEs?".
+ *
+ * Output is structured findings. --json switches to a single JSON
+ * object with arrays per category. Side-effect-free: read-only
+ * filesystem walks. */
+struct finding {
+    const char *category;   /* "setuid", "world_writable", "capability", "sudo" */
+    char        path[512];
+    char        note[256];
+};
+
+static void print_finding_human(const struct finding *f)
+{
+    fprintf(stdout, "[%-15s] %-50s  %s\n",
+            f->category, f->path, f->note);
+}
+
+/* Walk one filesystem path looking for setuid-root binaries. Bounded
+ * via find(1) for portability (every distro ships find). */
+static int audit_setuid(int *count_out, bool json,
+                        bool *first_json_emitted)
+{
+    /* Use popen() on `find` rather than recursive opendir() — much
+     * simpler, every distro ships find. Limit to common
+     * binary-bearing dirs to keep runtime reasonable. */
+    static const char *cmd =
+        "find /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin "
+        "-xdev -perm -4000 -type f 2>/dev/null";
+    FILE *p = popen(cmd, "r");
+    if (!p) return -1;
+    char line[1024];
+    int n = 0;
+    /* Set of suspicious binaries — these are notable in the LPE world.
+     * The full setuid inventory is informational; this list flags
+     * specific items as "review this". */
+    static const struct { const char *path; const char *note; } SUSP[] = {
+        {"/usr/bin/pkexec",  "Pwnkit CVE-2021-4034 history; tightly audit polkit policy"},
+        {"/usr/bin/mount.cifs", "historically setuid-root; check distro hardening"},
+        {"/usr/bin/fusermount3", "historically setuid; userns-related LPE history"},
+        {"/usr/bin/passwd",  "expected setuid; verify integrity"},
+        {"/usr/bin/sudo",    "expected setuid; verify integrity + sudoers"},
+        {"/usr/bin/su",      "expected setuid; verify integrity"},
+        {"/usr/lib/snapd/snap-confine", "Ubuntu snap sandbox-escape history"},
+        {NULL, NULL},
+    };
+    while (fgets(line, sizeof line, p)) {
+        size_t L = strlen(line);
+        while (L && (line[L-1] == '\n' || line[L-1] == '\r')) line[--L] = 0;
+        const char *note = "setuid binary — review";
+        for (size_t i = 0; SUSP[i].path; i++) {
+            if (strcmp(line, SUSP[i].path) == 0) { note = SUSP[i].note; break; }
+        }
+        if (json) {
+            char *p_esc = json_escape(line);
+            char *n_esc = json_escape(note);
+            fprintf(stdout, "%s{\"category\":\"setuid\",\"path\":\"%s\",\"note\":\"%s\"}",
+                    *first_json_emitted ? "," : "",
+                    p_esc ? p_esc : "", n_esc ? n_esc : "");
+            *first_json_emitted = true;
+            free(p_esc); free(n_esc);
+        } else {
+            struct finding f = { .category = "setuid" };
+            snprintf(f.path, sizeof f.path, "%s", line);
+            snprintf(f.note, sizeof f.note, "%s", note);
+            print_finding_human(&f);
+        }
+        n++;
+    }
+    pclose(p);
+    if (count_out) *count_out = n;
+    return 0;
+}
+
+/* Look for world-writable files inside /etc. Catches obviously-broken
+ * filesystem permissions where any user can edit system config. */
+static int audit_world_writable(int *count_out, bool json,
+                                bool *first_json_emitted)
+{
+    static const char *cmd =
+        "find /etc -xdev -perm -0002 -type f 2>/dev/null";
+    FILE *p = popen(cmd, "r");
+    if (!p) return -1;
+    char line[1024];
+    int n = 0;
+    while (fgets(line, sizeof line, p)) {
+        size_t L = strlen(line);
+        while (L && (line[L-1] == '\n' || line[L-1] == '\r')) line[--L] = 0;
+        const char *note = "world-writable in /etc — anyone can edit";
+        if (json) {
+            char *p_esc = json_escape(line);
+            fprintf(stdout, "%s{\"category\":\"world_writable\",\"path\":\"%s\",\"note\":\"%s\"}",
+                    *first_json_emitted ? "," : "", p_esc ? p_esc : "", note);
+            *first_json_emitted = true;
+            free(p_esc);
+        } else {
+            struct finding f = { .category = "world_writable" };
+            snprintf(f.path, sizeof f.path, "%s", line);
+            snprintf(f.note, sizeof f.note, "%s", note);
+            print_finding_human(&f);
+        }
+        n++;
+    }
+    pclose(p);
+    if (count_out) *count_out = n;
+    return 0;
+}
+
+/* Find files with file capabilities set. cap_setuid+ep or
+ * cap_dac_override+ep on a non-standard binary = potential
+ * post-exploit persistence or a misconfigured capability grant. */
+static int audit_capabilities(int *count_out, bool json,
+                              bool *first_json_emitted)
+{
+    /* getcap is in libcap2-bin / libcap-progs depending on distro;
+     * skip cleanly if absent. */
+    if (access("/sbin/getcap", X_OK) != 0
+        && access("/usr/sbin/getcap", X_OK) != 0
+        && access("/usr/bin/getcap", X_OK) != 0) {
+        if (!json) {
+            fprintf(stderr, "[i] audit: getcap not installed — skipping capability scan\n");
+        }
+        if (count_out) *count_out = 0;
+        return 0;
+    }
+    static const char *cmd =
+        "getcap -r /usr/bin /usr/sbin /bin /sbin /usr/local 2>/dev/null";
+    FILE *p = popen(cmd, "r");
+    if (!p) return -1;
+    char line[1024];
+    int n = 0;
+    while (fgets(line, sizeof line, p)) {
+        size_t L = strlen(line);
+        while (L && (line[L-1] == '\n' || line[L-1] == '\r')) line[--L] = 0;
+        const char *note = "file capability set — verify legitimacy";
+        if (strstr(line, "cap_setuid+ep") || strstr(line, "cap_setgid+ep")
+            || strstr(line, "cap_dac_override+ep") || strstr(line, "cap_sys_admin+ep")) {
+            note = "high-power cap+ep — privesc-equivalent if attacker-writable";
+        }
+        if (json) {
+            char *p_esc = json_escape(line);
+            fprintf(stdout, "%s{\"category\":\"capability\",\"path\":\"%s\",\"note\":\"%s\"}",
+                    *first_json_emitted ? "," : "", p_esc ? p_esc : "", note);
+            *first_json_emitted = true;
+            free(p_esc);
+        } else {
+            struct finding f = { .category = "capability" };
+            snprintf(f.path, sizeof f.path, "%s", line);
+            snprintf(f.note, sizeof f.note, "%s", note);
+            print_finding_human(&f);
+        }
+        n++;
+    }
+    pclose(p);
+    if (count_out) *count_out = n;
+    return 0;
+}
+
+/* Check /etc/sudoers and /etc/sudoers.d for NOPASSWD entries. Many
+ * setups have legit NOPASSWD for service accounts; flag and let
+ * operator review. */
+static int audit_sudo_nopasswd(int *count_out, bool json,
+                               bool *first_json_emitted)
+{
+    static const char *cmd =
+        "grep -rIn -E '^[^#].*NOPASSWD' /etc/sudoers /etc/sudoers.d 2>/dev/null";
+    FILE *p = popen(cmd, "r");
+    if (!p) return -1;
+    char line[1024];
+    int n = 0;
+    while (fgets(line, sizeof line, p)) {
+        size_t L = strlen(line);
+        while (L && (line[L-1] == '\n' || line[L-1] == '\r')) line[--L] = 0;
+        const char *note = "sudo NOPASSWD entry — verify scope";
+        if (json) {
+            char *p_esc = json_escape(line);
+            fprintf(stdout, "%s{\"category\":\"sudo\",\"path\":\"%s\",\"note\":\"%s\"}",
+                    *first_json_emitted ? "," : "", p_esc ? p_esc : "", note);
+            *first_json_emitted = true;
+            free(p_esc);
+        } else {
+            struct finding f = { .category = "sudo" };
+            snprintf(f.path, sizeof f.path, "%s", line);
+            snprintf(f.note, sizeof f.note, "%s", note);
+            print_finding_human(&f);
+        }
+        n++;
+    }
+    pclose(p);
+    if (count_out) *count_out = n;
+    return 0;
+}
+
+static int cmd_audit(const struct iamroot_ctx *ctx)
+{
+    int n_setuid = 0, n_ww = 0, n_cap = 0, n_sudo = 0;
+    if (ctx->json) {
+        fprintf(stdout, "{\"version\":\"%s\",\"audit\":[", IAMROOT_VERSION);
+        bool first = false;
+        audit_setuid(&n_setuid, true, &first);
+        audit_world_writable(&n_ww, true, &first);
+        audit_capabilities(&n_cap, true, &first);
+        audit_sudo_nopasswd(&n_sudo, true, &first);
+        fprintf(stdout, "],\"summary\":{\"setuid\":%d,\"world_writable\":%d,"
+                        "\"capability\":%d,\"sudo_nopasswd\":%d}}\n",
+                n_setuid, n_ww, n_cap, n_sudo);
+    } else {
+        fprintf(stdout, "%-17s %-50s  %s\n", "CATEGORY", "PATH", "NOTE");
+        fprintf(stdout, "%-17s %-50s  %s\n", "--------", "----", "----");
+        bool first = false;
+        audit_setuid(&n_setuid, false, &first);
+        audit_world_writable(&n_ww, false, &first);
+        audit_capabilities(&n_cap, false, &first);
+        audit_sudo_nopasswd(&n_sudo, false, &first);
+        fprintf(stderr, "\n[*] audit summary: %d setuid, %d world-writable, "
+                        "%d capability-set, %d sudo NOPASSWD\n",
+                n_setuid, n_ww, n_cap, n_sudo);
     }
     return 0;
 }
@@ -366,6 +595,7 @@ int main(int argc, char **argv)
         {"cleanup",       required_argument, 0, 'C'},
         {"detect-rules",  no_argument,       0, 'D'},
         {"module-info",   required_argument, 0, 'I'},
+        {"audit",         no_argument,       0, 'A'},
         {"format",        required_argument, 0,  6 },
         {"i-know",        no_argument,       0,  1 },
         {"active",        no_argument,       0,  2 },
@@ -378,11 +608,12 @@ int main(int argc, char **argv)
     };
 
     int c, opt_idx;
-    while ((c = getopt_long(argc, argv, "SLDE:M:C:I:Vh", longopts, &opt_idx)) != -1) {
+    while ((c = getopt_long(argc, argv, "SLDAE:M:C:I:Vh", longopts, &opt_idx)) != -1) {
         switch (c) {
         case 'S': mode = MODE_SCAN; break;
         case 'L': mode = MODE_LIST; break;
         case 'D': mode = MODE_DETECT_RULES; break;
+        case 'A': mode = MODE_AUDIT; break;
         case 'I': mode = MODE_MODULE_INFO; target = optarg; break;
         case 'E': mode = MODE_EXPLOIT; target = optarg; break;
         case 'M': mode = MODE_MITIGATE; target = optarg; break;
@@ -417,6 +648,7 @@ int main(int argc, char **argv)
     if (mode == MODE_LIST) return cmd_list(&ctx);
     if (mode == MODE_MODULE_INFO) return cmd_module_info(target, &ctx);
     if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
+    if (mode == MODE_AUDIT) return cmd_audit(&ctx);
 
     /* --exploit / --mitigate / --cleanup all take a target */
     if (target == NULL) {
