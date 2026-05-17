@@ -1,10 +1,27 @@
 # SKELETONKEY
 
-> A curated, actively-maintained corpus of Linux kernel LPE exploits —
-> bundled with their detection signatures, patch status, and version
-> ranges. Run it on a system you own (or are authorized to test) and
-> it tells you which historical and recent CVEs that system is still
-> vulnerable to, and — with explicit confirmation — gets you root.
+[![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Modules](https://img.shields.io/badge/modules-28-brightgreen.svg)](CVES.md)
+[![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
+
+> **One curated binary. Twenty-eight Linux LPE exploits from 2016 → 2026.
+> Detection rules in the box. One command picks the safest one and runs it.**
+
+```bash
+curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
+  && skeletonkey --auto --i-know
+```
+
+**For red teams:** stop curating dead PoC repos. `skeletonkey --scan`
+tells you what works; `--auto` picks the safest one and pops shell.
+
+**For sysadmins:** run it on your fleet (or in CI) to know which boxes
+still need patching — same binary, same rules, no third-party SaaS.
+
+**For blue teams:** every module ships matching auditd + sigma rules.
+`skeletonkey --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules`
+gets you SIEM coverage for every CVE in the corpus.
 
 > ⚠️ **Authorized testing only.** SKELETONKEY is a research and red-team
 > tool. By using it you assert you have explicit authorization to test
