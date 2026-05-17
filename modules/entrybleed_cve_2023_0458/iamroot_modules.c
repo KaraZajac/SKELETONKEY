@@ -154,6 +154,46 @@ static iamroot_result_t entrybleed_detect(const struct iamroot_ctx *ctx)
     if (!ctx->json) {
         fprintf(stderr, "[!] entrybleed: KPTI active → "
                         "VULNERABLE (no canonical anti-EntryBleed patch in mainline)\n");
+    }
+
+    /* Active probe: run a quick reduced-rounds sweep to empirically
+     * confirm the technique works on this host. Some uncommon CPUs or
+     * exotic mitigations may neutralize prefetchnta timing in ways the
+     * meltdown sysfs node doesn't reflect; the active probe catches
+     * those. Probe is harmless — only reads timing, no syscalls of
+     * consequence. */
+    if (ctx->active_probe) {
+        if (!ctx->json) {
+            fprintf(stderr, "[*] entrybleed: running quick active probe "
+                            "(reduced-rounds KASLR sweep, ~1s)\n");
+        }
+        unsigned long kbase = entrybleed_leak_kbase_lib(0);
+        /* Sanity: kbase must be in the kernel high half AND
+         * KASLR-aligned (2MiB) AND non-zero. A real leak typically
+         * looks like 0xffffffff8X000000. */
+        bool sane = (kbase >= KERNEL_LOWER && kbase < KERNEL_UPPER
+                     && (kbase & 0x1fffff) == 0);
+        if (sane) {
+            if (!ctx->json) {
+                fprintf(stderr, "[!] entrybleed: ACTIVE PROBE CONFIRMED — "
+                                "leak yields plausible kbase 0x%lx\n", kbase);
+            }
+            return IAMROOT_VULNERABLE;
+        }
+        if (!ctx->json) {
+            fprintf(stderr, "[+] entrybleed: active probe returned implausible kbase "
+                            "0x%lx — leak technique not reliable here\n", kbase);
+        }
+        /* Implausible probe result. Either the entry_SYSCALL_64 slot
+         * offset doesn't match lts-6.12.x default (different kernel
+         * build) — user should set IAMROOT_ENTRYBLEED_OFFSET — or
+         * timing is too noisy. Don't claim CONFIRMED. */
+        return IAMROOT_TEST_ERROR;
+    }
+
+    if (!ctx->json) {
+        fprintf(stderr, "[i] entrybleed: re-run with --active to empirically "
+                        "confirm the leak technique fires on this host\n");
         fprintf(stderr, "[i] entrybleed: --exploit will leak kbase (harmless leak; "
                         "no /etc/passwd writes)\n");
     }
