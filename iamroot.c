@@ -51,6 +51,8 @@ static void usage(const char *prog)
 "  --cleanup <name>      undo named module's exploit/mitigate side effects\n"
 "  --detect-rules        dump detection rules for every module\n"
 "                        (combine with --format=auditd|sigma|yara|falco)\n"
+"  --module-info <name>  full metadata + rule bodies for one module\n"
+"                        (combine with --json for machine-readable output)\n"
 "  --version             print version\n"
 "  --help                this message\n"
 "\n"
@@ -75,6 +77,7 @@ enum mode {
     MODE_MITIGATE,
     MODE_CLEANUP,
     MODE_DETECT_RULES,
+    MODE_MODULE_INFO,
     MODE_HELP,
     MODE_VERSION,
 };
@@ -99,9 +102,85 @@ static const char *result_str(iamroot_result_t r)
     return "?";
 }
 
-static int cmd_list(void)
+/* JSON-escape a string for inclusion in stdout output. Quick + safe:
+ * escapes \" and \\ and newlines; passes through ASCII printable.
+ * Caller must call json_escape_done() to free the result. */
+static char *json_escape(const char *s)
+{
+    if (s == NULL) return NULL;
+    size_t n = strlen(s);
+    char *out = malloc(n * 2 + 1);   /* worst case: every char doubles */
+    if (!out) return NULL;
+    char *p = out;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\') { *p++ = '\\'; *p++ = c; }
+        else if (c == '\n') { *p++ = '\\'; *p++ = 'n'; }
+        else if (c == '\r') { *p++ = '\\'; *p++ = 'r'; }
+        else if (c == '\t') { *p++ = '\\'; *p++ = 't'; }
+        else if (c < 0x20) { /* skip — should be rare in our strings */ }
+        else *p++ = c;
+    }
+    *p = 0;
+    return out;
+}
+
+static void emit_module_json(const struct iamroot_module *m, bool include_rules)
+{
+    char *name    = json_escape(m->name);
+    char *cve     = json_escape(m->cve);
+    char *summary = json_escape(m->summary);
+    char *family  = json_escape(m->family);
+    char *krange  = json_escape(m->kernel_range);
+    fprintf(stdout,
+        "{\"name\":\"%s\",\"cve\":\"%s\",\"family\":\"%s\","
+        "\"kernel_range\":\"%s\",\"summary\":\"%s\","
+        "\"has\":{\"detect\":%s,\"exploit\":%s,\"mitigate\":%s,\"cleanup\":%s,"
+        "\"auditd\":%s,\"sigma\":%s,\"yara\":%s,\"falco\":%s}",
+        name ? name : "",
+        cve ? cve : "",
+        family ? family : "",
+        krange ? krange : "",
+        summary ? summary : "",
+        m->detect        ? "true" : "false",
+        m->exploit       ? "true" : "false",
+        m->mitigate      ? "true" : "false",
+        m->cleanup       ? "true" : "false",
+        m->detect_auditd ? "true" : "false",
+        m->detect_sigma  ? "true" : "false",
+        m->detect_yara   ? "true" : "false",
+        m->detect_falco  ? "true" : "false");
+    if (include_rules) {
+        /* Embed the actual rule text. Useful for --module-info. */
+        char *aud = json_escape(m->detect_auditd);
+        char *sig = json_escape(m->detect_sigma);
+        char *yar = json_escape(m->detect_yara);
+        char *fal = json_escape(m->detect_falco);
+        fprintf(stdout,
+            ",\"detect_rules\":{\"auditd\":%s%s%s,\"sigma\":%s%s%s,"
+            "\"yara\":%s%s%s,\"falco\":%s%s%s}",
+            aud ? "\"" : "", aud ? aud : "null", aud ? "\"" : "",
+            sig ? "\"" : "", sig ? sig : "null", sig ? "\"" : "",
+            yar ? "\"" : "", yar ? yar : "null", yar ? "\"" : "",
+            fal ? "\"" : "", fal ? fal : "null", fal ? "\"" : "");
+        free(aud); free(sig); free(yar); free(fal);
+    }
+    fprintf(stdout, "}");
+    free(name); free(cve); free(summary); free(family); free(krange);
+}
+
+static int cmd_list(const struct iamroot_ctx *ctx)
 {
     size_t n = iamroot_module_count();
+    if (ctx->json) {
+        fprintf(stdout, "{\"version\":\"%s\",\"modules\":[", IAMROOT_VERSION);
+        for (size_t i = 0; i < n; i++) {
+            if (i) fputc(',', stdout);
+            emit_module_json(iamroot_module_at(i), false);
+        }
+        fprintf(stdout, "]}\n");
+        return 0;
+    }
     fprintf(stdout, "%-20s %-18s %-25s %s\n",
             "NAME", "CVE", "FAMILY", "SUMMARY");
     fprintf(stdout, "%-20s %-18s %-25s %s\n",
@@ -110,6 +189,49 @@ static int cmd_list(void)
         const struct iamroot_module *m = iamroot_module_at(i);
         fprintf(stdout, "%-20s %-18s %-25s %s\n",
                 m->name, m->cve, m->family, m->summary);
+    }
+    return 0;
+}
+
+/* --module-info <name>: dump everything we know about one module.
+ * Human-readable by default, JSON with --json. Includes the full
+ * detection-rule text bodies for that module. */
+static int cmd_module_info(const char *name, const struct iamroot_ctx *ctx)
+{
+    const struct iamroot_module *m = iamroot_module_find(name);
+    if (!m) {
+        if (ctx->json) {
+            fprintf(stdout, "{\"error\":\"module not found\",\"name\":\"%s\"}\n", name);
+        } else {
+            fprintf(stderr, "[-] no module '%s'. Try --list.\n", name);
+        }
+        return 1;
+    }
+    if (ctx->json) {
+        emit_module_json(m, true);
+        fputc('\n', stdout);
+        return 0;
+    }
+    fprintf(stdout, "name:          %s\n", m->name);
+    fprintf(stdout, "cve:           %s\n", m->cve);
+    fprintf(stdout, "family:        %s\n", m->family);
+    fprintf(stdout, "kernel_range:  %s\n", m->kernel_range);
+    fprintf(stdout, "summary:       %s\n", m->summary);
+    fprintf(stdout, "operations:    %s%s%s%s\n",
+        m->detect   ? "detect "   : "",
+        m->exploit  ? "exploit "  : "",
+        m->mitigate ? "mitigate " : "",
+        m->cleanup  ? "cleanup "  : "");
+    fprintf(stdout, "detect rules:  %s%s%s%s\n",
+        m->detect_auditd ? "auditd " : "",
+        m->detect_sigma  ? "sigma "  : "",
+        m->detect_yara   ? "yara "   : "",
+        m->detect_falco  ? "falco "  : "");
+    if (m->detect_auditd) {
+        fprintf(stdout, "\n--- auditd rules ---\n%s", m->detect_auditd);
+    }
+    if (m->detect_sigma) {
+        fprintf(stdout, "\n--- sigma rule ---\n%s", m->detect_sigma);
     }
     return 0;
 }
@@ -237,6 +359,7 @@ int main(int argc, char **argv)
         {"mitigate",      required_argument, 0, 'M'},
         {"cleanup",       required_argument, 0, 'C'},
         {"detect-rules",  no_argument,       0, 'D'},
+        {"module-info",   required_argument, 0, 'I'},
         {"format",        required_argument, 0,  6 },
         {"i-know",        no_argument,       0,  1 },
         {"active",        no_argument,       0,  2 },
@@ -249,11 +372,12 @@ int main(int argc, char **argv)
     };
 
     int c, opt_idx;
-    while ((c = getopt_long(argc, argv, "SLDE:M:C:Vh", longopts, &opt_idx)) != -1) {
+    while ((c = getopt_long(argc, argv, "SLDE:M:C:I:Vh", longopts, &opt_idx)) != -1) {
         switch (c) {
         case 'S': mode = MODE_SCAN; break;
         case 'L': mode = MODE_LIST; break;
         case 'D': mode = MODE_DETECT_RULES; break;
+        case 'I': mode = MODE_MODULE_INFO; target = optarg; break;
         case 'E': mode = MODE_EXPLOIT; target = optarg; break;
         case 'M': mode = MODE_MITIGATE; target = optarg; break;
         case 'C': mode = MODE_CLEANUP; target = optarg; break;
@@ -284,7 +408,8 @@ int main(int argc, char **argv)
     if (!ctx.json) fputs(BANNER, stderr);
 
     if (mode == MODE_SCAN) return cmd_scan(&ctx);
-    if (mode == MODE_LIST) return cmd_list();
+    if (mode == MODE_LIST) return cmd_list(&ctx);
+    if (mode == MODE_MODULE_INFO) return cmd_module_info(target, &ctx);
     if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
 
     /* --exploit / --mitigate / --cleanup all take a target */
