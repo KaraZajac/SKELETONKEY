@@ -789,6 +789,8 @@ int main(int argc, char **argv)
     skeletonkey_register_sequoia();
     skeletonkey_register_sudoedit_editor();
     skeletonkey_register_vmwgfx();
+    skeletonkey_register_dirtydecrypt();
+    skeletonkey_register_fragnesia();
 
     enum mode mode = MODE_SCAN;
     struct skeletonkey_ctx ctx = {0};

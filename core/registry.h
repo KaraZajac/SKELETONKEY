@@ -44,5 +44,7 @@ void skeletonkey_register_sudo_samedit(void);
 void skeletonkey_register_sequoia(void);
 void skeletonkey_register_sudoedit_editor(void);
 void skeletonkey_register_vmwgfx(void);
+void skeletonkey_register_dirtydecrypt(void);
+void skeletonkey_register_fragnesia(void);
 
 #endif /* SKELETONKEY_REGISTRY_H */

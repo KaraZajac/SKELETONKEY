@@ -1,0 +1,31 @@
+# Fragnesia (CVE-2026-46300) — auditd detection rules
+#
+# The XFRM ESP-in-TCP coalesce bug corrupts the page cache of a
+# read-only file. These rules flag the syscall surface the exploit
+# drives and writes to the setuid binaries it targets.
+#
+# Install: copy into /etc/audit/rules.d/ and `augenrules --load`, or
+#   skeletonkey --detect-rules --format=auditd | sudo tee \
+#     /etc/audit/rules.d/99-skeletonkey.rules
+
+# Modification of common payload carriers / credential files
+-w /usr/bin/su     -p wa -k skeletonkey-fragnesia
+-w /bin/su         -p wa -k skeletonkey-fragnesia
+-w /usr/bin/mount  -p wa -k skeletonkey-fragnesia
+-w /usr/bin/passwd -p wa -k skeletonkey-fragnesia
+-w /usr/bin/chsh   -p wa -k skeletonkey-fragnesia
+-w /etc/passwd     -p wa -k skeletonkey-fragnesia
+-w /etc/shadow     -p wa -k skeletonkey-fragnesia
+
+# AF_ALG socket creation (family 38) — builds the GCM keystream table
+-a always,exit -F arch=b64 -S socket -F a0=38 -k skeletonkey-fragnesia-afalg
+
+# XFRM state setup over NETLINK_XFRM
+-a always,exit -F arch=b64 -S sendto -k skeletonkey-fragnesia-xfrm
+
+# TCP_ULP espintcp + ESP setsockopt surface
+-a always,exit -F arch=b64 -S setsockopt -k skeletonkey-fragnesia-sockopt
+
+# splice() drives page-cache pages into the ESP-in-TCP stream
+-a always,exit -F arch=b64 -S splice -k skeletonkey-fragnesia-splice
+-a always,exit -F arch=b32 -S splice -k skeletonkey-fragnesia-splice

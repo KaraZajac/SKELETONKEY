@@ -1,0 +1,28 @@
+# DirtyDecrypt (CVE-2026-31635) — auditd detection rules
+#
+# The rxgk in-place decrypt corrupts the page cache of a read-only
+# file. These rules flag the syscall surface the exploit drives and
+# writes to the setuid binaries it targets.
+#
+# Install: copy into /etc/audit/rules.d/ and `augenrules --load`, or
+#   skeletonkey --detect-rules --format=auditd | sudo tee \
+#     /etc/audit/rules.d/99-skeletonkey.rules
+
+# Modification of common payload carriers / credential files
+-w /usr/bin/su     -p wa -k skeletonkey-dirtydecrypt
+-w /bin/su         -p wa -k skeletonkey-dirtydecrypt
+-w /usr/bin/mount  -p wa -k skeletonkey-dirtydecrypt
+-w /usr/bin/passwd -p wa -k skeletonkey-dirtydecrypt
+-w /usr/bin/chsh   -p wa -k skeletonkey-dirtydecrypt
+-w /etc/passwd     -p wa -k skeletonkey-dirtydecrypt
+-w /etc/shadow     -p wa -k skeletonkey-dirtydecrypt
+
+# AF_RXRPC socket creation (family 33) — core of the rxgk trigger
+-a always,exit -F arch=b64 -S socket -F a0=33 -k skeletonkey-dirtydecrypt-rxrpc
+
+# rxrpc security keys added to the process keyring
+-a always,exit -F arch=b64 -S add_key -k skeletonkey-dirtydecrypt-key
+
+# splice() drives page-cache pages into the forged DATA packet
+-a always,exit -F arch=b64 -S splice -k skeletonkey-dirtydecrypt-splice
+-a always,exit -F arch=b32 -S splice -k skeletonkey-dirtydecrypt-splice

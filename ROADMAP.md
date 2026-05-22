@@ -164,10 +164,26 @@ Backfill of historical and recent LPEs as time allows.
       (hand-rolled nfnetlink, NFT_GOTO+DROP malformed verdict,
       msg_msg kmalloc-cg-96 groom, no pipapo R/W chain).
 
+**Landed (ported from public PoC, pending VM verification):**
+
+- [x] **CVE-2026-46300** — Fragnesia: 🟡 XFRM ESP-in-TCP page-cache
+      write. Ported from the V12 PoC; the old `_stubs/fragnesia_TBD`
+      stub is retired. The stub's open question ("is the
+      unprivileged-userns-netns scenario in scope?") is resolved —
+      the module ships and reports `PRECOND_FAIL` when the userns gate
+      is closed.
+- [x] **CVE-2026-31635** — DirtyDecrypt: 🟡 rxgk missing-COW in-place
+      decrypt page-cache write. Ported from the V12 PoC.
+- [ ] **Verify both on a vulnerable-kernel VM**, pin the CVE fix
+      commits, add `kernel_range` tables, and promote 🟡 → 🟢. Until
+      then `detect()` is precondition-only (no version verdict) and
+      `--auto` will not fire them blind.
+
 **Carry-overs:**
 
 - [ ] **CVE-2023-2008** — vmwgfx OOB write
-- [ ] Fragnesia (if it lands as a CVE)
+- [ ] **CVE-2026-41651** — Pack2TheRoot (PackageKit daemon userspace
+      LPE; cross-distro). Candidate — userspace LPE in the pwnkit vein.
 - [ ] Anything we ourselves disclose — bundled AFTER upstream patch
       ships (responsible-disclosure-first)
 

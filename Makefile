@@ -142,10 +142,20 @@ VMW_DIR  := modules/vmwgfx_cve_2023_2008
 VMW_SRCS := $(VMW_DIR)/skeletonkey_modules.c
 VMW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(VMW_SRCS))
 
+# Family: dirtydecrypt (CVE-2026-31635) — rxgk page-cache write
+DDC_DIR  := modules/dirtydecrypt_cve_2026_31635
+DDC_SRCS := $(DDC_DIR)/skeletonkey_modules.c
+DDC_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(DDC_SRCS))
+
+# Family: fragnesia (CVE-2026-46300) — XFRM ESP-in-TCP page-cache write
+FGN_DIR  := modules/fragnesia_cve_2026_46300
+FGN_SRCS := $(FGN_DIR)/skeletonkey_modules.c
+FGN_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(FGN_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) $(DDC_OBJS) $(FGN_OBJS)
 
 .PHONY: all clean debug static help
 

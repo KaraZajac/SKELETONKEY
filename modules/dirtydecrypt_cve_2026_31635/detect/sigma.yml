@@ -1,0 +1,29 @@
+title: Possible DirtyDecrypt exploitation (CVE-2026-31635)
+id: 7c1e9a40-skeletonkey-dirtydecrypt
+status: experimental
+description: |
+  Detects the file-modification footprint of the rxgk page-cache write
+  (DirtyDecrypt / DirtyCBC, CVE-2026-31635): non-root creation of
+  AF_RXRPC sockets followed by modification of a setuid-root binary or
+  a credential file.
+references:
+  - https://github.com/v12-security/pocs/tree/main/dirtydecrypt
+logsource:
+  product: linux
+  service: auditd
+detection:
+  modification:
+    type: 'PATH'
+    name|startswith:
+      - '/usr/bin/su'
+      - '/bin/su'
+      - '/etc/passwd'
+      - '/etc/shadow'
+  not_root:
+    auid|expression: '!= 0'
+  condition: modification and not_root
+level: high
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - cve.2026.31635

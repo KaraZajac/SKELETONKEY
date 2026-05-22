@@ -1,0 +1,30 @@
+title: Possible Fragnesia exploitation (CVE-2026-46300)
+id: 9b3d2e71-skeletonkey-fragnesia
+status: experimental
+description: |
+  Detects the file-modification footprint of the Fragnesia XFRM
+  ESP-in-TCP page-cache write (CVE-2026-46300): non-root modification
+  of a setuid-root binary or credential file, typically inside a
+  freshly created user + network namespace.
+references:
+  - https://github.com/v12-security/pocs/tree/main/fragnesia
+  - https://lists.openwall.net/netdev/2026/05/13/79
+logsource:
+  product: linux
+  service: auditd
+detection:
+  modification:
+    type: 'PATH'
+    name|startswith:
+      - '/usr/bin/su'
+      - '/bin/su'
+      - '/etc/passwd'
+      - '/etc/shadow'
+  not_root:
+    auid|expression: '!= 0'
+  condition: modification and not_root
+level: high
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - cve.2026.46300

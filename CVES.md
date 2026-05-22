@@ -23,7 +23,14 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts (v0.3.1):** 🟢 13 · 🟡 11 (all `--full-chain` capable) · 🔵 0 · ⚪ 1 · 🔴 0
+**Counts:** 🟢 13 · 🟡 13 · 🔵 0 · ⚪ 0 · 🔴 0
+
+> **Note on `dirtydecrypt` / `fragnesia`:** these two are ported from
+> public PoCs and are **not yet VM-verified** end-to-end. They are
+> marked 🟡 but differ from the other 🟡 modules — they are
+> self-contained page-cache writes (no `--full-chain` finisher), and
+> their `detect()` is precondition-only because the CVE fix commits are
+> not yet pinned. See each module's `MODULE.md`.
 
 Every module ships a `NOTICE.md` crediting the original CVE
 reporter and PoC author. `skeletonkey --dump-offsets` populates the
@@ -59,7 +66,8 @@ root on a host can upstream their kernel's offsets via PR.
 | CVE-2023-4622 | AF_UNIX garbage-collector race UAF | LPE (slab UAF, plain unprivileged) | mainline 6.6-rc1 (Aug 2023) | `af_unix_gc` | 🟡 | Lin Ma. Two-thread race driver: SCM_RIGHTS cycle vs unix_gc trigger; kmalloc-512 (SLAB_TYPESAFE_BY_RCU) refill via msg_msg. **Widest deployment of any module — bug exists since 2.x.** No userns required. Branch backports: 4.14.326 / 4.19.295 / 5.4.257 / 5.10.197 / 5.15.130 / 6.1.51 / 6.5.0. |
 | CVE-2022-25636 | nft_fwd_dup_netdev_offload heap OOB | LPE (kernel R/W via offload action[] OOB) | mainline 5.17 / 5.16.11 (Feb 2022) | `nft_fwd_dup` | 🟡 | Aaron Adams (NCC). NFT_CHAIN_HW_OFFLOAD chain + 16 immediates + fwd writes past action.entries[1]. msg_msg kmalloc-512 spray. Branch backports: 5.4.181 / 5.10.102 / 5.15.25 / 5.16.11. |
 | CVE-2023-0179 | nft_payload set-id memory corruption | LPE (regs->data[] OOB R/W) | mainline 6.2-rc4 / 6.1.6 (Jan 2023) | `nft_payload` | 🟡 | Davide Ornaghi. NFTA_SET_DESC variable-length element + NFTA_SET_ELEM_EXPRESSIONS payload-set whose verdict.code drives the OOB. Dual cg-96 + 1k spray. Branch backports: 4.14.302 / 4.19.269 / 5.4.229 / 5.10.163 / 5.15.88 / 6.1.6. |
-| CVE-TBD | Fragnesia (ESP shared-frag in-place encrypt) | LPE (page-cache write) | mainline TBD | `_stubs/fragnesia_TBD` | ⚪ | Stub. Per `findings/audit_leak_write_modprobe_backups_2026-05-16.md`, requires CAP_NET_ADMIN in userns netns — may or may not be in-scope depending on target environment. |
+| CVE-2026-31635 | DirtyDecrypt / DirtyCBC — rxgk missing-COW in-place decrypt | LPE (page-cache write into a setuid binary) | duplicate of an already-patched mainline flaw (fix commit not yet pinned) | `dirtydecrypt` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Sibling of Copy Fail / Dirty Frag in the rxgk (AFS rxrpc encryption) subsystem. `fire()` sliding-window page-cache write, ~256 fires/byte; rewrites the first 120 bytes of `/usr/bin/su` with a setuid-shell ELF. `--active` probe fires the primitive at a `/tmp` sentinel. detect() is precondition-only — see MODULE.md. x86_64. |
+| CVE-2026-46300 | Fragnesia — XFRM ESP-in-TCP `skb_try_coalesce` SHARED_FRAG loss | LPE (page-cache write into a setuid binary) | distro patches 2026-05-13; mainline fix followed (commit not yet pinned) | `fragnesia` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Latent bug exposed by the Dirty Frag fix (`f4c50a4034e6`). AF_ALG GCM keystream table + userns/netns + XFRM ESP-in-TCP splice trigger pair; rewrites the first 192 bytes of `/usr/bin/su`. Needs `CONFIG_INET_ESPINTCP` + unprivileged userns (the in-scope question the old `_stubs/fragnesia_TBD` raised — resolved: ships, reports PRECOND_FAIL when the userns gate is closed). PoC's ANSI TUI dropped in the port. x86_64. |
 
 ## Operations supported per module
 
@@ -91,6 +99,8 @@ Symbols: ✓ = supported, — = not applicable / no automated path.
 | af_unix_gc | ✓ | ✓ (race) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
 | nft_fwd_dup | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
 | nft_payload | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd + sigma) |
+| dirtydecrypt | ✓ (+ `--active`) | ✓ (ported) | — (upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
+| fragnesia | ✓ (+ `--active`) | ✓ (ported) | — (upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
 
 ## Pipeline for additions
 
