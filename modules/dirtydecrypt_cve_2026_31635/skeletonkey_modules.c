@@ -856,8 +856,12 @@ static skeletonkey_result_t dd_cleanup(const struct skeletonkey_ctx *ctx)
 static const char dd_auditd[] =
 	"# DirtyDecrypt (CVE-2026-31635) — auditd detection rules\n"
 	"# rxgk in-place decrypt corrupts the page cache of a read-only file.\n"
+	"# Watches every payload carrier in dd_targets[] plus credential files.\n"
 	"-w /usr/bin/su     -p wa -k skeletonkey-dirtydecrypt\n"
 	"-w /bin/su         -p wa -k skeletonkey-dirtydecrypt\n"
+	"-w /usr/bin/mount  -p wa -k skeletonkey-dirtydecrypt\n"
+	"-w /usr/bin/passwd -p wa -k skeletonkey-dirtydecrypt\n"
+	"-w /usr/bin/chsh   -p wa -k skeletonkey-dirtydecrypt\n"
 	"-w /etc/passwd     -p wa -k skeletonkey-dirtydecrypt\n"
 	"-w /etc/shadow     -p wa -k skeletonkey-dirtydecrypt\n"
 	"# AF_RXRPC socket creation by non-root (family 33) — core of the trigger\n"
@@ -865,7 +869,8 @@ static const char dd_auditd[] =
 	"# rxrpc security keys added to the keyring\n"
 	"-a always,exit -F arch=b64 -S add_key -k skeletonkey-dirtydecrypt-key\n"
 	"# splice() drives the page-cache pages into the forged DATA packet\n"
-	"-a always,exit -F arch=b64 -S splice -k skeletonkey-dirtydecrypt-splice\n";
+	"-a always,exit -F arch=b64 -S splice -k skeletonkey-dirtydecrypt-splice\n"
+	"-a always,exit -F arch=b32 -S splice -k skeletonkey-dirtydecrypt-splice\n";
 
 static const char dd_sigma[] =
 	"title: Possible DirtyDecrypt exploitation (CVE-2026-31635)\n"
@@ -879,7 +884,8 @@ static const char dd_sigma[] =
 	"detection:\n"
 	"  modification:\n"
 	"    type: 'PATH'\n"
-	"    name|startswith: ['/usr/bin/su', '/bin/su', '/etc/passwd', '/etc/shadow']\n"
+	"    name|startswith: ['/usr/bin/su', '/bin/su', '/usr/bin/mount',\n"
+	"      '/usr/bin/passwd', '/usr/bin/chsh', '/etc/passwd', '/etc/shadow']\n"
 	"  not_root:\n"
 	"    auid|expression: '!= 0'\n"
 	"  condition: modification and not_root\n"

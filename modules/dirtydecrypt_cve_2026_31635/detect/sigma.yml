@@ -17,6 +17,9 @@ detection:
     name|startswith:
       - '/usr/bin/su'
       - '/bin/su'
+      - '/usr/bin/mount'
+      - '/usr/bin/passwd'
+      - '/usr/bin/chsh'
       - '/etc/passwd'
       - '/etc/shadow'
   not_root:

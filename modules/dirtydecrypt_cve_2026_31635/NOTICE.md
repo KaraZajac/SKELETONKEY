@@ -17,15 +17,17 @@ primitives that abuse a missing COW boundary.
 
 ## Research credit
 
-Discovered and reported by the **Zellic** and **V12 security** team.
-Public proof-of-concept by **Luna Tong** ("cts" / "gf_256"), Zellic
-co-founder, on the V12 team.
+Discovered and reported by **Zellic** and the **V12 security** team.
+Public proof-of-concept by **Luna Tong** ("cts" / "gf_256") of the
+V12 security team.
 
 > Reference PoC: <https://github.com/v12-security/pocs/tree/main/dirtydecrypt>
 
-On disclosure (2026-05-09) the kernel maintainers indicated the issue
-duplicated a flaw already patched in mainline; CVE-2026-31635 was
-assigned subsequently.
+The upstream PoC file (`poc.c`) carries no author, project, or
+`LICENSE` header of its own — its header is a purely technical
+description of the bug. The credit above is from the public
+disclosure, not from the file. CVE-2026-31635 was assigned for the
+flaw; its fix commit is not pinned in this module (see below).
 
 ## SKELETONKEY role
 

@@ -164,7 +164,19 @@ Backfill of historical and recent LPEs as time allows.
       (hand-rolled nfnetlink, NFT_GOTO+DROP malformed verdict,
       msg_msg kmalloc-cg-96 groom, no pipapo R/W chain).
 
-**Landed (ported from public PoC, pending VM verification):**
+**Landed since v0.1.0 (in the 28-module verified corpus):**
+
+- [x] **CVE-2021-3156** — sudo Baron Samedit: 🟡 PRIMITIVE
+      (`sudoedit -s` heap overflow; heap-tuned, may crash sudo).
+- [x] **CVE-2021-33909** — Sequoia: 🟡 PRIMITIVE (`seq_file` size_t
+      overflow → kernel stack OOB; trigger + witness, no cred chain).
+- [x] **CVE-2023-22809** — sudoedit EDITOR/VISUAL argv escape: 🟢 FULL
+      structural argv-injection (no kernel state, no offsets).
+- [x] **CVE-2023-2008** — vmwgfx DRM bo size-validation OOB: 🟡
+      PRIMITIVE (kmalloc-512 OOB + slab witness, no cred chain).
+
+**Landed (ported from public PoC, pending VM verification — NOT part
+of the 28-module verified corpus):**
 
 - [x] **CVE-2026-46300** — Fragnesia: 🟡 XFRM ESP-in-TCP page-cache
       write. Ported from the V12 PoC; the old `_stubs/fragnesia_TBD`
@@ -181,7 +193,6 @@ Backfill of historical and recent LPEs as time allows.
 
 **Carry-overs:**
 
-- [ ] **CVE-2023-2008** — vmwgfx OOB write
 - [ ] **CVE-2026-41651** — Pack2TheRoot (PackageKit daemon userspace
       LPE; cross-distro). Candidate — userspace LPE in the pwnkit vein.
 - [ ] Anything we ourselves disclose — bundled AFTER upstream patch
@@ -189,7 +200,7 @@ Backfill of historical and recent LPEs as time allows.
 
 ## Phase 8 — Full-chain promotions (post v0.1.0)
 
-The 7 🟡 PRIMITIVE modules each stop one or two steps short of full
+The 14 🟡 PRIMITIVE modules each stop one or two steps short of full
 cred-overwrite. Promotion to 🟢 means landing the leak → R/W →
 modprobe_path-or-cred-rewrite stage on at least one tracked kernel.
 None requires fresh research — each has a public reference exploit;
@@ -200,9 +211,15 @@ auto-resolve via System.map / kallsyms when accessible).
 
 Priority order: nf_tables (Notselwyn pipapo R/W), netfilter_xtcompat
 (Andy Nguyen modprobe_path), af_packet (xairy sk_buff cred chase).
-The other four are lower priority — fuse_legacy and cls_route4 have
+The remainder are lower priority — fuse_legacy and cls_route4 have
 narrower distro reach; af_packet2 piggybacks on af_packet; stackrot's
-race window makes it inherently low-yield.
+race window makes it inherently low-yield; the nft_* family and
+vmwgfx need their per-kernel offset tables built out.
+
+The 2 ported-but-unverified modules (`dirtydecrypt`, `fragnesia`) are
+**not** part of this Phase 8 promotion set — they need VM verification
+and pinned fix commits first (tracked under Phase 7+ above) before any
+full-chain work is meaningful.
 
 ## Non-goals
 

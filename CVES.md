@@ -23,14 +23,19 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts:** 🟢 13 · 🟡 13 · 🔵 0 · ⚪ 0 · 🔴 0
+**Counts:** 30 modules total — 28 verified (🟢 14 · 🟡 14) plus 2
+ported-but-unverified (`dirtydecrypt`, `fragnesia` — see note below).
+🔵 0 · ⚪ 0 planned-with-stub · 🔴 0. (One ⚪ row below — CVE-2026-31402
+— is a *candidate* with no module, not counted as a module.)
 
 > **Note on `dirtydecrypt` / `fragnesia`:** these two are ported from
-> public PoCs and are **not yet VM-verified** end-to-end. They are
-> marked 🟡 but differ from the other 🟡 modules — they are
-> self-contained page-cache writes (no `--full-chain` finisher), and
-> their `detect()` is precondition-only because the CVE fix commits are
-> not yet pinned. See each module's `MODULE.md`.
+> public V12 PoCs and are **not yet VM-verified** end-to-end. They are
+> listed 🟡 in the table below but are **not** part of the 28-module
+> verified corpus — they differ from the other 🟡 modules in two ways:
+> they are self-contained page-cache writes (no `--full-chain`
+> finisher), and their `detect()` is precondition-only because the CVE
+> fix commits are not yet pinned. `--auto` will not fire them blind.
+> See each module's `MODULE.md`.
 
 Every module ships a `NOTICE.md` crediting the original CVE
 reporter and PoC author. `skeletonkey --dump-offsets` populates the
@@ -66,6 +71,10 @@ root on a host can upstream their kernel's offsets via PR.
 | CVE-2023-4622 | AF_UNIX garbage-collector race UAF | LPE (slab UAF, plain unprivileged) | mainline 6.6-rc1 (Aug 2023) | `af_unix_gc` | 🟡 | Lin Ma. Two-thread race driver: SCM_RIGHTS cycle vs unix_gc trigger; kmalloc-512 (SLAB_TYPESAFE_BY_RCU) refill via msg_msg. **Widest deployment of any module — bug exists since 2.x.** No userns required. Branch backports: 4.14.326 / 4.19.295 / 5.4.257 / 5.10.197 / 5.15.130 / 6.1.51 / 6.5.0. |
 | CVE-2022-25636 | nft_fwd_dup_netdev_offload heap OOB | LPE (kernel R/W via offload action[] OOB) | mainline 5.17 / 5.16.11 (Feb 2022) | `nft_fwd_dup` | 🟡 | Aaron Adams (NCC). NFT_CHAIN_HW_OFFLOAD chain + 16 immediates + fwd writes past action.entries[1]. msg_msg kmalloc-512 spray. Branch backports: 5.4.181 / 5.10.102 / 5.15.25 / 5.16.11. |
 | CVE-2023-0179 | nft_payload set-id memory corruption | LPE (regs->data[] OOB R/W) | mainline 6.2-rc4 / 6.1.6 (Jan 2023) | `nft_payload` | 🟡 | Davide Ornaghi. NFTA_SET_DESC variable-length element + NFTA_SET_ELEM_EXPRESSIONS payload-set whose verdict.code drives the OOB. Dual cg-96 + 1k spray. Branch backports: 4.14.302 / 4.19.269 / 5.4.229 / 5.10.163 / 5.15.88 / 6.1.6. |
+| CVE-2021-3156 | sudo Baron Samedit — `sudoedit -s` heap overflow | LPE (userspace setuid sudo) | sudo 1.9.5p2 (Jan 2021) | `sudo_samedit` | 🟡 | Qualys Baron Samedit. Heap overflow via `sudoedit -s '\'` escaped-backslash parsing. Affects sudo 1.8.2 ≤ V ≤ 1.9.5p1. Heap-tuned exploit — may crash sudo on a mismatched layout. Ships auditd + sigma rules. |
+| CVE-2021-33909 | Sequoia — `seq_file` size_t overflow → kernel stack OOB | LPE (kernel stack OOB write) | mainline 5.13.4 / 5.10.52 / 5.4.134 (Jul 2021) | `sequoia` | 🟡 | Qualys Sequoia. `size_t`-to-`int` conversion in `seq_file` drives an OOB write off the kernel stack via a deeply-nested directory mount. Primitive-only — fires the overflow + records a witness; no portable cred chain. Branch backports: 5.13.4 / 5.10.52 / 5.4.134. Ships auditd rule. |
+| CVE-2023-22809 | sudoedit `EDITOR`/`VISUAL` `--` argv escape | LPE (userspace setuid sudoedit) | sudo 1.9.12p2 (Jan 2023) | `sudoedit_editor` | 🟢 | Structural argv-injection — an extra `--` in `EDITOR`/`VISUAL` makes setuid `sudoedit` open an attacker-chosen file as root. No kernel state, no offsets, no race. Affects sudo 1.8.0 ≤ V < 1.9.12p2. Ships auditd + sigma rules. |
+| CVE-2023-2008 | vmwgfx DRM buffer-object size-validation OOB | LPE (kernel R/W via kmalloc-512 OOB) | mainline 6.3-rc6 (Apr 2023) | `vmwgfx` | 🟡 | vmwgfx DRM `bo` size-validation gap → OOB write in kmalloc-512. Affects 4.0 ≤ K < 6.3-rc6 on hosts with the `vmwgfx` module loaded (VMware guests). Primitive-only — fires the OOB + slab witness; no cred chain. Branch backports: 6.2.10 / 6.1.23. Ships auditd rule. |
 | CVE-2026-31635 | DirtyDecrypt / DirtyCBC — rxgk missing-COW in-place decrypt | LPE (page-cache write into a setuid binary) | duplicate of an already-patched mainline flaw (fix commit not yet pinned) | `dirtydecrypt` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Sibling of Copy Fail / Dirty Frag in the rxgk (AFS rxrpc encryption) subsystem. `fire()` sliding-window page-cache write, ~256 fires/byte; rewrites the first 120 bytes of `/usr/bin/su` with a setuid-shell ELF. `--active` probe fires the primitive at a `/tmp` sentinel. detect() is precondition-only — see MODULE.md. x86_64. |
 | CVE-2026-46300 | Fragnesia — XFRM ESP-in-TCP `skb_try_coalesce` SHARED_FRAG loss | LPE (page-cache write into a setuid binary) | distro patches 2026-05-13; mainline fix followed (commit not yet pinned) | `fragnesia` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Latent bug exposed by the Dirty Frag fix (`f4c50a4034e6`). AF_ALG GCM keystream table + userns/netns + XFRM ESP-in-TCP splice trigger pair; rewrites the first 192 bytes of `/usr/bin/su`. Needs `CONFIG_INET_ESPINTCP` + unprivileged userns (the in-scope question the old `_stubs/fragnesia_TBD` raised — resolved: ships, reports PRECOND_FAIL when the userns gate is closed). PoC's ANSI TUI dropped in the port. x86_64. |
 
@@ -99,6 +108,10 @@ Symbols: ✓ = supported, — = not applicable / no automated path.
 | af_unix_gc | ✓ | ✓ (race) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
 | nft_fwd_dup | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd) |
 | nft_payload | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (queue drain) | ✓ (auditd + sigma) |
+| sudo_samedit | ✓ | ✓ (primitive) | — (upgrade sudo) | ✓ (crumb nuke) | ✓ (auditd + sigma) |
+| sequoia | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (nested-tree + mount teardown) | ✓ (auditd) |
+| sudoedit_editor | ✓ | ✓ | — (upgrade sudo) | ✓ (revert written file) | ✓ (auditd + sigma) |
+| vmwgfx | ✓ | ✓ (primitive) | — (upgrade kernel) | ✓ (log unlink) | ✓ (auditd) |
 | dirtydecrypt | ✓ (+ `--active`) | ✓ (ported) | — (upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
 | fragnesia | ✓ (+ `--active`) | ✓ (ported) | — (upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
 

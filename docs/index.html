@@ -83,7 +83,7 @@
     <div class="stats">
       <div class="stat">
         <span class="stat-num">28</span>
-        <span class="stat-label">total modules</span>
+        <span class="stat-label">verified modules</span>
       </div>
       <div class="stat">
         <span class="stat-num green">14</span>
@@ -173,7 +173,7 @@ uid=1000(kara) gid=1000(kara) groups=1000(kara)
 
 <span class="prompt">$</span> skeletonkey --auto --i-know
 <span class="hl-muted">[*]</span> auto: host=demo kernel=5.15.0-56-generic arch=x86_64
-<span class="hl-muted">[*]</span> auto: scanning 28 modules for vulnerabilities...
+<span class="hl-muted">[*]</span> auto: scanning 30 modules for vulnerabilities...
 <span class="hl-green">[+]</span> auto: dirty_pipe             <span class="hl-yellow">VULNERABLE</span> (safety rank 90)
 <span class="hl-green">[+]</span> auto: cgroup_release_agent   <span class="hl-yellow">VULNERABLE</span> (safety rank 98)
 <span class="hl-green">[+]</span> auto: pwnkit                 <span class="hl-yellow">VULNERABLE</span> (safety rank 100)
@@ -240,8 +240,10 @@ uid=0(root) gid=0(root) groups=0(root)</pre>
   <div class="container">
     <h2>Status</h2>
     <p class="lead">
-      <strong>v0.5.0</strong> cut 2026-05-17. 28 modules build clean
-      on Debian 13 (kernel 6.12) and refuse cleanly on patched hosts.
+      <strong>v0.5.0</strong> cut 2026-05-17. 28 verified modules build
+      clean on Debian 13 (kernel 6.12) and refuse cleanly on patched
+      hosts; 2 further modules (dirtydecrypt, fragnesia) are ported
+      from public PoCs but not yet VM-verified.
       Empirical end-to-end validation on a vulnerable-kernel VM matrix
       is the next roadmap item; until then, the corpus is best
       understood as "compiles + detects + structurally correct +
