@@ -31,6 +31,7 @@ bool dirtyfail_use_color    = true;
 bool dirtyfail_active_probes = false;
 bool dirtyfail_no_revert    = false;
 bool dirtyfail_json         = false;
+bool dirtyfail_assume_yes   = false;
 
 static void vlog(FILE *out, const char *prefix, const char *color,
                  const char *fmt, va_list ap)
@@ -226,6 +227,19 @@ size_t build_authenc_keyblob(unsigned char *out,
 
 bool typed_confirm(const char *expected)
 {
+    /* When the caller has already cleared an explicit authorization gate
+     * (SKELETONKEY's --i-know, forwarded via dirtyfail_assume_yes), the
+     * DIRTYFAIL typed prompt is redundant and would deadlock non-interactive
+     * runs like `skeletonkey --auto --i-know`. Auto-satisfy it.
+     *
+     * The SSH self-lockout guard (YES_BREAK_SSH) is deliberately exempt:
+     * it protects the operator's own access rather than gating
+     * authorization, so it always requires an interactive answer. */
+    if (dirtyfail_assume_yes && strcmp(expected, "YES_BREAK_SSH") != 0) {
+        log_step("confirmation gate '%s' auto-satisfied (--i-know)", expected);
+        return true;
+    }
+
     char buf[128];
     printf("    Type \033[1;33m%s\033[0m and press enter to proceed: ", expected);
     fflush(stdout);

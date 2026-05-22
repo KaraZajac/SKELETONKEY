@@ -33,6 +33,12 @@ static void apply_ctx(const struct skeletonkey_ctx *ctx)
     dirtyfail_use_color     = !ctx->no_color;
     dirtyfail_active_probes = ctx->active_probe;
     dirtyfail_json          = ctx->json;
+    /* Forward the --i-know authorization gate. SKELETONKEY already
+     * blocks --exploit/--auto unless --i-know is passed, so by the time
+     * a DIRTYFAIL exploit callback runs, authorization is established.
+     * This lets typed_confirm() skip its (now redundant) interactive
+     * prompt, which otherwise deadlocks `skeletonkey --auto --i-know`. */
+    dirtyfail_assume_yes    = ctx->authorized;
     /* dirtyfail_no_revert is intentionally not driven from ctx —
      * it's a debug knob; default stays off. */
 }

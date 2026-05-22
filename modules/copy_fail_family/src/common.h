@@ -86,6 +86,14 @@ extern bool dirtyfail_no_revert;
  * is redirected to stderr. Set by --json. */
 extern bool dirtyfail_json;
 
+/* When true, typed_confirm() auto-satisfies its gate instead of reading
+ * stdin — the caller has already cleared an explicit authorization gate.
+ * SKELETONKEY's bridge layer sets this from skeletonkey_ctx.authorized
+ * (i.e. the --i-know flag) so non-interactive runs like
+ * `skeletonkey --auto --i-know` don't deadlock on the DIRTYFAIL prompt.
+ * The YES_BREAK_SSH self-lockout guard is exempt — see typed_confirm(). */
+extern bool dirtyfail_assume_yes;
+
 void log_step (const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_ok   (const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_bad  (const char *fmt, ...) __attribute__((format(printf, 1, 2)));
