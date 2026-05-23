@@ -33,10 +33,10 @@
 
 af_packet:
   box: ubuntu1804
-  kernel_pkg: ""              # stock 4.15.0 is vulnerable
+  kernel_pkg: ""              # stock 4.15.0-213-generic — patch backported
   kernel_version: "4.15.0"
-  expect_detect: VULNERABLE
-  notes: "CVE-2017-7308; bug introduced ≤ 4.10; Ubuntu 18.04 stock 4.15 is pre-fix."
+  expect_detect: OK
+  notes: "CVE-2017-7308; bug fixed mainline 4.10.6 + 4.9.18 backports. Ubuntu 18.04 stock kernel (4.15.0) is post-fix — detect() correctly returns OK. To validate the VULNERABLE path empirically would need a hand-built 4.4 or earlier kernel; deferred."
 
 af_packet2:
   box: ubuntu2004
@@ -164,8 +164,8 @@ pack2theroot:
   box: debian12
   kernel_pkg: ""              # PackageKit-version bug, not kernel
   kernel_version: "6.1.0"
-  expect_detect: VULNERABLE
-  notes: "CVE-2026-41651; needs PackageKit ≤ 1.3.5 + polkit. Debian 12 stock packagekit is 1.2.5 (vulnerable). Provisioning script may need to downgrade if Debian 12 ever updates."
+  expect_detect: PRECOND_FAIL
+  notes: "CVE-2026-41651; needs PackageKit ≤ 1.3.5 + polkit + an active D-Bus session bus. Debian 12's generic cloud image is server-oriented and does NOT install PackageKit (the bug's target daemon), so detect() correctly returns PRECOND_FAIL ('PackageKit daemon not registered on the system bus'). To validate the VULNERABLE path empirically, install packagekit in the VM before verifying ('apt install -y packagekit' + 'systemctl start packagekit'); deferred to a follow-up provisioner."
 
 ptrace_traceme:
   box: ubuntu1804
