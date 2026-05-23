@@ -24,66 +24,77 @@ kver    = ENV["SKK_VM_KERNEL_VERSION"] || ""
 host    = ENV["SKK_VM_HOSTNAME"]       || "skk-verify"
 
 Vagrant.configure("2") do |c|
-  c.vm.box = box
-  c.vm.hostname = host
+  # Define ONE Vagrant machine named after SKK_VM_HOSTNAME. Per-module
+  # isolation: each module gets its own `skk-<module>` machine that
+  # vagrant tracks in .vagrant/machines/skk-<module>/parallels/.
+  c.vm.define host do |m|
+    m.vm.box = box
+    m.vm.hostname = host
 
-  c.vm.synced_folder REPO_ROOT, "/vagrant",
-    type: "rsync", rsync__exclude: ["build/", ".git/", "*.o", "skeletonkey-test*"]
+    m.vm.synced_folder REPO_ROOT, "/vagrant",
+      type: "rsync", rsync__exclude: ["build/", ".git/", "*.o", "skeletonkey-test*"]
 
-  c.vm.provider "parallels" do |p|
-    p.memory = 2048
-    p.cpus   = 2
-    p.name   = host
-    # Headless: don't pop a Parallels GUI window for every verify run.
-    p.update_guest_tools = true
-  end
+    m.vm.provider "parallels" do |p|
+      p.memory = 2048
+      p.cpus   = 2
+      p.name   = host
+      # Don't auto-update Parallels Tools: the installer fails on older
+      # guest kernels (e.g. Ubuntu 20.04's 5.4.0-169 is "outdated and
+      # not supported" by latest tools). We use rsync over SSH for
+      # sync_folder, which doesn't need the guest tools at all.
+      p.update_guest_tools = false
+      p.check_guest_tools  = false
+    end
 
-  # 1. Always install build deps + sudo (needed for module verification).
-  c.vm.provision "shell", inline: <<-SHELL
-    set -e
-    if command -v apt-get >/dev/null 2>&1; then
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq
-        apt-get install -y -qq build-essential libglib2.0-dev pkg-config sudo curl ca-certificates
-    elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y -q gcc make glib2-devel pkgconfig sudo curl
-    fi
-  SHELL
-
-  # 2. Pin target kernel if requested. Reboot needed afterward.
-  if !pkg.empty?
-    c.vm.provision "shell", name: "pin-kernel-#{pkg}", inline: <<-SHELL
+    # 1. Always install build deps + sudo (needed for module verification).
+    m.vm.provision "shell", inline: <<-SHELL
       set -e
-      if dpkg-query -W -f='${Status}' #{pkg} 2>/dev/null | grep -q 'install ok installed'; then
-          echo "[=] #{pkg} already installed"
-      else
-          echo "[+] installing #{pkg} (kernel target #{kver})"
+      if command -v apt-get >/dev/null 2>&1; then
           export DEBIAN_FRONTEND=noninteractive
-          apt-get install -y -qq #{pkg} || {
-              echo "[-] #{pkg} unavailable in apt; trying snapshot.debian.org" >&2
-              echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20230101T000000Z bookworm main" \
-                  >> /etc/apt/sources.list.d/snapshot.list
-              apt-get update -qq -o Acquire::Check-Valid-Until=false
-              apt-get install -y -qq --allow-downgrades #{pkg}
-          }
-          echo "[i] kernel #{pkg} installed; reboot via 'vagrant reload'"
+          apt-get update -qq
+          apt-get install -y -qq build-essential libglib2.0-dev pkg-config sudo curl ca-certificates
+      elif command -v dnf >/dev/null 2>&1; then
+          dnf install -y -q gcc make glib2-devel pkgconfig sudo curl
       fi
     SHELL
-  end
 
-  # 3. Build SKELETONKEY in-VM and run --explain --active for the target module.
-  #    SKK_MODULE is set by verify.sh on the second-pass `vagrant provision` call
-  #    (post-reboot if kernel was pinned).
-  c.vm.provision "shell", name: "build-and-verify", run: "never", inline: <<-SHELL
-    set -e
-    cd /vagrant
-    echo "[*] kernel: $(uname -r)"
-    echo "[*] building skeletonkey..."
-    make clean >/dev/null 2>&1 || true
-    make 2>&1 | tail -3
-    echo
-    echo "[*] running: skeletonkey --explain ${SKK_MODULE} --active"
-    echo
-    ./skeletonkey --explain "${SKK_MODULE}" --active 2>&1 || true
-  SHELL
+    # 2. Pin target kernel if requested. Reboot needed afterward.
+    if !pkg.empty?
+      m.vm.provision "shell", name: "pin-kernel-#{pkg}", inline: <<-SHELL
+        set -e
+        if dpkg-query -W -f='${Status}' #{pkg} 2>/dev/null | grep -q 'install ok installed'; then
+            echo "[=] #{pkg} already installed"
+        else
+            echo "[+] installing #{pkg} (kernel target #{kver})"
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get install -y -qq #{pkg} || {
+                echo "[-] #{pkg} unavailable in apt; trying snapshot.debian.org" >&2
+                echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20230101T000000Z bookworm main" \
+                    >> /etc/apt/sources.list.d/snapshot.list
+                apt-get update -qq -o Acquire::Check-Valid-Until=false
+                apt-get install -y -qq --allow-downgrades #{pkg}
+            }
+            echo "[i] kernel #{pkg} installed; reboot via 'vagrant reload'"
+        fi
+      SHELL
+    end
+
+    # 3. Build SKELETONKEY in-VM and run --explain --active for the target module.
+    #    SKK_MODULE is set by verify.sh on the second-pass `vagrant provision`
+    #    call (post-reboot if kernel was pinned).
+    m.vm.provision "shell", name: "build-and-verify", run: "never",
+      env: { "SKK_MODULE" => ENV["SKK_MODULE"] || "" },
+      inline: <<-SHELL
+      set -e
+      cd /vagrant
+      echo "[*] kernel: $(uname -r)"
+      echo "[*] building skeletonkey..."
+      make clean >/dev/null 2>&1 || true
+      make 2>&1 | tail -3
+      echo
+      echo "[*] running: skeletonkey --explain ${SKK_MODULE} --active"
+      echo
+      ./skeletonkey --explain "${SKK_MODULE}" --active 2>&1 || true
+    SHELL
+  end
 end
