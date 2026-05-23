@@ -51,7 +51,7 @@ for every CVE in the bundle — same project for red and blue teams.
 |---|---|---|
 | 🟢 Full chain | **14** | Lands root (or its canonical capability) end-to-end. No per-kernel offsets needed. |
 | 🟡 Primitive | **14** | Fires the kernel primitive + grooms the slab + records a witness. Default returns `EXPLOIT_FAIL` honestly. Pass `--full-chain` to engage the shared `modprobe_path` finisher (needs offsets — see [`docs/OFFSETS.md`](docs/OFFSETS.md)). |
-| ⚪ Ported, unverified | **3** | `dirtydecrypt`, `fragnesia`, `pack2theroot`. Built and registered, but **not yet validated end-to-end** — for the page-cache pair `detect()` is precondition-only; for `pack2theroot` the fix release IS pinned (high-confidence verdict). `--auto` auto-enables `--active` so the probes turn into definitive verdicts on a vulnerable host. Excluded from the 28-module verified counts above. |
+| ⚪ Ported, unverified | **3** | `dirtydecrypt`, `fragnesia`, `pack2theroot`. Built and registered with **version-pinned `detect()`** (Linux 7.0 / 7.0.9 / PackageKit 1.3.5 respectively), but the **exploit bodies** are not yet validated end-to-end. `--auto` auto-enables `--active` to confirm empirically on top of the version verdict. Excluded from the 28-module verified counts above. |
 
 **🟢 Modules that land root on a vulnerable host:**
 copy_fail family ×5 · dirty_pipe · dirty_cow · pwnkit · overlayfs
@@ -66,13 +66,13 @@ netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
 **⚪ Ported-but-unverified (not in the counts above):**
 dirtydecrypt (CVE-2026-31635) · fragnesia (CVE-2026-46300) ·
-pack2theroot (CVE-2026-41651) — ported from public PoCs, **not yet
-VM-validated**. The two page-cache writes (dirtydecrypt, fragnesia)
-have precondition-only `detect()` because the CVE fix commits are not
-yet pinned in the modules. `pack2theroot` is a userspace D-Bus
-PackageKit TOCTOU; its fix release (PackageKit 1.3.5, commit
-`76cfb675`) is pinned and `detect()` reads the daemon's version over
-D-Bus — high-confidence verdict.
+pack2theroot (CVE-2026-41651) — ported from public PoCs, **exploit
+bodies not yet VM-validated**. All three have version-pinned `detect()`:
+`dirtydecrypt` against mainline fix commit `a2567217` in Linux 7.0;
+`fragnesia` against mainline 7.0.9 (older Debian-stable branches still
+unfixed); `pack2theroot` against PackageKit fix release 1.3.5
+(commit `76cfb675`), version read from the daemon over D-Bus.
+`--auto` auto-enables `--active` to confirm empirically on top.
 
 See [`CVES.md`](CVES.md) for per-module CVE, kernel range, and
 detection status.

@@ -52,6 +52,7 @@
 
 /* _GNU_SOURCE / _FILE_OFFSET_BITS are passed via -D in the top-level
  * Makefile; do not redefine here (warning: redefined). */
+#include "../../core/kernel_range.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -894,12 +895,44 @@ static int fg_active_probe(void)
 	return result;
 }
 
+/*
+ * CVE-2026-46300 is a latent skb_try_coalesce() bug exposed by the
+ * Dirty Frag remediation (commit f4c50a4034e6) which landed in Linux
+ * 7.0. The Fragnesia fix shipped in the 7.0.x stable series at 7.0.9
+ * per Debian's tracker (linux unstable: 7.0.9-1 fixed). Older Debian
+ * stable branches (bullseye 5.10, bookworm 6.1, trixie 6.12) are
+ * still marked vulnerable as of 2026-05-22 — backports may follow.
+ *
+ * The detect logic:
+ *   - kernel ≥ 7.0.9    → patched on the 7.0.x branch
+ *   - kernel on 5.10/6.1/6.12 (other branches without a backport
+ *                          entry in this table) → version says
+ *                          VULNERABLE; --active confirms empirically
+ *   - --active         → empirical override (catches distro silent
+ *                          backports and unfixed 7.0.x ≤ 7.0.8)
+ *
+ * Stable-branch backports for 5.10 / 6.1 / 6.12 — when they ship —
+ * extend the table with the matching {major, minor, patch} entry.
+ */
+static const struct kernel_patched_from fragnesia_patched_branches[] = {
+	{7, 0, 9},   /* mainline + 7.0.x stable: fix lands at 7.0.9 */
+};
+static const struct kernel_range fragnesia_range = {
+	.patched_from = fragnesia_patched_branches,
+	.n_patched_from = sizeof(fragnesia_patched_branches) /
+			  sizeof(fragnesia_patched_branches[0]),
+};
+
 static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 {
 	fg_verbose = !ctx->json;
 
-	struct utsname u;
-	uname(&u);
+	struct kernel_version v;
+	if (!kernel_version_current(&v)) {
+		if (!ctx->json)
+			fprintf(stderr, "[!] fragnesia: could not parse kernel version\n");
+		return SKELETONKEY_TEST_ERROR;
+	}
 
 	if (!fg_userns_allowed()) {
 		if (!ctx->json)
@@ -917,6 +950,8 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 
+	bool patched_by_version = kernel_range_is_patched(&fragnesia_range, &v);
+
 	if (ctx->active_probe) {
 		if (!ctx->json)
 			fprintf(stderr, "[*] fragnesia: running active probe "
@@ -926,30 +961,36 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 			if (!ctx->json)
 				fprintf(stderr, "[!] fragnesia: ACTIVE PROBE "
 					"CONFIRMED — ESP-in-TCP coalesce corrupts "
-					"the page cache (kernel %s)\n", u.release);
+					"the page cache (kernel %s)\n", v.release);
 			return SKELETONKEY_VULNERABLE;
 		}
 		if (p == 0) {
 			if (!ctx->json)
 				fprintf(stderr, "[+] fragnesia: active probe did "
-					"not land — primitive blocked (patched, "
-					"or CONFIG_INET_ESPINTCP off)\n");
+					"not land — primitive blocked (likely "
+					"patched%s, or CONFIG_INET_ESPINTCP off)\n",
+					patched_by_version ? "" : "; distro may have "
+					"backported, or Dirty Frag is unpatched here");
 			return SKELETONKEY_OK;
 		}
 		if (!ctx->json)
 			fprintf(stderr, "[?] fragnesia: active probe machinery "
-				"failed; falling back to precondition verdict\n");
+				"failed; falling back to version verdict\n");
 	}
 
-	/* No version-based verdict: the CVE-2026-46300 fix commit is not
-	 * pinned in this module yet (see MODULE.md). Report TEST_ERROR so
-	 * --auto does not fire blind; use --active to confirm. */
+	if (patched_by_version) {
+		if (!ctx->json)
+			fprintf(stderr, "[+] fragnesia: kernel %s is patched "
+				"(7.0.9+; version-only check — use --active to "
+				"confirm)\n", v.release);
+		return SKELETONKEY_OK;
+	}
 	if (!ctx->json)
-		fprintf(stderr, "[?] fragnesia: userns+XFRM preconditions present "
-			"on kernel %s; patch-level cannot be determined "
-			"passively.\n    Confirm with: skeletonkey --scan --active\n",
-			u.release);
-	return SKELETONKEY_TEST_ERROR;
+		fprintf(stderr, "[!] fragnesia: kernel %s appears VULNERABLE "
+			"(no backport entry for this branch; version-only)\n"
+			"    Confirm empirically: skeletonkey --scan --active\n",
+			v.release);
+	return SKELETONKEY_VULNERABLE;
 }
 
 /* ---- exploit ------------------------------------------------------ */
@@ -1110,7 +1151,7 @@ const struct skeletonkey_module fragnesia_module = {
 	.cve            = "CVE-2026-46300",
 	.summary        = "XFRM ESP-in-TCP skb_try_coalesce SHARED_FRAG loss → page-cache write",
 	.family         = "fragnesia",
-	.kernel_range   = "kernels with CONFIG_INET_ESPINTCP after the Dirty Frag fix; fix commit not yet pinned",
+	.kernel_range   = "Linux with CONFIG_INET_ESPINTCP and the Dirty Frag fix; mainline fix in 7.0.9 (older branches still unfixed)",
 	.detect         = fg_detect,
 	.exploit        = fg_exploit,
 	.mitigate       = NULL,

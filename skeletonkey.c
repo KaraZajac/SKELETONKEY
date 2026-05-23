@@ -677,7 +677,7 @@ static int module_safety_rank(const char *n)
     if (!strncmp(n, "copy_fail", 9) ||
         !strncmp(n, "dirty_frag", 10))       return 88;  /* verified page-cache writes */
     if (!strcmp(n, "dirtydecrypt") ||
-        !strcmp(n, "fragnesia"))             return 86;  /* ported page-cache writes, NOT VM-verified */
+        !strcmp(n, "fragnesia"))             return 87;  /* ported page-cache writes; version-pinned detect, exploit NOT VM-verified */
     if (!strcmp(n, "ptrace_traceme"))        return 85;  /* userspace cred race */
     if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */

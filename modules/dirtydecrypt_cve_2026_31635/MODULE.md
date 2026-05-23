@@ -59,19 +59,23 @@ The exploit rewrites the first 120 bytes of a setuid-root binary
 
 This module is a **faithful port** of
 <https://github.com/v12-security/pocs/tree/main/dirtydecrypt>, compiled
-into the SKELETONKEY module interface. It has **not** been validated
-end-to-end against a known-vulnerable kernel inside the SKELETONKEY CI
-matrix.
+into the SKELETONKEY module interface. The **exploit body** has not
+been validated end-to-end against a known-vulnerable kernel inside the
+SKELETONKEY CI matrix.
 
-`detect()` deliberately does **not** return a kernel-version-based
-patched/vulnerable verdict: the CVE-2026-31635 fix commit is not yet
-pinned here, and fabricating a `kernel_patched_from` table would
-violate the project's no-fabrication rule (`CVES.md`). Instead:
+**`detect()` is now version-pinned** against the mainline fix commit
+[`a2567217ade970ecc458144b6be469bc015b23e5`][fix] (Linux 7.0): kernels
+< 7.0 predate the vulnerable rxgk RESPONSE-handling code (Debian
+tracker confirms older stable branches as <not-affected, vulnerable
+code not present>), kernels ≥ 7.0 have the fix. With `--active`, the
+detector runs the rxgk primitive against a `/tmp` sentinel and reports
+empirically — catches pre-fix 7.0-rc kernels and any distro rebuilds
+the version check misses.
 
-- preconditions missing → `PRECOND_FAIL`
-- preconditions present, no `--active` → `TEST_ERROR` ("cannot
-  determine passively") so `--auto` does not fire it blind
-- `--active` → empirical VULNERABLE / OK via the `/tmp` sentinel probe
+[fix]: https://git.kernel.org/linus/a2567217ade970ecc458144b6be469bc015b23e5
 
-**Before promoting to 🟢:** pin the fix commit + branch-backport
-thresholds, add a `kernel_range`, and validate on a vulnerable VM.
+**Before promoting to 🟢:** validate the exploit end-to-end on a 7.0-rc
+kernel that pre-dates commit `a2567217ade…`. The Debian tracker entry
+for CVE-2026-31635 is the source of truth for branch-backport
+thresholds; extend the `kernel_range` table when distros publish
+stable backports.

@@ -68,18 +68,20 @@ The exploit mechanism itself is reproduced faithfully.
 
 This module is a **faithful port** of
 <https://github.com/v12-security/pocs/tree/main/fragnesia>, compiled
-into the SKELETONKEY module interface. It has **not** been validated
-end-to-end against a known-vulnerable kernel inside the SKELETONKEY CI
-matrix.
+into the SKELETONKEY module interface. The **exploit body** has not
+been validated end-to-end against a known-vulnerable kernel inside the
+SKELETONKEY CI matrix.
 
-`detect()` deliberately does **not** return a kernel-version-based
-patched/vulnerable verdict: the CVE-2026-46300 fix commit is not yet
-pinned here. Instead:
+**`detect()` is now version-pinned**: the Fragnesia fix ships in
+mainline Linux **7.0.9** (Debian tracker source-of-truth, `linux
+unstable: 7.0.9-1 fixed`). The `kernel_range` table marks the 7.0.x
+branch patched at `7.0.9`; older Debian-stable branches (5.10 / 6.1 /
+6.12) are currently still vulnerable per the tracker. With `--active`,
+the detector runs the full ESP-in-TCP primitive against a `/tmp` file
+and reports empirically — catches stable-branch backports the version
+table doesn't know about, and CONFIG_INET_ESPINTCP=n kernels where the
+primitive is structurally unreachable.
 
-- preconditions missing → `PRECOND_FAIL`
-- preconditions present, no `--active` → `TEST_ERROR` so `--auto` does
-  not fire it blind
-- `--active` → empirical VULNERABLE / OK via the `/tmp` sentinel probe
-
-**Before promoting to 🟢:** pin the fix commit + branch-backport
-thresholds, add a `kernel_range`, and validate on a vulnerable VM.
+**Before promoting to 🟢:** validate the exploit end-to-end on a
+≤ 7.0.8 kernel. Extend the `kernel_range` table with backport
+thresholds for 5.10 / 6.1 / 6.12 as distros publish them.

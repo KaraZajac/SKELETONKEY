@@ -45,6 +45,7 @@
 
 /* _GNU_SOURCE / _FILE_OFFSET_BITS are passed via -D in the top-level
  * Makefile; do not redefine here (warning: redefined). */
+#include "../../core/kernel_range.h"
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -655,12 +656,49 @@ static int dd_active_probe(void)
 	return result;
 }
 
+/*
+ * CVE-2026-31635 affects kernels with the rxgk RESPONSE-handling code
+ * (CONFIG_RXGK). Per Debian's tracker, the vulnerable code was
+ * introduced in the 7.0 development cycle — older mainline branches
+ * (bullseye 5.10 / bookworm 6.1 / trixie 6.12) are <not-affected,
+ * vulnerable code not present>. The fix is upstream commit
+ * a2567217ade970ecc458144b6be469bc015b23e5 ("rxrpc: fix oversized
+ * RESPONSE authenticator length check"), shipped in Linux 7.0.
+ *
+ * The detect logic therefore is:
+ *   - kernel < 7.0  → SKELETONKEY_OK (predates the bug)
+ *   - kernel ≥ 7.0  → consult kernel_range; 7.0+ has the fix
+ *   - --active     → empirical override (catches pre-fix 7.0-rc kernels
+ *                    or weird distro rebuilds the version check missed)
+ */
+static const struct kernel_patched_from dirtydecrypt_patched_branches[] = {
+	{7, 0, 0},   /* mainline fix commit a2567217 landed in Linux 7.0 */
+};
+static const struct kernel_range dirtydecrypt_range = {
+	.patched_from = dirtydecrypt_patched_branches,
+	.n_patched_from = sizeof(dirtydecrypt_patched_branches) /
+			  sizeof(dirtydecrypt_patched_branches[0]),
+};
+
 static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 {
 	dd_verbose = !ctx->json;
 
-	struct utsname u;
-	uname(&u);
+	struct kernel_version v;
+	if (!kernel_version_current(&v)) {
+		if (!ctx->json)
+			fprintf(stderr, "[!] dirtydecrypt: could not parse kernel version\n");
+		return SKELETONKEY_TEST_ERROR;
+	}
+
+	/* Predates the bug: rxgk RESPONSE-handling code was added in 7.0. */
+	if (v.major < 7) {
+		if (!ctx->json)
+			fprintf(stderr, "[i] dirtydecrypt: kernel %s predates the rxgk "
+				"RESPONSE-handling code added in 7.0 — not applicable\n",
+				v.release);
+		return SKELETONKEY_OK;
+	}
 
 	/* Precondition: AF_RXRPC must be reachable for the primitive. */
 	int s = socket(AF_RXRPC, SOCK_DGRAM, PF_INET);
@@ -680,6 +718,8 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 
+	bool patched_by_version = kernel_range_is_patched(&dirtydecrypt_range, &v);
+
 	if (ctx->active_probe) {
 		if (!ctx->json)
 			fprintf(stderr, "[*] dirtydecrypt: running active sentinel "
@@ -689,30 +729,34 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 			if (!ctx->json)
 				fprintf(stderr, "[!] dirtydecrypt: ACTIVE PROBE "
 					"CONFIRMED — rxgk in-place decrypt corrupts "
-					"the page cache (kernel %s)\n", u.release);
+					"the page cache (kernel %s)\n", v.release);
 			return SKELETONKEY_VULNERABLE;
 		}
 		if (p == 0) {
 			if (!ctx->json)
 				fprintf(stderr, "[+] dirtydecrypt: active probe did "
-					"not land — primitive blocked (patched)\n");
+					"not land — primitive blocked (likely patched%s)\n",
+					patched_by_version ? "" : ", or distro silently fixed");
 			return SKELETONKEY_OK;
 		}
 		if (!ctx->json)
 			fprintf(stderr, "[?] dirtydecrypt: active probe machinery "
-				"failed; falling back to precondition verdict\n");
+				"failed; falling back to version verdict\n");
 	}
 
-	/* No version-based verdict: the CVE-2026-31635 fix commit is not
-	 * pinned in this module yet (see MODULE.md). Preconditions are
-	 * present but patched/vulnerable cannot be determined passively —
-	 * report TEST_ERROR so --auto does not fire blind. Use --active to
-	 * confirm empirically, or --exploit dirtydecrypt --i-know directly. */
+	if (patched_by_version) {
+		if (!ctx->json)
+			fprintf(stderr, "[+] dirtydecrypt: kernel %s is patched "
+				"(commit a2567217 in Linux 7.0; version-only check — "
+				"use --active to confirm)\n", v.release);
+		return SKELETONKEY_OK;
+	}
 	if (!ctx->json)
-		fprintf(stderr, "[?] dirtydecrypt: AF_RXRPC reachable on kernel %s; "
-			"patch-level cannot be determined passively.\n"
-			"    Confirm with: skeletonkey --scan --active\n", u.release);
-	return SKELETONKEY_TEST_ERROR;
+		fprintf(stderr, "[!] dirtydecrypt: kernel %s appears VULNERABLE "
+			"(in 7.0-rc window before commit a2567217; version-only)\n"
+			"    Confirm empirically: skeletonkey --scan --active\n",
+			v.release);
+	return SKELETONKEY_VULNERABLE;
 }
 
 /* ---- exploit ------------------------------------------------------ */
@@ -897,7 +941,7 @@ const struct skeletonkey_module dirtydecrypt_module = {
 	.cve            = "CVE-2026-31635",
 	.summary        = "rxgk missing-COW in-place decrypt → page-cache write into a setuid binary",
 	.family         = "dirtydecrypt",
-	.kernel_range   = "kernels exposing AF_RXRPC + rxgk (security index 6); fix commit not yet pinned",
+	.kernel_range   = "Linux 7.0 (vulnerable rxgk code added in 7.0); mainline fix commit a2567217 in 7.0",
 	.detect         = dd_detect,
 	.exploit        = dd_exploit,
 	.mitigate       = NULL,

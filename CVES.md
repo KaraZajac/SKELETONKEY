@@ -30,22 +30,26 @@ below — CVE-2026-31402 — is a *candidate* with no module, not counted
 as a module.)
 
 > **Note on `dirtydecrypt` / `fragnesia` / `pack2theroot`:** all three
-> are ported from public PoCs and are **not yet VM-verified** end-to-end.
-> They are listed 🟡 in the table below but are **not** part of the
+> are ported from public PoCs. The **exploit bodies** are not yet
+> VM-verified end-to-end, so they're listed 🟡 but excluded from the
 > 28-module verified corpus.
 >
-> `pack2theroot`'s `detect()` reads PackageKit's version directly from
-> the daemon over D-Bus and compares against the **pinned fix release
-> (1.3.5, commit `76cfb675`)** — so its verdict is high-confidence,
-> grounded in upstream's own version metadata.
+> All three now have **pinned fix commits and version-based
+> `detect()`**:
+> - `pack2theroot` reads PackageKit's `VersionMajor/Minor/Micro` over
+>   D-Bus and compares against fix release **1.3.5** (commit `76cfb675`).
+> - `dirtydecrypt` uses the `kernel_range` model against mainline fix
+>   **`a2567217`** (Linux 7.0); kernels < 7.0 predate the vulnerable
+>   rxgk code per Debian's tracker.
+> - `fragnesia` uses `kernel_range` against mainline **7.0.9**; older
+>   Debian-stable branches (5.10/6.1/6.12) are still listed vulnerable
+>   on Debian's tracker — backport entries will extend the table as
+>   distros publish them.
 >
-> `dirtydecrypt` and `fragnesia` are precondition-only — their CVE fix
-> commits are not yet pinned in the modules, so `detect()` returns
-> `PRECOND_FAIL` / `TEST_ERROR` unless `--active` empirically fires the
-> primitive against a `/tmp` sentinel. `--auto` auto-enables active
-> probes (forked per module so a probe crash cannot tear down the
-> scan), which lets all three become candidates on a vulnerable host.
-> See each module's `MODULE.md`.
+> `--auto` auto-enables active probes (forked per module so a probe
+> crash cannot tear down the scan), which lets all three give an
+> empirical confirmation on top of the version verdict. See each
+> module's `MODULE.md`.
 
 Every module ships a `NOTICE.md` crediting the original CVE
 reporter and PoC author. `skeletonkey --dump-offsets` populates the
@@ -85,8 +89,8 @@ root on a host can upstream their kernel's offsets via PR.
 | CVE-2021-33909 | Sequoia — `seq_file` size_t overflow → kernel stack OOB | LPE (kernel stack OOB write) | mainline 5.13.4 / 5.10.52 / 5.4.134 (Jul 2021) | `sequoia` | 🟡 | Qualys Sequoia. `size_t`-to-`int` conversion in `seq_file` drives an OOB write off the kernel stack via a deeply-nested directory mount. Primitive-only — fires the overflow + records a witness; no portable cred chain. Branch backports: 5.13.4 / 5.10.52 / 5.4.134. Ships auditd rule. |
 | CVE-2023-22809 | sudoedit `EDITOR`/`VISUAL` `--` argv escape | LPE (userspace setuid sudoedit) | sudo 1.9.12p2 (Jan 2023) | `sudoedit_editor` | 🟢 | Structural argv-injection — an extra `--` in `EDITOR`/`VISUAL` makes setuid `sudoedit` open an attacker-chosen file as root. No kernel state, no offsets, no race. Affects sudo 1.8.0 ≤ V < 1.9.12p2. Ships auditd + sigma rules. |
 | CVE-2023-2008 | vmwgfx DRM buffer-object size-validation OOB | LPE (kernel R/W via kmalloc-512 OOB) | mainline 6.3-rc6 (Apr 2023) | `vmwgfx` | 🟡 | vmwgfx DRM `bo` size-validation gap → OOB write in kmalloc-512. Affects 4.0 ≤ K < 6.3-rc6 on hosts with the `vmwgfx` module loaded (VMware guests). Primitive-only — fires the OOB + slab witness; no cred chain. Branch backports: 6.2.10 / 6.1.23. Ships auditd rule. |
-| CVE-2026-31635 | DirtyDecrypt / DirtyCBC — rxgk missing-COW in-place decrypt | LPE (page-cache write into a setuid binary) | duplicate of an already-patched mainline flaw (fix commit not yet pinned) | `dirtydecrypt` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Sibling of Copy Fail / Dirty Frag in the rxgk (AFS rxrpc encryption) subsystem. `fire()` sliding-window page-cache write, ~256 fires/byte; rewrites the first 120 bytes of `/usr/bin/su` with a setuid-shell ELF. `--active` probe fires the primitive at a `/tmp` sentinel. detect() is precondition-only — see MODULE.md. x86_64. |
-| CVE-2026-46300 | Fragnesia — XFRM ESP-in-TCP `skb_try_coalesce` SHARED_FRAG loss | LPE (page-cache write into a setuid binary) | distro patches 2026-05-13; mainline fix followed (commit not yet pinned) | `fragnesia` | 🟡 | **Ported from the public V12 PoC, not yet VM-verified.** Latent bug exposed by the Dirty Frag fix (`f4c50a4034e6`). AF_ALG GCM keystream table + userns/netns + XFRM ESP-in-TCP splice trigger pair; rewrites the first 192 bytes of `/usr/bin/su`. Needs `CONFIG_INET_ESPINTCP` + unprivileged userns (the in-scope question the old `_stubs/fragnesia_TBD` raised — resolved: ships, reports PRECOND_FAIL when the userns gate is closed). PoC's ANSI TUI dropped in the port. x86_64. |
+| CVE-2026-31635 | DirtyDecrypt / DirtyCBC — rxgk missing-COW in-place decrypt | LPE (page-cache write into a setuid binary) | mainline Linux 7.0 (commit `a2567217ade970ecc458144b6be469bc015b23e5`) | `dirtydecrypt` | 🟡 | **Ported from the public V12 PoC, exploit body not yet VM-verified.** Sibling of Copy Fail / Dirty Frag in the rxgk (AFS rxrpc encryption) subsystem. `fire()` sliding-window page-cache write, ~256 fires/byte; rewrites the first 120 bytes of `/usr/bin/su` with a setuid-shell ELF. detect() is version-pinned: kernels < 7.0 predate the vulnerable rxgk code (Debian: `<not-affected, vulnerable code not present>` for 5.10/6.1/6.12); kernels ≥ 7.0 have the fix. `--active` probe fires the primitive at a `/tmp` sentinel for empirical override. x86_64. |
+| CVE-2026-46300 | Fragnesia — XFRM ESP-in-TCP `skb_try_coalesce` SHARED_FRAG loss | LPE (page-cache write into a setuid binary) | mainline 7.0.9; older Debian-stable branches still unfixed as of 2026-05-22 | `fragnesia` | 🟡 | **Ported from the public V12 PoC, exploit body not yet VM-verified.** Latent bug exposed by the Dirty Frag fix (`f4c50a4034e6`). AF_ALG GCM keystream table + userns/netns + XFRM ESP-in-TCP splice trigger pair; rewrites the first 192 bytes of `/usr/bin/su`. Needs `CONFIG_INET_ESPINTCP` + unprivileged userns (the in-scope question the old `_stubs/fragnesia_TBD` raised — resolved: ships, reports PRECOND_FAIL when the userns gate is closed). detect() is version-pinned at 7.0.9; older branches that haven't backported yet are flagged VULNERABLE on the version check (override empirically via `--active`). PoC's ANSI TUI dropped in the port. x86_64. |
 | CVE-2026-41651 | Pack2TheRoot — PackageKit `InstallFiles` TOCTOU | LPE (userspace D-Bus daemon → `.deb` postinst as root) | PackageKit 1.3.5 (commit `76cfb675`, 2026-04-22) | `pack2theroot` | 🟡 | **Ported from the public Vozec PoC, not yet VM-verified.** Two back-to-back `InstallFiles` D-Bus calls — first `SIMULATE` (polkit bypass + queues a GLib idle), then immediately `NONE` + malicious `.deb` (overwrites the cached flags before the idle fires). GLib priority ordering makes the overwrite deterministic, not a race. Disclosure by **Deutsche Telekom security**. Affects PackageKit 1.0.2 → 1.3.4 — default-enabled on Ubuntu Desktop, Debian, Fedora, Rocky/RHEL via Cockpit. `detect()` reads `VersionMajor/Minor/Micro` over D-Bus → high-confidence verdict (vs. precondition-only for dirtydecrypt/fragnesia). Debian-family only (PoC's built-in `.deb` builder). Needs `libglib2.0-dev` at build time; Makefile autodetects via `pkg-config gio-2.0` and falls through to a stub when absent. |
 
 ## Operations supported per module
