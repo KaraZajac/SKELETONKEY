@@ -59,8 +59,47 @@ jobs:
             skeletonkey-${{ matrix.target }}
             skeletonkey-${{ matrix.target }}.sha256
 
+  # Portable static-musl build for x86_64. Runs in Alpine (native
+  # musl + linux-headers) so the resulting binary works on every
+  # libc — glibc 2.x of any version, musl, etc. This is what
+  # install.sh fetches by default (the dynamic binary above hits a
+  # glibc-version ceiling on older distros like Debian 12 / RHEL 8).
+  build-static-x86_64:
+    runs-on: ubuntu-latest
+    name: build (x86_64-static / musl)
+    container:
+      image: alpine:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install build deps
+        run: |
+          apk add --no-cache build-base linux-headers tar
+
+      - name: build static (musl)
+        run: |
+          # MSG_COPY is a Linux-only SysV msg flag that glibc defines
+          # but musl does not — netfilter_xtcompat needs it. Define
+          # the kernel constant explicitly. (Kernel: include/uapi/
+          # linux/msg.h: MSG_COPY = 040000)
+          make CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000" LDFLAGS=-static
+          file skeletonkey
+          ls -la skeletonkey
+
+      - name: rename + checksum
+        run: |
+          mv skeletonkey skeletonkey-x86_64-static
+          sha256sum skeletonkey-x86_64-static > skeletonkey-x86_64-static.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skeletonkey-x86_64-static
+          path: |
+            skeletonkey-x86_64-static
+            skeletonkey-x86_64-static.sha256
+
   release:
-    needs: build
+    needs: [build, build-static-x86_64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +153,8 @@ jobs:
           files: |
             skeletonkey-x86_64
             skeletonkey-x86_64.sha256
+            skeletonkey-x86_64-static
+            skeletonkey-x86_64-static.sha256
             skeletonkey-arm64
             skeletonkey-arm64.sha256
             install.sh
