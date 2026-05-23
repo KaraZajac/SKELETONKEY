@@ -75,11 +75,11 @@ dirty_cow:
   manual_for_exploit_verify: true
 
 dirty_pipe:
-  box: ubuntu2004
-  kernel_pkg: linux-image-5.13.0-19-generic
-  kernel_version: "5.13.0-19"
-  expect_detect: VULNERABLE
-  notes: "CVE-2022-0847; introduced 5.8, fixed 5.16.11 / 5.15.25; 5.13.0-19 (Ubuntu 20.04 HWE early) is in the vulnerable window."
+  box: ubuntu2204
+  kernel_pkg: ""              # 22.04 stock 5.15.0-91-generic
+  kernel_version: "5.15.0"
+  expect_detect: OK
+  notes: "CVE-2022-0847; introduced 5.8, fixed 5.16.11 / 5.15.25. Ubuntu 22.04 ships 5.15.0-91-generic, where uname reports '5.15.0' (below the 5.15.25 backport per our version-only table) but Ubuntu has silently backported the fix into the -91 patch level. Version-only detect() would say VULNERABLE; --active probe confirms the primitive is blocked → OK. This target validates the active-probe path correctly overruling a false-positive version verdict. (Originally pointed at Ubuntu 20.04 + pinned 5.13.0-19, but that HWE kernel is no longer in 20.04's apt archive.)"
 
 dirtydecrypt:
   box: debian12

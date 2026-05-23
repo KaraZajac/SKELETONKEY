@@ -20,6 +20,7 @@
 #include "core/offsets.h"
 #include "core/host.h"
 #include "core/cve_metadata.h"
+#include "core/verifications.h"
 
 #include <time.h>
 #include <sys/utsname.h>
@@ -215,6 +216,31 @@ static void emit_module_json(const struct skeletonkey_module *m, bool include_ru
         free(op);
     }
 
+    /* Empirical verification records: (distro, kernel, date) tuples
+     * where the module's detect() was confirmed against a real target. */
+    size_t nv = 0;
+    const struct verification_record *vrs = verifications_for_module(m->name, &nv);
+    if (nv > 0) {
+        fprintf(stdout, ",\"verified_on\":[");
+        for (size_t i = 0; i < nv; i++) {
+            char *vat = json_escape(vrs[i].verified_at);
+            char *vkr = json_escape(vrs[i].host_kernel);
+            char *vds = json_escape(vrs[i].host_distro);
+            char *vbx = json_escape(vrs[i].vm_box);
+            char *vst = json_escape(vrs[i].status);
+            char *vac = json_escape(vrs[i].actual_detect);
+            fprintf(stdout,
+                "%s{\"verified_at\":\"%s\",\"host_kernel\":\"%s\","
+                "\"host_distro\":\"%s\",\"vm_box\":\"%s\","
+                "\"actual_detect\":\"%s\",\"status\":\"%s\"}",
+                i ? "," : "",
+                vat ? vat : "", vkr ? vkr : "", vds ? vds : "",
+                vbx ? vbx : "", vac ? vac : "", vst ? vst : "");
+            free(vat); free(vkr); free(vds); free(vbx); free(vst); free(vac);
+        }
+        fprintf(stdout, "]");
+    }
+
     if (include_rules) {
         /* Embed the actual rule text. Useful for --module-info. */
         char *aud = json_escape(m->detect_auditd);
@@ -246,16 +272,17 @@ static int cmd_list(const struct skeletonkey_ctx *ctx)
         fprintf(stdout, "]}\n");
         return 0;
     }
-    fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
-            "NAME", "CVE", "KEV", "FAMILY", "SUMMARY");
-    fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
-            "----", "---", "---", "------", "-------");
+    fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
+            "NAME", "CVE", "KEV", "VFY", "FAMILY", "SUMMARY");
+    fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
+            "----", "---", "---", "---", "------", "-------");
     for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
         const struct cve_metadata *md = cve_metadata_lookup(m->cve);
-        fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
+        fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
                 m->name, m->cve,
                 (md && md->in_kev) ? "★"  : "",
+                verifications_module_has_match(m->name) ? "✓" : "",
                 m->family, m->summary);
     }
     return 0;
@@ -637,6 +664,28 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
         m->detect_yara   ? "yara "   : "",
         m->detect_falco  ? "falco "  : "");
 
+    /* Verification records — VM-confirmed detect() verdicts. */
+    {
+        size_t nv = 0;
+        const struct verification_record *vrs =
+            verifications_for_module(m->name, &nv);
+        if (nv > 0) {
+            fprintf(stdout, "\n--- verified on ---\n");
+            for (size_t i = 0; i < nv; i++) {
+                const char *icon = (vrs[i].status &&
+                    strcmp(vrs[i].status, "match") == 0) ? "✓" : "✗";
+                fprintf(stdout, "  %s %s  %s  (kernel %s; %s; status: %s)\n",
+                    icon, vrs[i].verified_at,
+                    vrs[i].host_distro, vrs[i].host_kernel,
+                    vrs[i].vm_box, vrs[i].status);
+            }
+        } else {
+            fprintf(stdout, "\n--- verified on ---\n"
+                "  (none yet — run  tools/verify-vm/verify.sh %s  to add one)\n",
+                m->name);
+        }
+    }
+
     if (m->opsec_notes) {
         fprintf(stdout, "\n--- opsec notes ---\n%s\n", m->opsec_notes);
     }
@@ -796,6 +845,27 @@ static int cmd_explain(const char *name, const struct skeletonkey_ctx *ctx)
     if (m->opsec_notes) {
         fprintf(stdout, "\nOPSEC FOOTPRINT (what exploit() leaves on this host)\n");
         print_wrapped(m->opsec_notes, 2, 76);
+    }
+
+    /* ── empirical verification records ────────────────────────── */
+    {
+        size_t nv = 0;
+        const struct verification_record *vrs =
+            verifications_for_module(m->name, &nv);
+        fprintf(stdout, "\nVERIFIED ON (real-VM detect() confirmations)\n");
+        if (nv == 0) {
+            fprintf(stdout, "  (none yet — run  tools/verify-vm/verify.sh %s)\n",
+                m->name);
+        } else {
+            for (size_t i = 0; i < nv; i++) {
+                const char *icon = (vrs[i].status &&
+                    strcmp(vrs[i].status, "match") == 0) ? "✓" : "✗";
+                fprintf(stdout, "  %s %s  %s — kernel %s  (%s)\n",
+                    icon, vrs[i].verified_at,
+                    vrs[i].host_distro, vrs[i].host_kernel,
+                    vrs[i].status);
+            }
+        }
     }
 
     /* ── detection coverage matrix ───────────────────────────── */

@@ -182,19 +182,18 @@ echo
 echo "════════════════════════════════════════════════════"
 echo " Verification record"
 echo "════════════════════════════════════════════════════"
-cat <<JSON
-{
-  "module":        "$MODULE",
-  "verified_at":   "$NOW",
-  "host_kernel":   "$HOST_KVER",
-  "host_distro":   "$HOST_DISTRO",
-  "vm_box":        "$BOX",
-  "expect_detect": "$EXPECT",
-  "actual_detect": "$VERDICT",
-  "status":        "$STATUS",
-  "log":           "$LOG"
-}
+RECORD=$(cat <<JSON
+{"module":"$MODULE","verified_at":"$NOW","host_kernel":"$HOST_KVER","host_distro":"$HOST_DISTRO","vm_box":"$BOX","expect_detect":"$EXPECT","actual_detect":"$VERDICT","status":"$STATUS"}
 JSON
+)
+printf '%s\n' "$RECORD" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$RECORD"
+
+# Append to the permanent JSONL store (one record per line, dedup happens
+# at refresh time in tools/refresh-verifications.py).
+echo "$RECORD" >> "$REPO_ROOT/docs/VERIFICATIONS.jsonl"
+echo
+echo "[i] appended to docs/VERIFICATIONS.jsonl"
+echo "[i] run 'tools/refresh-verifications.py' to regenerate core/verifications.c"
 echo
 
 # Lifecycle.

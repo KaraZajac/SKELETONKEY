@@ -29,7 +29,11 @@ Vagrant.configure("2") do |c|
   # vagrant tracks in .vagrant/machines/skk-<module>/parallels/.
   c.vm.define host do |m|
     m.vm.box = box
-    m.vm.hostname = host
+    # Guest hostnames forbid underscores per RFC 952. Vagrant machine
+    # names allow them (we keep skk-cgroup_release_agent so per-module
+    # state stays isolated in .vagrant/machines/), but inside the VM
+    # we translate to hyphens so the hostname is RFC-valid.
+    m.vm.hostname = host.gsub("_", "-")
 
     m.vm.synced_folder REPO_ROOT, "/vagrant",
       type: "rsync", rsync__exclude: ["build/", ".git/", "*.o", "skeletonkey-test*"]
