@@ -177,7 +177,7 @@ static skeletonkey_result_t fuse_legacy_detect(const struct skeletonkey_ctx *ctx
 
     /* Bug introduced in 5.1 (when legacy_parse_param landed). Pre-5.1
      * kernels predate the code path entirely. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 1)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 1, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] fuse_legacy: kernel %s predates the bug introduction\n",
                     v->release);

@@ -127,7 +127,7 @@ static skeletonkey_result_t nft_fwd_dup_detect(const struct skeletonkey_ctx *ctx
 
     /* The offload code path only exists from 5.4 onward. Anything
      * older predates the bug. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 4)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 4, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] nft_fwd_dup: kernel %s predates the bug "
                             "(nft offload hook introduced in 5.4)\n", v->release);

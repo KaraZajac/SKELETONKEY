@@ -192,7 +192,7 @@ static skeletonkey_result_t overlayfs_detect(const struct skeletonkey_ctx *ctx)
      * Ubuntu fix is per-release-specific; conservatively report
      * VULNERABLE if version < 5.13 (covers most affected Ubuntu LTS),
      * and recommend --active for confirmation. */
-    if (v.major < 5 || (v.major == 5 && v.minor < 13)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 13, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[!] overlayfs: Ubuntu kernel %s in vulnerable range — "
                             "re-run with --active to confirm\n", v.release);

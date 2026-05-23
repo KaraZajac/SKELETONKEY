@@ -252,6 +252,14 @@ bool skeletonkey_host_kernel_at_least(const struct skeletonkey_host *h,
 	return h->kernel.patch >= patch;
 }
 
+bool skeletonkey_host_kernel_in_range(const struct skeletonkey_host *h,
+				      int lo_M, int lo_m, int lo_p,
+				      int hi_M, int hi_m, int hi_p)
+{
+	return  skeletonkey_host_kernel_at_least(h, lo_M, lo_m, lo_p) &&
+	       !skeletonkey_host_kernel_at_least(h, hi_M, hi_m, hi_p);
+}
+
 void skeletonkey_host_print_banner(const struct skeletonkey_host *h, bool json)
 {
 	if (json || h == NULL) return;

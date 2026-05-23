@@ -140,7 +140,7 @@ static skeletonkey_result_t nf_tables_detect(const struct skeletonkey_ctx *ctx)
     }
 
     /* Bug introduced in 5.14. Anything below predates it. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 14)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 14, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] nf_tables: kernel %s predates the bug "
                             "(introduced in 5.14)\n", v->release);

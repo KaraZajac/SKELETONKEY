@@ -144,7 +144,7 @@ static skeletonkey_result_t nft_set_uaf_detect(const struct skeletonkey_ctx *ctx
 
     /* Bug introduced in 5.1 (anonymous-set support). Anything below
      * predates it — report OK (not vulnerable to *this* CVE). */
-    if (v->major < 5 || (v->major == 5 && v->minor < 1)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 1, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] nft_set_uaf: kernel %s predates the bug "
                             "(anonymous-set support landed in 5.1)\n", v->release);

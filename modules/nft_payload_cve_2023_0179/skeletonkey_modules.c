@@ -128,7 +128,7 @@ static skeletonkey_result_t nft_payload_detect(const struct skeletonkey_ctx *ctx
 
     /* Bug introduced with the set-payload extension in 5.4. Anything
      * below 5.4 predates the affected codepath entirely. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 4)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 4, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] nft_payload: kernel %s predates the bug "
                             "(set-payload extension landed in 5.4)\n",

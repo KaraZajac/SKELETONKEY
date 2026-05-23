@@ -107,7 +107,7 @@ static skeletonkey_result_t overlayfs_setuid_detect(const struct skeletonkey_ctx
 
     /* Bug introduced in 5.11 when ovl copy-up was generalized.
      * Pre-5.11 immune via a different code path. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 11)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 11, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] overlayfs_setuid: kernel %s predates the bug "
                             "(introduced in 5.11)\n", v->release);

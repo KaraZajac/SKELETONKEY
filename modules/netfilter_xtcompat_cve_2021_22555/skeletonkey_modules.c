@@ -130,7 +130,7 @@ static skeletonkey_result_t netfilter_xtcompat_detect(const struct skeletonkey_c
         return SKELETONKEY_TEST_ERROR;
     }
 
-    if (v->major < 2 || (v->major == 2 && v->minor < 6)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 2, 6, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] netfilter_xtcompat: kernel %s predates the bug introduction\n",
                     v->release);

@@ -270,7 +270,7 @@ static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
     }
 
     /* Bug introduced in 5.8. */
-    if (v->major < 5 || (v->major == 5 && v->minor < 8)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 8, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] dirty_pipe: kernel %s predates the bug (introduced in 5.8)\n",
                     v->release);

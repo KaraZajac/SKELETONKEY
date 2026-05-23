@@ -103,4 +103,25 @@ void skeletonkey_host_print_banner(const struct skeletonkey_host *h, bool json);
 bool skeletonkey_host_kernel_at_least(const struct skeletonkey_host *h,
                                       int major, int minor, int patch);
 
+/* True iff h->kernel is in [lo, hi). Useful for "vulnerable range"
+ * gates where the simple `kernel_range_is_patched` backport model
+ * doesn't apply — e.g. a feature added in X.Y and removed/superseded
+ * in W.Z, or a per-module "vulnerable only on these specific kernel
+ * lines" check.
+ *
+ * Equivalent to:
+ *   host_kernel_at_least(h, lo...) && !host_kernel_at_least(h, hi...)
+ *
+ * For "predates the bug" alone use host_kernel_at_least directly; the
+ * `in_range` form is for the bounded interval case.
+ *
+ * Example:
+ *   if (host_kernel_in_range(h, 5, 8, 0,  5, 17, 0))
+ *       // kernel 5.8 ≤ K < 5.17 — vulnerable window per the mainline
+ *       // introduction/fix dates (ignoring stable backports)
+ */
+bool skeletonkey_host_kernel_in_range(const struct skeletonkey_host *h,
+                                      int lo_major, int lo_minor, int lo_patch,
+                                      int hi_major, int hi_minor, int hi_patch);
+
 #endif /* SKELETONKEY_HOST_H */

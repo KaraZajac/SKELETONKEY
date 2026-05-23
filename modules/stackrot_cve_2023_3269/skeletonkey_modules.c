@@ -159,7 +159,7 @@ static skeletonkey_result_t stackrot_detect(const struct skeletonkey_ctx *ctx)
 
     /* Bug introduced in 6.1 (when maple tree landed). Pre-6.1 kernels
      * use rbtree-based VMAs and don't have this bug. */
-    if (v->major < 6 || (v->major == 6 && v->minor < 1)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 6, 1, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] stackrot: kernel %s predates maple-tree VMA code (introduced in 6.1)\n",
                     v->release);

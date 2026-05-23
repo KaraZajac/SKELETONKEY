@@ -81,7 +81,7 @@ static skeletonkey_result_t ptrace_traceme_detect(const struct skeletonkey_ctx *
     /* Bug existed since ptrace's inception (early 2.x); anything
      * pre-LTS-backport is vulnerable. Anything < 4.4 in our range
      * model defaults to vulnerable since no entry covers it. */
-    if (v->major < 4 || (v->major == 4 && v->minor < 4)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 4, 4, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[!] ptrace_traceme: ancient kernel %s — assume VULNERABLE\n",
                     v->release);

@@ -237,7 +237,7 @@ static skeletonkey_result_t vmwgfx_detect(const struct skeletonkey_ctx *ctx)
 
     /* Pre-vmwgfx kernels (no driver shipped) — extremely unlikely but
      * report PRECOND_FAIL rather than VULNERABLE. */
-    if (v->major < 4) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 4, 0, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] vmwgfx: kernel %s predates vmwgfx driver\n", v->release);
         }

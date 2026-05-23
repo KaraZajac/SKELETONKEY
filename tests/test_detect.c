@@ -41,6 +41,16 @@ extern const struct skeletonkey_module nf_tables_module;
 extern const struct skeletonkey_module fuse_legacy_module;
 extern const struct skeletonkey_module cls_route4_module;
 extern const struct skeletonkey_module overlayfs_setuid_module;
+extern const struct skeletonkey_module af_packet_module;
+extern const struct skeletonkey_module af_packet2_module;
+extern const struct skeletonkey_module af_unix_gc_module;
+extern const struct skeletonkey_module netfilter_xtcompat_module;
+extern const struct skeletonkey_module nft_set_uaf_module;
+extern const struct skeletonkey_module nft_fwd_dup_module;
+extern const struct skeletonkey_module nft_payload_module;
+extern const struct skeletonkey_module stackrot_module;
+extern const struct skeletonkey_module sequoia_module;
+extern const struct skeletonkey_module vmwgfx_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -282,6 +292,51 @@ static void run_all(void)
 	run_one("overlayfs_setuid: vuln kernel + userns=false → PRECOND_FAIL",
 		&overlayfs_setuid_module, &h_kernel_5_14_no_userns,
 		SKELETONKEY_PRECOND_FAIL);
+
+	/* ── above-fix coverage for the remaining kernel modules ──
+	 * Kernel 6.12 is above every backport entry in the corpus.
+	 * For modules with a `kernel_range` table, kernel_range_is_patched
+	 * inherits via the "host is newer than every entry" branch and
+	 * detect() returns OK. */
+
+	run_one("af_packet: kernel 6.12 above 4.11 fix → OK",
+		&af_packet_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("af_packet2: kernel 6.12 above 5.9 fix → OK",
+		&af_packet2_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("af_unix_gc: kernel 6.12 above 6.6-rc1 fix → OK",
+		&af_unix_gc_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("netfilter_xtcompat: kernel 6.12 above 5.12 fix → OK",
+		&netfilter_xtcompat_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("nft_set_uaf: kernel 6.12 above 6.4-rc4 fix → OK",
+		&nft_set_uaf_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("nft_fwd_dup: kernel 6.12 above 5.17 fix → OK",
+		&nft_fwd_dup_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("nft_payload: kernel 6.12 above 6.2-rc4 fix → OK",
+		&nft_payload_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("stackrot: kernel 6.12 above 6.4-rc4 fix → OK",
+		&stackrot_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("sequoia: kernel 6.12 above 5.13.4 fix → OK",
+		&sequoia_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	run_one("vmwgfx: kernel 6.12 above 6.3-rc6 fix → OK",
+		&vmwgfx_module, &h_kernel_6_12, SKELETONKEY_OK);
+
+	/* ── ancient-kernel predates coverage ────────────────────────
+	 * Kernel 4.4 predates several module bugs introduced 5.x+. */
+
+	run_one("nft_set_uaf: kernel 4.4 predates 5.1 → OK",
+		&nft_set_uaf_module, &h_kernel_4_4, SKELETONKEY_OK);
+
+	run_one("stackrot: kernel 4.4 predates 6.1 → OK",
+		&stackrot_module, &h_kernel_4_4, SKELETONKEY_OK);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");

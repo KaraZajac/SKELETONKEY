@@ -106,7 +106,7 @@ static skeletonkey_result_t af_packet2_detect(const struct skeletonkey_ctx *ctx)
     }
 
     /* Bug introduced in 4.6 (tpacket_rcv VLAN path). Pre-4.6 immune. */
-    if (v->major < 4 || (v->major == 4 && v->minor < 6)) {
+    if (!skeletonkey_host_kernel_at_least(ctx->host, 4, 6, 0)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] af_packet2: kernel %s predates the bug (introduced in 4.6)\n",
                     v->release);
