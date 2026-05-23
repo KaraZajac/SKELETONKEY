@@ -82,13 +82,55 @@ Code that more than one module needs lives in `core/`:
 
 1. Parse args (`--scan`, `--exploit <name>`, `--mitigate`,
    `--detect-rules`, `--cleanup`, etc.)
-2. Fingerprint the host
+2. **Fingerprint the host** — `core/host.c` is called once at startup
+   to populate `struct skeletonkey_host` (kernel version + arch +
+   distro + capability gates + service presence). The result is
+   handed to every module via `ctx->host`. See "Host fingerprint"
+   below.
 3. For `--scan`: iterate module registry, call each module's
    `detect()`, emit table of results
 4. For `--exploit <name>`: locate module, gate behind `--i-know`,
    call its `exploit()`
 5. For `--detect-rules`: walk module registry, concatenate detection
    files in the requested format
+
+## Host fingerprint (`core/host.{h,c}`)
+
+A single `struct skeletonkey_host` is populated once at startup and
+exposed to every module via `ctx->host` (a stable pointer for the
+process lifetime). It carries:
+
+- **Identity:** `struct kernel_version kernel` + arch + nodename +
+  distro id/version/pretty (parsed from `/etc/os-release`).
+- **Process state:** euid, real_uid (defeats the userns illusion by
+  reading `/proc/self/uid_map`), egid, username, is_root,
+  is_ssh_session.
+- **Platform family:** is_linux, is_debian_family, is_rpm_family,
+  is_arch_family, is_suse_family.
+- **Capability gates (Linux):** unprivileged_userns_allowed (live
+  fork-probe), apparmor_restrict_userns, unprivileged_bpf_disabled,
+  kpti_enabled, kernel_lockdown_active, selinux_enforcing,
+  yama_ptrace_restricted.
+- **System services:** has_systemd, has_dbus_system.
+
+Modules that want to consult the fingerprint do:
+
+```c
+#include "../../core/host.h"
+/* ... */
+if (ctx->host && !ctx->host->unprivileged_userns_allowed)
+    return SKELETONKEY_PRECOND_FAIL;
+if (ctx->host->kernel.major < 7)
+    return SKELETONKEY_OK;   /* predates the bug */
+```
+
+The migration is opt-in per module — modules that don't `#include`
+host.h continue to do their own probes; modules that do save the
+duplicate work and get a consistent view across the whole scan.
+
+`--auto` and `--scan` (in verbose mode) print a two-line banner of
+the fingerprint via `skeletonkey_host_print_banner()` so operators
+can see at a glance which gates are open.
 
 ## CI matrix
 

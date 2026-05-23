@@ -40,9 +40,12 @@ typedef enum {
     SKELETONKEY_EXPLOIT_OK      = 5,
 } skeletonkey_result_t;
 
-/* Per-invocation context passed to module callbacks. Lightweight for
- * now; will grow as modules need shared state (host fingerprint,
- * leaked kbase, etc.). */
+/* Per-invocation context passed to module callbacks. The host
+ * fingerprint (kernel / distro / capability gates / service presence)
+ * is populated once at startup by core/host.c and handed to every
+ * module callback here — see core/host.h. */
+struct skeletonkey_host;   /* forward decl; full def in core/host.h */
+
 struct skeletonkey_ctx {
     bool          no_color;     /* --no-color */
     bool          json;         /* --json (machine-readable output) */
@@ -51,6 +54,12 @@ struct skeletonkey_ctx {
     bool          authorized;   /* user typed --i-know on exploit */
     bool          full_chain;   /* --full-chain (attempt root-pop after primitive) */
     bool          dry_run;      /* --dry-run (preview only; never call exploit/mitigate/cleanup) */
+
+    /* Host fingerprint — see core/host.h. Stable pointer, populated
+     * once by main() before any module callback runs. Modules that
+     * want to consult it #include "../../core/host.h". May be NULL
+     * only in degenerate test contexts; main() always sets it. */
+    const struct skeletonkey_host *host;
 };
 
 struct skeletonkey_module {

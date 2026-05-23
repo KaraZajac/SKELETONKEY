@@ -18,6 +18,7 @@
 #include "core/module.h"
 #include "core/registry.h"
 #include "core/offsets.h"
+#include "core/host.h"
 
 #include <time.h>
 #include <sys/utsname.h>
@@ -724,32 +725,8 @@ static skeletonkey_result_t run_detect_isolated(
     return SKELETONKEY_TEST_ERROR;
 }
 
-/* Best-effort host distro fingerprint via /etc/os-release. Populates
- * id_out and ver_out with up to 63 chars each; falls back to "?" when
- * /etc/os-release is missing or unparseable. */
-static void read_os_release(char *id_out, size_t id_cap,
-                            char *ver_out, size_t ver_cap)
-{
-    snprintf(id_out, id_cap, "?");
-    snprintf(ver_out, ver_cap, "?");
-    FILE *f = fopen("/etc/os-release", "r");
-    if (!f) return;
-    char line[256];
-    while (fgets(line, sizeof line, f)) {
-        const char *key = NULL; char *dst = NULL; size_t cap = 0;
-        if (strncmp(line, "ID=", 3) == 0) {
-            key = line + 3; dst = id_out; cap = id_cap;
-        } else if (strncmp(line, "VERSION_ID=", 11) == 0) {
-            key = line + 11; dst = ver_out; cap = ver_cap;
-        } else continue;
-        const char *v = key;
-        if (*v == '"' || *v == '\'') v++;
-        size_t L = strcspn(v, "\"'\n");
-        if (L >= cap) L = cap - 1;
-        memcpy(dst, v, L); dst[L] = '\0';
-    }
-    fclose(f);
-}
+/* Host fingerprint parsing (ID / VERSION_ID / kernel / arch) lives in
+ * core/host.c; cmd_auto consults ctx->host via the shared banner. */
 
 static int cmd_auto(struct skeletonkey_ctx *ctx)
 {
@@ -776,11 +753,8 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
     bool prev_active = ctx->active_probe;
     ctx->active_probe = true;
 
-    struct utsname u; uname(&u);
-    char distro_id[64], distro_ver[64];
-    read_os_release(distro_id, sizeof distro_id, distro_ver, sizeof distro_ver);
-    fprintf(stderr, "[*] auto: host=%s distro=%s/%s kernel=%s arch=%s\n",
-            u.nodename, distro_id, distro_ver, u.release, u.machine);
+    /* Two-line host fingerprint banner (identity + capability gates). */
+    skeletonkey_host_print_banner(ctx->host, ctx->json);
     fprintf(stderr, "[*] auto: active probes enabled — brief /tmp file "
                     "touches and fork-isolated namespace probes\n");
     fprintf(stderr, "[*] auto: scanning %zu modules for vulnerabilities...\n",
@@ -957,6 +931,12 @@ int main(int argc, char **argv)
     struct skeletonkey_ctx ctx = {0};
     const char *target = NULL;
     int i_know = 0;
+
+    /* Probe the host once, up front. ctx.host is a stable pointer
+     * shared by every module callback; populating now means each
+     * detect() sees the same fingerprint and no module has to re-do
+     * uname/getpwuid/sysctl reads. See core/host.{h,c}. */
+    ctx.host = skeletonkey_host_get();
 
     enum detect_format dr_fmt = FMT_AUDITD;
     static struct option longopts[] = {

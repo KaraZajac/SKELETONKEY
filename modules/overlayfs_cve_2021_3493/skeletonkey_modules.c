@@ -47,6 +47,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mount.h>
@@ -132,10 +133,18 @@ static skeletonkey_result_t overlayfs_detect(const struct skeletonkey_ctx *ctx)
 
     /* Ubuntu-specific bug. Non-Ubuntu kernels are largely immune
      * because upstream didn't enable the userns-mount path until
-     * 5.11. Bail early for non-Ubuntu. */
-    if (!is_ubuntu()) {
+     * 5.11. Bail early for non-Ubuntu. Consult the shared host
+     * fingerprint (distro_id == "ubuntu" — populated once at startup;
+     * the local is_ubuntu() helper is preserved for symmetry / future
+     * standalone use but the dispatcher path goes through ctx->host). */
+    bool ubuntu = ctx->host
+        ? (strcmp(ctx->host->distro_id, "ubuntu") == 0)
+        : is_ubuntu();
+    if (!ubuntu) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] overlayfs: not Ubuntu — bug is Ubuntu-specific\n");
+            fprintf(stderr, "[+] overlayfs: not Ubuntu (distro=%s) — bug is "
+                "Ubuntu-specific\n",
+                ctx->host ? ctx->host->distro_id : "?");
         }
         return SKELETONKEY_OK;
     }

@@ -53,6 +53,7 @@
 /* _GNU_SOURCE / _FILE_OFFSET_BITS are passed via -D in the top-level
  * Makefile; do not redefine here (warning: redefined). */
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -837,19 +838,10 @@ static void fg_evict(const char *path)
 	if (dc >= 0) { if (write(dc, "3\n", 2) < 0) {} close(dc); }
 }
 
-/* --- precondition check: unprivileged user namespaces --- */
-
-static bool fg_userns_allowed(void)
-{
-	pid_t pid = fork();
-	if (pid < 0)
-		return false;
-	if (pid == 0)
-		_exit(unshare(CLONE_NEWUSER) == 0 ? 0 : 1);
-	int st;
-	waitpid(pid, &st, 0);
-	return WIFEXITED(st) && WEXITSTATUS(st) == 0;
-}
+/* The unprivileged-userns precondition is now read from the shared
+ * host fingerprint (ctx->host->unprivileged_userns_allowed), which
+ * probes once at startup via core/host.c. The previous per-detect
+ * fork-probe helper was removed. */
 
 /* ---- detect ------------------------------------------------------- */
 
@@ -927,18 +919,24 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 {
 	fg_verbose = !ctx->json;
 
-	struct kernel_version v;
-	if (!kernel_version_current(&v)) {
+	/* Pull kernel version and userns availability from the shared
+	 * host fingerprint — populated once at startup, no per-detect
+	 * fork or re-parse. */
+	const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+	if (!v || v->major == 0) {
 		if (!ctx->json)
-			fprintf(stderr, "[!] fragnesia: could not parse kernel version\n");
+			fprintf(stderr, "[!] fragnesia: host fingerprint missing kernel "
+				"version — bailing\n");
 		return SKELETONKEY_TEST_ERROR;
 	}
 
-	if (!fg_userns_allowed()) {
+	if (!ctx->host->unprivileged_userns_allowed) {
 		if (!ctx->json)
 			fprintf(stderr, "[i] fragnesia: unprivileged user "
-				"namespaces are disabled — XFRM gate closed "
-				"here (CAP_NET_ADMIN unreachable)\n");
+				"namespaces are disabled (host fingerprint) — "
+				"XFRM gate closed here (CAP_NET_ADMIN unreachable)%s\n",
+				ctx->host->apparmor_restrict_userns ?
+					"; AppArmor restriction is on" : "");
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 
@@ -950,7 +948,7 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 
-	bool patched_by_version = kernel_range_is_patched(&fragnesia_range, &v);
+	bool patched_by_version = kernel_range_is_patched(&fragnesia_range, v);
 
 	if (ctx->active_probe) {
 		if (!ctx->json)
@@ -961,7 +959,7 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 			if (!ctx->json)
 				fprintf(stderr, "[!] fragnesia: ACTIVE PROBE "
 					"CONFIRMED — ESP-in-TCP coalesce corrupts "
-					"the page cache (kernel %s)\n", v.release);
+					"the page cache (kernel %s)\n", v->release);
 			return SKELETONKEY_VULNERABLE;
 		}
 		if (p == 0) {
@@ -982,14 +980,14 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 		if (!ctx->json)
 			fprintf(stderr, "[+] fragnesia: kernel %s is patched "
 				"(7.0.9+; version-only check — use --active to "
-				"confirm)\n", v.release);
+				"confirm)\n", v->release);
 		return SKELETONKEY_OK;
 	}
 	if (!ctx->json)
 		fprintf(stderr, "[!] fragnesia: kernel %s appears VULNERABLE "
 			"(no backport entry for this branch; version-only)\n"
 			"    Confirm empirically: skeletonkey --scan --active\n",
-			v.release);
+			v->release);
 	return SKELETONKEY_VULNERABLE;
 }
 

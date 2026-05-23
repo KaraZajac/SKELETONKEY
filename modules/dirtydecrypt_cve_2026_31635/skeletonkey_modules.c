@@ -46,6 +46,7 @@
 /* _GNU_SOURCE / _FILE_OFFSET_BITS are passed via -D in the top-level
  * Makefile; do not redefine here (warning: redefined). */
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -684,19 +685,23 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 {
 	dd_verbose = !ctx->json;
 
-	struct kernel_version v;
-	if (!kernel_version_current(&v)) {
+	/* Consult the shared host fingerprint instead of calling
+	 * kernel_version_current() ourselves — populated once at startup
+	 * and identical across every module's detect(). */
+	const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+	if (!v || v->major == 0) {
 		if (!ctx->json)
-			fprintf(stderr, "[!] dirtydecrypt: could not parse kernel version\n");
+			fprintf(stderr, "[!] dirtydecrypt: host fingerprint missing kernel "
+				"version — bailing\n");
 		return SKELETONKEY_TEST_ERROR;
 	}
 
 	/* Predates the bug: rxgk RESPONSE-handling code was added in 7.0. */
-	if (v.major < 7) {
+	if (v->major < 7) {
 		if (!ctx->json)
 			fprintf(stderr, "[i] dirtydecrypt: kernel %s predates the rxgk "
 				"RESPONSE-handling code added in 7.0 — not applicable\n",
-				v.release);
+				v->release);
 		return SKELETONKEY_OK;
 	}
 
@@ -718,7 +723,7 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 
-	bool patched_by_version = kernel_range_is_patched(&dirtydecrypt_range, &v);
+	bool patched_by_version = kernel_range_is_patched(&dirtydecrypt_range, v);
 
 	if (ctx->active_probe) {
 		if (!ctx->json)
@@ -729,7 +734,7 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 			if (!ctx->json)
 				fprintf(stderr, "[!] dirtydecrypt: ACTIVE PROBE "
 					"CONFIRMED — rxgk in-place decrypt corrupts "
-					"the page cache (kernel %s)\n", v.release);
+					"the page cache (kernel %s)\n", v->release);
 			return SKELETONKEY_VULNERABLE;
 		}
 		if (p == 0) {
@@ -748,14 +753,14 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 		if (!ctx->json)
 			fprintf(stderr, "[+] dirtydecrypt: kernel %s is patched "
 				"(commit a2567217 in Linux 7.0; version-only check — "
-				"use --active to confirm)\n", v.release);
+				"use --active to confirm)\n", v->release);
 		return SKELETONKEY_OK;
 	}
 	if (!ctx->json)
 		fprintf(stderr, "[!] dirtydecrypt: kernel %s appears VULNERABLE "
 			"(in 7.0-rc window before commit a2567217; version-only)\n"
 			"    Confirm empirically: skeletonkey --scan --active\n",
-			v.release);
+			v->release);
 	return SKELETONKEY_VULNERABLE;
 }
 

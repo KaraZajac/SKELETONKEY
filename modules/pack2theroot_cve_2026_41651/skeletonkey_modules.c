@@ -61,6 +61,7 @@
 
 /* _GNU_SOURCE / _FILE_OFFSET_BITS are passed via -D in the top-level
  * Makefile; do not redefine here. */
+#include "../../core/host.h"
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -310,10 +311,18 @@ static skeletonkey_result_t p2tr_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_OK;
 	}
 
-	if (access("/etc/debian_version", F_OK) != 0) {
+	/* Host fingerprint short-circuits — populated once at startup. */
+	if (ctx->host && !ctx->host->is_debian_family) {
 		if (!ctx->json)
-			fprintf(stderr, "[i] pack2theroot: not a Debian/Ubuntu host "
-				"(PoC's .deb builder is Debian-family-only)\n");
+			fprintf(stderr, "[i] pack2theroot: not a Debian-family host "
+				"(distro=%s) — PoC's .deb builder is Debian-only\n",
+				ctx->host->distro_id);
+		return SKELETONKEY_PRECOND_FAIL;
+	}
+	if (ctx->host && !ctx->host->has_dbus_system) {
+		if (!ctx->json)
+			fprintf(stderr, "[i] pack2theroot: no system D-Bus socket at "
+				"/run/dbus/system_bus_socket — PackageKit unreachable\n");
 		return SKELETONKEY_PRECOND_FAIL;
 	}
 

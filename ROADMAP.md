@@ -227,6 +227,22 @@ of the 28-module verified corpus):**
       `a2567217` (Linux 7.0); `fragnesia` against 7.0.9; `pack2theroot`
       against PackageKit 1.3.5. The `kernel_range` model now drives
       their verdicts; `--active` confirms empirically on top.
+- [x] **`core/host` host-fingerprint refactor.** A single
+      `struct skeletonkey_host` is populated once at startup and
+      handed to every module via `ctx->host`: kernel version + arch
+      + distro id/version + capability gates (unprivileged_userns,
+      AppArmor restriction, BPF disabled, KPTI, lockdown, SELinux,
+      Yama ptrace) + service presence (systemd, system D-Bus). The
+      `--auto` / `--scan` banner now prints the fingerprint up front
+      so operators see at a glance which gates are open. 4 modules
+      migrated to consume the fingerprint (dirtydecrypt, fragnesia,
+      pack2theroot, overlayfs) — replacing per-detect `uname`s,
+      `/etc/os-release` parses, and userns fork-probes with O(1)
+      cached lookups. See `docs/ARCHITECTURE.md` for the pattern;
+      future modules can opt-in by including `core/host.h`.
+- [ ] Migrate the remaining modules (cgroup_release_agent /
+      overlayfs_setuid / copy_fail_family bridge / others) to
+      consume `ctx->host` — incremental follow-up.
 
 **Carry-overs:**
 
