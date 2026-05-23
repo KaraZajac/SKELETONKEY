@@ -50,6 +50,7 @@ struct skeletonkey_ctx {
     bool          no_shell;     /* --no-shell (exploit prep but don't pop) */
     bool          authorized;   /* user typed --i-know on exploit */
     bool          full_chain;   /* --full-chain (attempt root-pop after primitive) */
+    bool          dry_run;      /* --dry-run (preview only; never call exploit/mitigate/cleanup) */
 };
 
 struct skeletonkey_module {

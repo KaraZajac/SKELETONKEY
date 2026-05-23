@@ -216,6 +216,17 @@ of the 28-module verified corpus):**
       module's probe is contained and the scan continues. Surfaced
       while testing entrybleed's `prefetchnta` sweep under emulated
       CPUs: exactly the failure mode the isolation now handles.
+- [x] `--dry-run` flag: previews the picked exploit (or single-module
+      operation) without firing. Works with `--auto`, `--exploit`,
+      `--mitigate`, `--cleanup`. `--auto --dry-run` does NOT require
+      `--i-know` (nothing fires) so operators can inspect the host's
+      attack surface without arming. Bare `--auto` still gates on
+      `--i-know` and now points to `--dry-run` in the refusal message.
+- [x] Version-pinned `detect()` for the 3 ported modules — Debian
+      tracker provided the fix commits: `dirtydecrypt` against mainline
+      `a2567217` (Linux 7.0); `fragnesia` against 7.0.9; `pack2theroot`
+      against PackageKit 1.3.5. The `kernel_range` model now drives
+      their verdicts; `--active` confirms empirically on top.
 
 **Carry-overs:**
 

@@ -74,6 +74,9 @@ static void usage(const char *prog)
 "  --i-know              authorization gate for --exploit modes\n"
 "  --active              in --scan, do invasive sentinel probes (no /etc/passwd writes)\n"
 "  --no-shell            in --exploit modes, prepare but don't drop to shell\n"
+"  --dry-run             preview only — do the scan + pick, never call exploit/\n"
+"                        mitigate/cleanup. Useful with --auto to see what would\n"
+"                        fire before authorizing it.\n"
 "  --full-chain          in --exploit modes, attempt full root-pop after primitive\n"
 "                        (the 🟡 modules return primitive-only by default; with\n"
 "                        --full-chain they continue to leak → arb-write →\n"
@@ -750,10 +753,11 @@ static void read_os_release(char *id_out, size_t id_cap,
 
 static int cmd_auto(struct skeletonkey_ctx *ctx)
 {
-    if (!ctx->authorized) {
+    if (!ctx->authorized && !ctx->dry_run) {
         fprintf(stderr,
-"[-] --auto requires --i-know. About to attempt root via the safest available\n"
-"    LPE on this host. Authorized testing only. See docs/ETHICS.md.\n");
+"[-] --auto requires --i-know (or --dry-run for a preview that never fires).\n"
+"    About to attempt root via the safest available LPE on this host.\n"
+"    Authorized testing only. See docs/ETHICS.md.\n");
         return 1;
     }
     if (geteuid() == 0) {
@@ -864,6 +868,21 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
             }
 
     const struct skeletonkey_module *pick = cands[0].m;
+
+    if (ctx->dry_run) {
+        fprintf(stderr,
+"\n[*] auto: %d vulnerable module(s) found. Safest is '%s' (rank %d).\n"
+"[*] auto: --dry-run: would launch `--exploit %s --i-know`; not firing.\n",
+                nc, pick->name, cands[0].rank, pick->name);
+        if (nc > 1) {
+            fprintf(stderr, "[i] auto: other candidates (ranked):\n");
+            for (int i = 1; i < nc; i++)
+                fprintf(stderr, "      %-22s safety rank %d\n",
+                        cands[i].m->name, cands[i].rank);
+        }
+        return 0;
+    }
+
     fprintf(stderr,
 "\n[*] auto: %d vulnerable module(s) found. Safest is '%s' (rank %d).\n"
 "[*] auto: launching --exploit %s...\n\n",
@@ -883,6 +902,11 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
 static int cmd_one(const struct skeletonkey_module *m, const char *op,
                    const struct skeletonkey_ctx *ctx)
 {
+    if (ctx->dry_run) {
+        fprintf(stderr, "[*] %s: --dry-run: would run --%s; not firing.\n",
+                m->name, op);
+        return 0;
+    }
     skeletonkey_result_t (*fn)(const struct skeletonkey_ctx *) = NULL;
     if (strcmp(op, "exploit") == 0)        fn = m->exploit;
     else if (strcmp(op, "mitigate") == 0)  fn = m->mitigate;
@@ -953,6 +977,7 @@ int main(int argc, char **argv)
         {"json",          no_argument,       0,  4 },
         {"no-color",      no_argument,       0,  5 },
         {"full-chain",    no_argument,       0,  7 },
+        {"dry-run",       no_argument,       0, 10 },
         {"version",       no_argument,       0, 'V'},
         {"help",          no_argument,       0, 'h'},
         {0, 0, 0, 0}
@@ -977,6 +1002,7 @@ int main(int argc, char **argv)
         case  7 : ctx.full_chain = true; break;
         case  8 : mode = MODE_DUMP_OFFSETS; break;
         case  9 : mode = MODE_AUTO; ctx.authorized = i_know ? true : ctx.authorized; break;
+        case 10 : ctx.dry_run = true; break;
         case  6 :
             if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
             else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;
