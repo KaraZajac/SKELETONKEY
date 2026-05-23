@@ -23,6 +23,8 @@
 #include <time.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <signal.h>
+#include <fcntl.h>
 
 #include <getopt.h>
 #include <stdbool.h>
@@ -690,30 +692,45 @@ static int module_safety_rank(const char *n)
     return 50; /* kernel primitives — middle of pack */
 }
 
+/* Per-detect timeout: a probe that hangs (network blocking, deadlocked
+ * fork-probe, kernel-side stall) must NOT freeze --auto. 15s is well
+ * above any honest active probe (fragnesia's full XFRM setup is ~500ms,
+ * dirtydecrypt's rxgk handshake ~1s) but short enough that the scan
+ * still finishes within ~7-8 minutes even if every module hits the cap. */
+#define SKELETONKEY_DETECT_TIMEOUT_SECS 15
+
 /* Run a module's detect() in a forked child so a SIGILL/SIGSEGV/etc.
- * in one detector cannot tear down the dispatcher. The verdict travels
- * back via the child's exit status (skeletonkey_result_t values fit in
- * 0..5). On a crash, returns SKELETONKEY_TEST_ERROR; *crashed_signal
- * is set to the terminating signal (0 if exited normally).
+ * in one detector cannot tear down the dispatcher. Also installs an
+ * alarm(15) so a hung probe cannot stall the scan.
+ *
+ * The verdict travels back via the child's exit status
+ * (skeletonkey_result_t values fit in 0..5). On a crash, returns
+ * SKELETONKEY_TEST_ERROR; *crashed_signal is set to the terminating
+ * signal (0 if exited normally), *timed_out is true if the signal
+ * was SIGALRM (the detect-timeout fired).
  *
  * This matters because --auto auto-enables active probes, which can
  * exercise CPU instructions (entrybleed's prefetchnta sweep) or
  * kernel paths (XFRM ESP-in-TCP setup) that may misbehave under
- * emulation or hardened containers. Without isolation, one bad probe
- * stops the whole scan and the operator never sees the rest of the
- * verdict table. */
+ * emulation or hardened containers, or stall on a frozen socket.
+ * Without isolation + timeout, one bad probe stops the whole scan
+ * and the operator never sees the rest of the verdict table. */
 static skeletonkey_result_t run_detect_isolated(
     const struct skeletonkey_module *m,
     const struct skeletonkey_ctx *ctx,
-    int *crashed_signal)
+    int *crashed_signal,
+    bool *timed_out)
 {
     *crashed_signal = 0;
+    *timed_out = false;
     pid_t pid = fork();
     if (pid < 0) {
         perror("fork");
         return SKELETONKEY_TEST_ERROR;
     }
     if (pid == 0) {
+        /* SIGALRM default action is termination — perfect kill-switch. */
+        alarm(SKELETONKEY_DETECT_TIMEOUT_SECS);
         skeletonkey_result_t r = m->detect(ctx);
         fflush(NULL);
         _exit((int)r);
@@ -721,8 +738,96 @@ static skeletonkey_result_t run_detect_isolated(
     int st;
     if (waitpid(pid, &st, 0) < 0) return SKELETONKEY_TEST_ERROR;
     if (WIFEXITED(st)) return (skeletonkey_result_t)WEXITSTATUS(st);
-    if (WIFSIGNALED(st)) *crashed_signal = WTERMSIG(st);
+    if (WIFSIGNALED(st)) {
+        *crashed_signal = WTERMSIG(st);
+        if (*crashed_signal == SIGALRM) *timed_out = true;
+    }
     return SKELETONKEY_TEST_ERROR;
+}
+
+/* Run a module callback (exploit/mitigate/cleanup) in a forked child.
+ * Two crash-safety properties:
+ *   - SIGSEGV/SIGILL/etc. in the callback is contained.
+ *   - --auto's "try next-safest on EXPLOIT_FAIL" fallback path actually
+ *     runs even if the picked exploit dies hard.
+ *
+ * Result communication is via a one-byte pipe with FD_CLOEXEC on the
+ * write end:
+ *   - If the callback returns normally, the child writes the result
+ *     byte before _exit; the parent reads it. Trusted result code.
+ *   - If the callback execve()s into a target (dirty_pipe → su,
+ *     pack2theroot → /tmp/.suid_bash), FD_CLOEXEC closes the write
+ *     end as part of the exec transfer; the parent's read() gets
+ *     EOF. We then know the child exec'd code and report EXPLOIT_OK
+ *     regardless of what shell exit code the exec'd-into program
+ *     returns when the operator detaches.
+ *   - If the child died of a signal, that's a crash; report it. */
+static skeletonkey_result_t run_callback_isolated(
+    const char *label,
+    skeletonkey_result_t (*fn)(const struct skeletonkey_ctx *),
+    const struct skeletonkey_ctx *ctx,
+    int *crashed_signal,
+    bool *exec_path)
+{
+    (void)label;
+    *crashed_signal = 0;
+    *exec_path = false;
+
+    int pfd[2];
+    if (pipe(pfd) < 0) {
+        /* Plumbing failed — fall back to direct call. The crash-safety
+         * property is degraded for this one invocation, but the
+         * dispatcher would have crashed anyway if pipe() fails. */
+        return fn(ctx);
+    }
+    /* FD_CLOEXEC: if child execve's, the kernel closes pfd[1] before
+     * handing control to the new image, so the new image cannot
+     * inadvertently write garbage and the parent observes EOF. */
+    if (fcntl(pfd[1], F_SETFD, FD_CLOEXEC) < 0) {
+        close(pfd[0]); close(pfd[1]);
+        return fn(ctx);
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pfd[0]); close(pfd[1]);
+        perror("fork");
+        return SKELETONKEY_TEST_ERROR;
+    }
+    if (pid == 0) {
+        close(pfd[0]);
+        skeletonkey_result_t r = fn(ctx);
+        /* If we get here, fn didn't exec. Report the code. */
+        unsigned char code = (unsigned char)r;
+        ssize_t w = write(pfd[1], &code, 1);
+        (void)w;
+        close(pfd[1]);
+        fflush(NULL);
+        _exit((int)r);
+    }
+    close(pfd[1]);
+    unsigned char code = 0;
+    ssize_t n = read(pfd[0], &code, 1);
+    close(pfd[0]);
+
+    int st;
+    waitpid(pid, &st, 0);
+
+    if (n == 1)
+        return (skeletonkey_result_t)code;
+
+    /* No byte read → child either exec'd (FD_CLOEXEC closed pfd[1])
+     * or crashed before reaching the write. Distinguish via wait
+     * status. */
+    if (WIFSIGNALED(st)) {
+        *crashed_signal = WTERMSIG(st);
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+    /* Normal exit without writing → must have exec'd. We achieved
+     * code execution; treat as EXPLOIT_OK regardless of the shell's
+     * subsequent exit code. */
+    *exec_path = true;
+    return SKELETONKEY_EXPLOIT_OK;
 }
 
 /* Host fingerprint parsing (ID / VERSION_ID / kernel / arch) lives in
@@ -762,17 +867,22 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
 
     struct cand { const struct skeletonkey_module *m; int rank; } cands[64];
     int nc = 0;
-    int n_vuln = 0, n_ok = 0, n_precond = 0, n_test = 0, n_crash = 0, n_other = 0;
+    int n_vuln = 0, n_ok = 0, n_precond = 0, n_test = 0;
+    int n_crash = 0, n_timeout = 0, n_other = 0;
     size_t n = skeletonkey_module_count();
     for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
         if (!m->detect || !m->exploit) continue;
         int sig = 0;
-        skeletonkey_result_t r = run_detect_isolated(m, ctx, &sig);
+        bool timed_out = false;
+        skeletonkey_result_t r = run_detect_isolated(m, ctx, &sig, &timed_out);
         if (sig != 0) {
-            fprintf(stderr, "[?] auto: %-22s detect() crashed "
-                            "(signal %d) — continuing\n", m->name, sig);
-            n_crash++;
+            const char *why = timed_out ? "timed out" : "crashed";
+            fprintf(stderr, "[?] auto: %-22s detect() %s "
+                            "(signal %d) — continuing\n",
+                    m->name, why, sig);
+            if (timed_out) n_timeout++;
+            else           n_crash++;
             continue;
         }
         switch (r) {
@@ -822,6 +932,10 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
     if (n_crash > 0)
         fprintf(stderr, "[!] auto: %d module(s) crashed during detect "
                         "— dispatcher recovered via fork isolation\n", n_crash);
+    if (n_timeout > 0)
+        fprintf(stderr, "[!] auto: %d module(s) timed out (>%ds) during "
+                        "detect — dispatcher recovered\n",
+                n_timeout, SKELETONKEY_DETECT_TIMEOUT_SECS);
 
     if (nc == 0) {
         if (n_test > 0) {
@@ -862,8 +976,22 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
 "[*] auto: launching --exploit %s...\n\n",
             nc, pick->name, cands[0].rank, pick->name);
 
-    skeletonkey_result_t r = pick->exploit(ctx);
-    fprintf(stderr, "\n[*] auto: %s exploit returned %s\n", pick->name, result_str(r));
+    int xsig = 0;
+    bool exec_path = false;
+    skeletonkey_result_t r = run_callback_isolated(
+        "exploit", pick->exploit, ctx, &xsig, &exec_path);
+    if (xsig != 0) {
+        fprintf(stderr, "\n[!] auto: %s exploit crashed (signal %d) — "
+                        "dispatcher recovered via fork isolation\n",
+                pick->name, xsig);
+    } else if (exec_path) {
+        fprintf(stderr, "\n[*] auto: %s exploit transferred to spawned "
+                        "target (shell exited cleanly) — EXPLOIT_OK\n",
+                pick->name);
+    } else {
+        fprintf(stderr, "\n[*] auto: %s exploit returned %s\n",
+                pick->name, result_str(r));
+    }
     if (r == SKELETONKEY_EXPLOIT_OK) return 5;
     if (r == SKELETONKEY_EXPLOIT_FAIL && nc > 1) {
         fprintf(stderr, "[i] auto: %d more candidate(s) available — try one manually:\n", nc - 1);
@@ -890,8 +1018,18 @@ static int cmd_one(const struct skeletonkey_module *m, const char *op,
         fprintf(stderr, "[-] module '%s' has no %s operation\n", m->name, op);
         return 1;
     }
-    skeletonkey_result_t r = fn(ctx);
-    fprintf(stderr, "[*] %s --%s result: %s\n", m->name, op, result_str(r));
+    int sig = 0;
+    bool exec_path = false;
+    skeletonkey_result_t r = run_callback_isolated(op, fn, ctx, &sig, &exec_path);
+    if (sig != 0)
+        fprintf(stderr, "[!] %s --%s crashed (signal %d) — recovered\n",
+                m->name, op, sig);
+    else if (exec_path)
+        fprintf(stderr, "[*] %s --%s transferred to spawned target — EXPLOIT_OK\n",
+                m->name, op);
+    else
+        fprintf(stderr, "[*] %s --%s result: %s\n",
+                m->name, op, result_str(r));
     return (int)r;
 }
 
