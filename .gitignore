@@ -18,3 +18,5 @@ modules/*/skeletonkey
 .vscode/
 .idea/
 *.swp
+/tools/verify-vm/logs/
+/tools/verify-vm/.vagrant/

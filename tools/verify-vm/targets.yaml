@@ -1,0 +1,218 @@
+# tools/verify-vm/targets.yaml — VM verification targets per module
+#
+# For each module, the (box, kernel) pair the verifier should spin up to
+# empirically confirm detect() + exploit() against a KNOWN-VULNERABLE
+# kernel. Picked from Debian snapshot / kernel.ubuntu.com / Ubuntu HWE
+# archives — every version below is fetch-able as a .deb package.
+#
+# Schema:
+#   <module_name>:
+#     box:             vagrant box name (matches tools/verify-vm/boxes/<NAME>/)
+#     kernel_pkg:      apt package name to install for the vulnerable kernel
+#                      (omit / empty if the stock distro kernel is already vulnerable)
+#     kernel_version:  expected /proc/version-style major.minor.patch
+#     expect_detect:   what skeletonkey --explain should say on a confirmed-vulnerable
+#                      target. One of: VULNERABLE | OK | PRECOND_FAIL.
+#     notes:           short rationale for the target choice.
+#
+# Boxes available (matches tools/verify-vm/boxes/):
+#   debian11    — Debian 11 bullseye (5.10.0 stock)
+#   debian12    — Debian 12 bookworm (6.1.0 stock)
+#   ubuntu1804  — Ubuntu 18.04 LTS  (4.15.0 stock; HWE up to 5.4)
+#   ubuntu2004  — Ubuntu 20.04 LTS  (5.4.0 stock; HWE up to 5.15)
+#   ubuntu2204  — Ubuntu 22.04 LTS  (5.15.0 stock; HWE up to 6.5)
+#
+# Adding a new target: pick the oldest LTS box whose stock or HWE kernel
+# is below the module's kernel_range fix threshold; if no LTS works,
+# install a pinned kernel from kernel.ubuntu.com / snapshot.debian.org
+# via the kernel_pkg field.
+#
+# Modules where no fully-automatic vulnerable target exists (need manual
+# kernel build or a special distro variant) are marked manual: true with
+# a comment explaining the constraint.
+
+af_packet:
+  box: ubuntu1804
+  kernel_pkg: ""              # stock 4.15.0 is vulnerable
+  kernel_version: "4.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2017-7308; bug introduced ≤ 4.10; Ubuntu 18.04 stock 4.15 is pre-fix."
+
+af_packet2:
+  box: ubuntu2004
+  kernel_pkg: linux-image-5.4.0-26-generic
+  kernel_version: "5.4.0-26"
+  expect_detect: VULNERABLE
+  notes: "CVE-2020-14386; fixed in 5.9 mainline + backports; 5.4.0-26 (Ubuntu 20.04 launch) is pre-fix."
+
+af_unix_gc:
+  box: ubuntu2204
+  kernel_pkg: linux-image-5.15.0-43-generic
+  kernel_version: "5.15.0-43"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-4622; fixed in 6.5 mainline / backported to 5.15.130; 5.15.0-43 is below the backport."
+
+cgroup_release_agent:
+  box: debian11
+  kernel_pkg: ""              # 5.10.0 stock is pre-fix (fix 5.17)
+  kernel_version: "5.10.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2022-0492; fix landed 5.17 mainline + 5.16.9 stable; 5.10.0 is below."
+
+cls_route4:
+  box: ubuntu2004
+  kernel_pkg: linux-image-5.15.0-43-generic
+  kernel_version: "5.15.0-43"
+  expect_detect: VULNERABLE
+  notes: "CVE-2022-2588; fix landed 5.19 / backports 5.10.143 / 5.15.67; 5.15.0-43 is below."
+
+dirty_cow:
+  box: ubuntu1804
+  kernel_pkg: ""              # 4.15.0 has the COW race fix; need older kernel
+  kernel_version: "4.4.0"
+  expect_detect: OK
+  notes: "CVE-2016-5195; ALL 4.4+ kernels have the fix backported. Ubuntu 18.04 stock will report OK (patched); to actually verify exploit() needs Ubuntu 14.04 / kernel ≤ 4.4.0-46. Use a custom box for that."
+  manual_for_exploit_verify: true
+
+dirty_pipe:
+  box: ubuntu2004
+  kernel_pkg: linux-image-5.13.0-19-generic
+  kernel_version: "5.13.0-19"
+  expect_detect: VULNERABLE
+  notes: "CVE-2022-0847; introduced 5.8, fixed 5.16.11 / 5.15.25; 5.13.0-19 (Ubuntu 20.04 HWE early) is in the vulnerable window."
+
+dirtydecrypt:
+  box: debian12
+  kernel_pkg: ""              # only Linux 7.0+ has the bug — needs custom kernel
+  kernel_version: "7.0.0"
+  expect_detect: OK
+  notes: "CVE-2026-31635; bug introduced in 7.0 rxgk path. NO mainline 7.0 distro shipping yet — Debian 12 will report OK (predates the bug). Verifying exploit() needs a hand-built 7.0-rc kernel."
+  manual_for_exploit_verify: true
+
+entrybleed:
+  box: ubuntu2204
+  kernel_pkg: ""              # any KPTI-enabled x86_64 kernel
+  kernel_version: "5.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-0458; side-channel applies to any KPTI-on Intel x86_64 host. Stock Ubuntu 22.04 will report VULNERABLE if meltdown sysfs shows 'Mitigation: PTI'."
+
+fragnesia:
+  box: debian12
+  kernel_pkg: ""
+  kernel_version: "7.0.0"
+  expect_detect: OK
+  notes: "CVE-2026-46300; XFRM ESP-in-TCP bug. Needs 7.0-rc; Debian 12 reports OK."
+  manual_for_exploit_verify: true
+
+fuse_legacy:
+  box: debian11
+  kernel_pkg: ""              # 5.10.0 is pre-fix (fix 5.16)
+  kernel_version: "5.10.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2022-0185; fix 5.16.2 mainline + 5.10.93 stable; Debian 11 stock 5.10.0 is below."
+
+netfilter_xtcompat:
+  box: debian11
+  kernel_pkg: ""              # 5.10.0 (Debian 11 stock) is pre-fix (fix 5.13 + 5.10.46)
+  kernel_version: "5.10.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2021-22555; 15-year-old bug; Debian 11 stock 5.10.0 below the 5.10.38 fix backport."
+
+nf_tables:
+  box: ubuntu2204
+  kernel_pkg: linux-image-5.15.0-43-generic
+  kernel_version: "5.15.0-43"
+  expect_detect: VULNERABLE
+  notes: "CVE-2024-1086; fix 6.8 mainline + 5.15.149 backport; 5.15.0-43 is below."
+
+nft_fwd_dup:
+  box: debian11
+  kernel_pkg: ""              # 5.10.0 below the 5.10.103 backport
+  kernel_version: "5.10.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2022-25636; fix 5.17 mainline + 5.10.103 backport; Debian 11 stock 5.10.0 below."
+
+nft_payload:
+  box: ubuntu2004
+  kernel_pkg: linux-image-5.15.0-43-generic
+  kernel_version: "5.15.0-43"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-0179; fix 6.2 mainline + 5.15.91 / 5.10.162 backports; 5.15.0-43 is below."
+
+nft_set_uaf:
+  box: ubuntu2204
+  kernel_pkg: linux-image-5.19.0-32-generic
+  kernel_version: "5.19.0-32"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-32233; fix 6.4-rc4 + 6.1.27 / 5.15.110; 5.19.0-32 is below."
+
+overlayfs:
+  box: ubuntu2004
+  kernel_pkg: ""              # Ubuntu-specific bug; stock 5.4 is pre-fix
+  kernel_version: "5.4.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2021-3493; Ubuntu-specific overlayfs userns capability injection. Stock 5.4.0 in Ubuntu 20.04 is below the fixed package."
+
+overlayfs_setuid:
+  box: ubuntu2204
+  kernel_pkg: ""              # 5.15.0 stock is pre-fix (5.15.110 backport)
+  kernel_version: "5.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-0386; fix 6.3 + 6.1.11 / 5.15.110 / 5.10.179; 5.15.0 stock is below."
+
+pack2theroot:
+  box: debian12
+  kernel_pkg: ""              # PackageKit-version bug, not kernel
+  kernel_version: "6.1.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2026-41651; needs PackageKit ≤ 1.3.5 + polkit. Debian 12 stock packagekit is 1.2.5 (vulnerable). Provisioning script may need to downgrade if Debian 12 ever updates."
+
+ptrace_traceme:
+  box: ubuntu1804
+  kernel_pkg: ""              # 4.15.0 stock is below the 5.1.17 fix
+  kernel_version: "4.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2019-13272; fix 5.1.17 mainline; Ubuntu 18.04 stock 4.15 is below."
+
+pwnkit:
+  box: ubuntu2004
+  kernel_pkg: ""              # polkit 0.105 ships in Ubuntu 20.04 → vulnerable
+  kernel_version: "5.4.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2021-4034; polkit ≤ 0.120 vulnerable. Ubuntu 20.04 ships polkit 0.105."
+
+sequoia:
+  box: ubuntu2004
+  kernel_pkg: linux-image-5.4.0-26-generic
+  kernel_version: "5.4.0-26"
+  expect_detect: VULNERABLE
+  notes: "CVE-2021-33909; fix 5.13.4 / 5.10.52 / 5.4.135; 5.4.0-26 is below."
+
+stackrot:
+  box: ubuntu2204
+  kernel_pkg: linux-image-6.1.0-13-generic
+  kernel_version: "6.1.0-13"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-3269; fix 6.4 mainline + 6.1.37 LTS / 6.3.10; 6.1.0-13 is below."
+
+sudo_samedit:
+  box: ubuntu1804
+  kernel_pkg: ""              # ubuntu 18.04 ships sudo 1.8.21 — vulnerable to 1.9.5p1
+  kernel_version: "4.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2021-3156; sudo 1.8.21 vulnerable; Ubuntu 18.04 ships 1.8.21p2."
+
+sudoedit_editor:
+  box: ubuntu2204
+  kernel_pkg: ""              # sudo 1.9.9 in Ubuntu 22.04 is vulnerable
+  kernel_version: "5.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2023-22809; sudo ≤ 1.9.12p2 vulnerable; Ubuntu 22.04 ships 1.9.9."
+
+vmwgfx:
+  box: ""                     # vmware-guest only; no useful Vagrant box
+  kernel_pkg: ""
+  kernel_version: ""
+  expect_detect: PRECOND_FAIL
+  notes: "CVE-2023-2008; vmwgfx DRM only reachable on VMware guests. No Vagrant box; verify manually inside a VMware VM with a vulnerable kernel (e.g. Debian 11 / 5.10.0)."
+  manual: true
