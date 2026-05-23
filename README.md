@@ -86,6 +86,11 @@ curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/inst
 # What's this box vulnerable to?  (no sudo)
 skeletonkey --scan
 
+# One-page operator briefing for a single CVE: CWE / MITRE ATT&CK /
+# CISA KEV status, live detect() trace, OPSEC footprint, detection
+# coverage. Useful for triage tickets and SOC analyst handoffs.
+skeletonkey --explain nf_tables
+
 # Pick the safest LPE and run it
 skeletonkey --auto --i-know
 

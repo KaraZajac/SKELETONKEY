@@ -57,6 +57,10 @@ static void usage(const char *prog)
 "                        (combine with --format=auditd|sigma|yara|falco)\n"
 "  --module-info <name>  full metadata + rule bodies for one module\n"
 "                        (combine with --json for machine-readable output)\n"
+"  --explain <name>      one-page operator briefing: CVE / CWE / ATT&CK /\n"
+"                        KEV, host fingerprint, live detect() trace + verdict,\n"
+"                        OPSEC footprint, detection coverage, mitigation.\n"
+"                        Useful for triage tickets and SOC analyst handoffs.\n"
 "  --auto                scan host, rank vulnerable modules by safety, run the\n"
 "                        safest exploit. Requires --i-know. The 'one command\n"
 "                        that gets you root' mode — picks structural exploits\n"
@@ -110,6 +114,7 @@ enum mode {
     MODE_DUMP_OFFSETS,
     MODE_HELP,
     MODE_VERSION,
+    MODE_EXPLAIN,
 };
 
 enum detect_format {
@@ -644,6 +649,163 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
     return 0;
 }
 
+/* Word-wrap a long paragraph at `width` columns, indenting every line by
+ * `indent` spaces. Writes to stdout. Used by --explain to render the
+ * .opsec_notes paragraph (typically 400-700 chars). */
+static void print_wrapped(const char *text, int indent, int width)
+{
+    int col = indent;
+    for (int i = 0; i < indent; i++) fputc(' ', stdout);
+    const char *p = text;
+    while (*p) {
+        const char *word_start = p;
+        while (*p && *p != ' ') p++;
+        size_t word_len = (size_t)(p - word_start);
+        if (col + (int)word_len > width && col > indent) {
+            fputc('\n', stdout);
+            for (int i = 0; i < indent; i++) fputc(' ', stdout);
+            col = indent;
+        }
+        fwrite(word_start, 1, word_len, stdout);
+        col += (int)word_len;
+        while (*p == ' ') {
+            if (col + 1 > width) {
+                fputc('\n', stdout);
+                for (int i = 0; i < indent; i++) fputc(' ', stdout);
+                col = indent;
+                p++;
+                break;
+            }
+            fputc(' ', stdout);
+            col++;
+            p++;
+        }
+    }
+    fputc('\n', stdout);
+}
+
+/* --explain MODULE — single-page operator briefing. Combines metadata
+ * (CVE / CWE / ATT&CK / KEV), host fingerprint (kernel / arch / userns
+ * gates), live detect() trace (the gates the module just walked, what
+ * the verdict was and why), OPSEC footprint (telemetry the exploit
+ * leaves), detection coverage (which formats have rules), and mitigation
+ * guidance. The intended audience is anyone who wants ONE page that
+ * answers "should we worry about this CVE here, what would patch it,
+ * and what would the SOC see if someone tried it".
+ *
+ * detect() writes its reasoning to stderr (the normal verbose path);
+ * --explain's structured framing goes to stdout. Redirect 2>&1 to merge. */
+static int cmd_explain(const char *name, const struct skeletonkey_ctx *ctx)
+{
+    const struct skeletonkey_module *m = skeletonkey_module_find(name);
+    if (!m) {
+        fprintf(stderr, "[-] no module '%s'. Try --list.\n", name);
+        return 1;
+    }
+    const struct cve_metadata *md = cve_metadata_lookup(m->cve);
+
+    /* ── header ──────────────────────────────────────────────── */
+    fprintf(stdout, "\n");
+    fprintf(stdout, "════════════════════════════════════════════════════\n");
+    fprintf(stdout, " %s   %s\n", m->name, m->cve);
+    fprintf(stdout, "════════════════════════════════════════════════════\n");
+    fprintf(stdout, " %s\n", m->summary);
+
+    /* ── weakness ────────────────────────────────────────────── */
+    fprintf(stdout, "\nWEAKNESS\n");
+    if (md && md->cwe)
+        fprintf(stdout, "  %s\n", md->cwe);
+    else
+        fprintf(stdout, "  (no NVD CWE mapping yet)\n");
+    if (md && md->attack_technique)
+        fprintf(stdout, "  MITRE ATT&CK: %s%s%s\n",
+            md->attack_technique,
+            md->attack_subtechnique ? " / "                  : "",
+            md->attack_subtechnique ? md->attack_subtechnique : "");
+
+    /* ── threat-intel context ────────────────────────────────── */
+    fprintf(stdout, "\nTHREAT INTEL\n");
+    if (md && md->in_kev)
+        fprintf(stdout, "  ✓ In CISA Known Exploited Vulnerabilities catalog "
+                        "(added %s)\n", md->kev_date_added);
+    else
+        fprintf(stdout, "  - Not in CISA KEV (no in-the-wild exploitation "
+                        "observed by CISA)\n");
+    fprintf(stdout, "  Affected: %s\n", m->kernel_range);
+
+    /* ── host fingerprint summary ────────────────────────────── */
+    if (ctx->host) {
+        fprintf(stdout, "\nHOST FINGERPRINT\n");
+        if (ctx->host->kernel.release && ctx->host->kernel.release[0])
+            fprintf(stdout, "  kernel:        %s (%s)\n",
+                    ctx->host->kernel.release, ctx->host->arch);
+        if (ctx->host->distro_pretty[0])
+            fprintf(stdout, "  distro:        %s\n", ctx->host->distro_pretty);
+        fprintf(stdout, "  unpriv userns: %s\n",
+                ctx->host->unprivileged_userns_allowed ? "ALLOWED" : "blocked");
+        if (ctx->host->apparmor_restrict_userns)
+            fprintf(stdout, "  apparmor:      restricts unprivileged userns\n");
+        if (ctx->host->selinux_enforcing)
+            fprintf(stdout, "  selinux:       enforcing\n");
+        if (ctx->host->kernel_lockdown_active)
+            fprintf(stdout, "  lockdown:      active\n");
+    }
+
+    /* ── live detect trace ───────────────────────────────────── */
+    fprintf(stdout, "\nDETECT() TRACE (live; reads ctx->host, fires gates)\n");
+    fflush(stdout);
+    skeletonkey_result_t r = SKELETONKEY_TEST_ERROR;
+    if (m->detect) {
+        struct skeletonkey_ctx dctx = *ctx;
+        dctx.json = false;  /* keep verbose stderr reasoning on */
+        r = m->detect(&dctx);
+        fflush(stderr);
+    } else {
+        fprintf(stdout, "  (this module has no detect() — no probe to run)\n");
+    }
+
+    fprintf(stdout, "\nVERDICT: %s\n", result_str(r));
+    /* one-line interpretation for the operator */
+    switch (r) {
+    case SKELETONKEY_OK:
+        fprintf(stdout, "  -> this host is patched / not applicable / immune.\n");
+        break;
+    case SKELETONKEY_VULNERABLE:
+        fprintf(stdout, "  -> bug is reachable. The OPSEC section below shows what a "
+                        "successful exploit() would leave.\n");
+        break;
+    case SKELETONKEY_PRECOND_FAIL:
+        fprintf(stdout, "  -> a precondition check rejected this host: wrong "
+                        "OS / arch, kernel out of range, a host-side gate "
+                        "(userns / apparmor / selinux), or a missing carrier "
+                        "file. See trace above for which check fired.\n");
+        break;
+    case SKELETONKEY_TEST_ERROR:
+        fprintf(stdout, "  -> probe machinery failed; verdict unknown.\n");
+        break;
+    default: break;
+    }
+
+    /* ── OPSEC footprint ─────────────────────────────────────── */
+    if (m->opsec_notes) {
+        fprintf(stdout, "\nOPSEC FOOTPRINT (what exploit() leaves on this host)\n");
+        print_wrapped(m->opsec_notes, 2, 76);
+    }
+
+    /* ── detection coverage matrix ───────────────────────────── */
+    fprintf(stdout, "\nDETECTION COVERAGE (rules embedded in this binary)\n");
+    fprintf(stdout, "  %s auditd    %s sigma    %s yara    %s falco\n",
+        m->detect_auditd ? "✓" : "·",
+        m->detect_sigma  ? "✓" : "·",
+        m->detect_yara   ? "✓" : "·",
+        m->detect_falco  ? "✓" : "·");
+    fprintf(stdout, "  (see  skeletonkey --module-info %s  for rule bodies,\n"
+                    "   or   skeletonkey --detect-rules --format=auditd  for the full corpus)\n",
+        m->name);
+
+    return (int)r;
+}
+
 static int cmd_scan(const struct skeletonkey_ctx *ctx)
 {
     int worst = 0;
@@ -1130,6 +1292,7 @@ int main(int argc, char **argv)
         {"no-color",      no_argument,       0,  5 },
         {"full-chain",    no_argument,       0,  7 },
         {"dry-run",       no_argument,       0, 10 },
+        {"explain",       required_argument, 0, 11 },
         {"version",       no_argument,       0, 'V'},
         {"help",          no_argument,       0, 'h'},
         {0, 0, 0, 0}
@@ -1155,6 +1318,7 @@ int main(int argc, char **argv)
         case  8 : mode = MODE_DUMP_OFFSETS; break;
         case  9 : mode = MODE_AUTO; ctx.authorized = i_know ? true : ctx.authorized; break;
         case 10 : ctx.dry_run = true; break;
+        case 11 : mode = MODE_EXPLAIN; target = optarg; break;
         case  6 :
             if      (strcmp(optarg, "auditd") == 0) dr_fmt = FMT_AUDITD;
             else if (strcmp(optarg, "sigma")  == 0) dr_fmt = FMT_SIGMA;
@@ -1179,6 +1343,7 @@ int main(int argc, char **argv)
     if (mode == MODE_SCAN) return cmd_scan(&ctx);
     if (mode == MODE_LIST) return cmd_list(&ctx);
     if (mode == MODE_MODULE_INFO) return cmd_module_info(target, &ctx);
+    if (mode == MODE_EXPLAIN) return cmd_explain(target, &ctx);
     if (mode == MODE_DETECT_RULES) return cmd_detect_rules(dr_fmt);
     if (mode == MODE_AUDIT) return cmd_audit(&ctx);
     if (mode == MODE_AUTO) return cmd_auto(&ctx);

@@ -41,11 +41,22 @@ make it part of your daily ops" guide.
 # Daily/weekly hygiene check
 sudo skeletonkey --scan
 
+# Investigate a specific finding (one-page operator briefing)
+sudo skeletonkey --explain nf_tables    # whichever module came back VULNERABLE
+# Shows: CVE / CWE / MITRE ATT&CK / CISA KEV status, live detect() trace,
+# OPSEC footprint (what an exploit would leave behind), detection-rule
+# coverage, mitigation. Paste into the triage ticket.
+
 # If anything's VULNERABLE, deploy detections + apply mitigation
 sudo skeletonkey --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
 sudo augenrules --load
 sudo skeletonkey --mitigate copy_fail   # or whichever module fired
 ```
+
+The `--explain` output is also useful as a learning artifact: each
+module's `--explain` block is a self-contained CVE briefing with the
+reasoning chain the detect() function walked, so analysts can verify
+SKELETONKEY's verdict against their own understanding of the bug.
 
 ### Small fleet (~10-100 hosts, SSH-reachable)
 
