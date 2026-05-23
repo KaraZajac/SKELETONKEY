@@ -206,8 +206,8 @@ sudoedit_editor:
   box: ubuntu2204
   kernel_pkg: ""              # sudo 1.9.9 in Ubuntu 22.04 is vulnerable
   kernel_version: "5.15.0"
-  expect_detect: VULNERABLE
-  notes: "CVE-2023-22809; sudo ≤ 1.9.12p2 vulnerable; Ubuntu 22.04 ships 1.9.9."
+  expect_detect: PRECOND_FAIL
+  notes: "CVE-2023-22809; sudo ≤ 1.9.12p2 vulnerable, Ubuntu 22.04 ships 1.9.9 — version-wise vulnerable. BUT the default Vagrant 'vagrant' user has no sudoedit grant in /etc/sudoers, so detect() short-circuits to PRECOND_FAIL ('vuln version present, no grant to abuse'). This is correct and documented behaviour. To validate the VULNERABLE-by-version path empirically, provision a sudoers grant (e.g. `vagrant ALL=(ALL) sudoedit /tmp/probe`) before verifying — currently the Vagrantfile doesn't."
 
 vmwgfx:
   box: ""                     # vmware-guest only; no useful Vagrant box

@@ -83,14 +83,20 @@ Vagrant.configure("2") do |c|
       SHELL
     end
 
-    # 3. Build SKELETONKEY in-VM and run --explain --active for the target module.
-    #    SKK_MODULE is set by verify.sh on the second-pass `vagrant provision`
-    #    call (post-reboot if kernel was pinned).
+    # 3. Build SKELETONKEY in-VM and run --explain --active for the target
+    #    module. Runs as the unprivileged 'vagrant' user (NOT root) — most
+    #    detect()s gate on "are you already root?" and short-circuit if so,
+    #    which would invalidate every verification (pack2theroot was the
+    #    motivating case). 'privileged: false' is how vagrant downshifts.
+    #    SKK_MODULE is set by verify.sh on the second-pass `vagrant
+    #    provision` call (post-reboot if kernel was pinned).
     m.vm.provision "shell", name: "build-and-verify", run: "never",
+      privileged: false,
       env: { "SKK_MODULE" => ENV["SKK_MODULE"] || "" },
       inline: <<-SHELL
       set -e
       cd /vagrant
+      echo "[*] running as $(id)"
       echo "[*] kernel: $(uname -r)"
       echo "[*] building skeletonkey..."
       make clean >/dev/null 2>&1 || true

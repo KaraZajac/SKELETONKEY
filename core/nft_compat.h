@@ -33,6 +33,20 @@
 #define NFT_CHAIN_BINDING     0x4
 #endif
 
+/* ── chain attrs ─────────────────────────────────────────────────── */
+
+/* NFTA_CHAIN_FLAGS: kernel 5.7 (commit 65038428b2c6). Ubuntu 18.04's
+ * 4.15-era uapi lacks it. Position 10 in the enum
+ * (NFTA_CHAIN_TABLE=1..NFTA_CHAIN_USERDATA=9, NFTA_CHAIN_FLAGS=10). */
+#ifndef NFTA_CHAIN_FLAGS
+#define NFTA_CHAIN_FLAGS      10
+#endif
+
+/* NFTA_CHAIN_ID: kernel 5.13 (commit 837830a4b439). */
+#ifndef NFTA_CHAIN_ID
+#define NFTA_CHAIN_ID         11
+#endif
+
 /* ── verdict attrs ──────────────────────────────────────────────── */
 
 /* NFTA_VERDICT_CHAIN_ID: kernel 5.14 (commit 4ed8eb6570a4). Needed by
