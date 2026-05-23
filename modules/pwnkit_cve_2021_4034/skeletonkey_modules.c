@@ -77,44 +77,58 @@ static bool pkexec_version_vulnerable(const char *version_str)
 
 static skeletonkey_result_t pwnkit_detect(const struct skeletonkey_ctx *ctx)
 {
-    const char *pkexec_path = find_pkexec();
-    if (!pkexec_path) {
+    /* Prefer the centrally-fingerprinted polkit version (populated
+     * once at startup by core/host.c via `pkexec --version`). Saves
+     * a popen per scan and lets unit tests construct synthetic
+     * polkit_version values. Fall back to the local popen if
+     * ctx->host is missing the version (degenerate test ctx or a
+     * future refactor that disables userspace probing). */
+    char vp_buf[64] = {0};
+    const char *vp = NULL;
+
+    if (ctx->host && ctx->host->polkit_version[0]) {
+        snprintf(vp_buf, sizeof vp_buf, "%s", ctx->host->polkit_version);
+        vp = vp_buf;
         if (!ctx->json) {
-            fprintf(stderr, "[+] pwnkit: pkexec not installed; no attack surface\n");
+            fprintf(stderr, "[i] pwnkit: host fingerprint reports pkexec "
+                "version '%s'\n", vp);
         }
-        return SKELETONKEY_OK;
-    }
-    if (!ctx->json) {
-        fprintf(stderr, "[i] pwnkit: found setuid pkexec at %s\n", pkexec_path);
-    }
-
-    /* Run `pkexec --version` and parse. We pipe stderr/stdout to a
-     * temp file because popen() can have quoting quirks. */
-    char cmd[512];
-    snprintf(cmd, sizeof cmd, "%s --version 2>&1 | head -1", pkexec_path);
-    FILE *p = popen(cmd, "r");
-    if (!p) return SKELETONKEY_TEST_ERROR;
-
-    char line[256] = {0};
-    char *r = fgets(line, sizeof line, p);
-    pclose(p);
-    if (!r) {
+    } else {
+        const char *pkexec_path = find_pkexec();
+        if (!pkexec_path) {
+            if (!ctx->json) {
+                fprintf(stderr, "[+] pwnkit: pkexec not installed; no attack surface\n");
+            }
+            return SKELETONKEY_OK;
+        }
         if (!ctx->json) {
-            fprintf(stderr, "[?] pwnkit: could not parse pkexec --version output\n");
+            fprintf(stderr, "[i] pwnkit: found setuid pkexec at %s\n", pkexec_path);
         }
-        return SKELETONKEY_TEST_ERROR;
-    }
-
-    /* Output format: "pkexec version 0.105\n" or "pkexec version 0.120-..." */
-    char *vp = strstr(line, "version");
-    if (!vp) return SKELETONKEY_TEST_ERROR;
-    vp += strlen("version");
-    while (*vp == ' ' || *vp == '\t') vp++;
-
-    if (!ctx->json) {
-        char *nl = strchr(vp, '\n');
+        char cmd[512];
+        snprintf(cmd, sizeof cmd, "%s --version 2>&1 | head -1", pkexec_path);
+        FILE *p = popen(cmd, "r");
+        if (!p) return SKELETONKEY_TEST_ERROR;
+        char line[256] = {0};
+        char *r = fgets(line, sizeof line, p);
+        pclose(p);
+        if (!r) {
+            if (!ctx->json) {
+                fprintf(stderr, "[?] pwnkit: could not parse pkexec --version output\n");
+            }
+            return SKELETONKEY_TEST_ERROR;
+        }
+        /* Output format: "pkexec version 0.105\n" or "pkexec version 0.120-..." */
+        char *vp_mut = strstr(line, "version");
+        if (!vp_mut) return SKELETONKEY_TEST_ERROR;
+        vp_mut += strlen("version");
+        while (*vp_mut == ' ' || *vp_mut == '\t') vp_mut++;
+        char *nl = strchr(vp_mut, '\n');
         if (nl) *nl = 0;
-        fprintf(stderr, "[i] pwnkit: pkexec reports version '%s'\n", vp);
+        snprintf(vp_buf, sizeof vp_buf, "%s", vp_mut);
+        vp = vp_buf;
+        if (!ctx->json) {
+            fprintf(stderr, "[i] pwnkit: pkexec reports version '%s'\n", vp);
+        }
     }
 
     bool vuln = pkexec_version_vulnerable(vp);

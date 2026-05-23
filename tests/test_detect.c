@@ -57,6 +57,7 @@ extern const struct skeletonkey_module dirty_frag_esp6_module;
 extern const struct skeletonkey_module dirty_frag_rxrpc_module;
 extern const struct skeletonkey_module sudo_samedit_module;
 extern const struct skeletonkey_module sudoedit_editor_module;
+extern const struct skeletonkey_module pwnkit_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -140,8 +141,9 @@ static const struct skeletonkey_host h_fedora_no_debian = {
 
 /* Modern fingerprint with a known-vulnerable sudo (1.8.31 sits in
  * both the samedit [1.8.2, 1.9.5p1] and sudoedit_editor
- * [1.8.0, 1.9.12p2) vulnerable ranges). Used to assert the sudo
- * modules accept the host-fingerprint version string and reach the
+ * [1.8.0, 1.9.12p2) vulnerable ranges) AND a known-vulnerable polkit
+ * (0.105 is pre-0.121 fix). Used to assert the sudo/pwnkit modules
+ * accept the host-fingerprint version strings and reach the
  * VULNERABLE-by-version path. */
 static const struct skeletonkey_host h_vuln_sudo = {
 	.kernel  = { .major = 5, .minor = 15, .patch = 0,
@@ -153,10 +155,12 @@ static const struct skeletonkey_host h_vuln_sudo = {
 	.is_debian_family   = true,
 	.unprivileged_userns_allowed = true,
 	.sudo_version       = "1.8.31",
+	.polkit_version     = "0.105",
 };
 
 /* Modern fingerprint with a fixed sudo (1.9.13p1 is above both
- * sudo_samedit and sudoedit_editor vulnerable ranges). */
+ * sudo_samedit and sudoedit_editor vulnerable ranges) AND a fixed
+ * polkit (0.121 is the upstream pwnkit fix release). */
 static const struct skeletonkey_host h_fixed_sudo = {
 	.kernel  = { .major = 6, .minor = 12, .patch = 0,
 		     .release = "6.12.0-fixedsudo" },
@@ -167,6 +171,7 @@ static const struct skeletonkey_host h_fixed_sudo = {
 	.is_debian_family   = true,
 	.unprivileged_userns_allowed = true,
 	.sudo_version       = "1.9.13p1",
+	.polkit_version     = "0.121",
 };
 
 /* Ubuntu 24.04, userns allowed, D-Bus running, Debian family
@@ -412,6 +417,30 @@ static void run_all(void)
 	/* sudo_samedit: fixed sudo 1.9.13p1 (above 1.9.5p1) → OK */
 	run_one("sudo_samedit: sudo_version=1.9.13p1 → OK",
 		&sudo_samedit_module, &h_fixed_sudo,
+		SKELETONKEY_OK);
+
+	/* pwnkit: vulnerable polkit 0.105 (pre-0.121 fix) → VULNERABLE */
+	run_one("pwnkit: polkit_version=0.105 → VULNERABLE",
+		&pwnkit_module, &h_vuln_sudo,
+		SKELETONKEY_VULNERABLE);
+
+	/* pwnkit: fixed polkit 0.121 → OK */
+	run_one("pwnkit: polkit_version=0.121 → OK",
+		&pwnkit_module, &h_fixed_sudo,
+		SKELETONKEY_OK);
+
+	/* sudoedit_editor: vulnerable sudo 1.8.31 — but the test user
+	 * has no sudoers grant in the CI container, so find_sudoedit_target
+	 * fails and detect short-circuits to PRECOND_FAIL ("vulnerable
+	 * version present, but no sudoedit grant to abuse"). That's the
+	 * documented behaviour for a non-privileged user. */
+	run_one("sudoedit_editor: vuln version, no grant → PRECOND_FAIL",
+		&sudoedit_editor_module, &h_vuln_sudo,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* sudoedit_editor: fixed sudo 1.9.13p1 → OK regardless of grant */
+	run_one("sudoedit_editor: sudo_version=1.9.13p1 → OK",
+		&sudoedit_editor_module, &h_fixed_sudo,
 		SKELETONKEY_OK);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
