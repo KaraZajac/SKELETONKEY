@@ -69,6 +69,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
@@ -158,57 +159,53 @@ static const struct kernel_range fuse_legacy_range = {
                       sizeof(fuse_legacy_patched_branches[0]),
 };
 
-static int can_unshare_userns_mount(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 /* ------------------------------------------------------------------ */
 /* detect                                                              */
 /* ------------------------------------------------------------------ */
 static skeletonkey_result_t fuse_legacy_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] fuse_legacy: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] fuse_legacy: host fingerprint missing kernel "
+                            "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug introduced in 5.1 (when legacy_parse_param landed). Pre-5.1
      * kernels predate the code path entirely. */
-    if (v.major < 5 || (v.major == 5 && v.minor < 1)) {
+    if (v->major < 5 || (v->major == 5 && v->minor < 1)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] fuse_legacy: kernel %s predates the bug introduction\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&fuse_legacy_range, &v);
+    bool patched = kernel_range_is_patched(&fuse_legacy_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] fuse_legacy: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] fuse_legacy: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns_mount();
+    /* user_ns availability comes from the shared host fingerprint. The
+     * fingerprint's probe uses CLONE_NEWUSER alone; this module also
+     * needs CLONE_NEWNS, but the kernel gates both on the same userns
+     * sysctls (kernel.unprivileged_userns_clone / AppArmor restriction),
+     * so the userns probe is a sound proxy. */
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
     if (!ctx->json) {
-        fprintf(stderr, "[i] fuse_legacy: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] fuse_legacy: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] fuse_legacy: user_ns+mount_ns clone (CAP_SYS_ADMIN gate): %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] fuse_legacy: user_ns denied → "
                             "unprivileged exploit unreachable\n");
@@ -521,8 +518,11 @@ static skeletonkey_result_t fuse_legacy_exploit(const struct skeletonkey_ctx *ct
         return pre;
     }
 
-    /* (R2) Refuse if already root — no LPE work to do. */
-    if (geteuid() == 0) {
+    /* (R2) Refuse if already root — no LPE work to do. Consult
+     * ctx->host first so unit tests can construct a non-root
+     * fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         if (!ctx->json) {
             fprintf(stderr, "[i] fuse_legacy: already root; nothing to escalate\n");
         }

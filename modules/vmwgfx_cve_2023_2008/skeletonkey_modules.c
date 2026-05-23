@@ -36,6 +36,7 @@
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -219,26 +220,26 @@ static char *probe_drm_version_name(const char *cardpath)
 
 static skeletonkey_result_t vmwgfx_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] vmwgfx: could not parse kernel version\n");
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json) fprintf(stderr, "[!] vmwgfx: host fingerprint missing kernel version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    bool patched = kernel_range_is_patched(&vmwgfx_range, &v);
+    bool patched = kernel_range_is_patched(&vmwgfx_range, v);
     if (patched) {
         if (!ctx->json) {
             fprintf(stderr, "[+] vmwgfx: kernel %s is patched (>= 6.3-rc6 / "
-                            "6.2.10 / 6.1.23)\n", v.release);
+                            "6.2.10 / 6.1.23)\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
     /* Pre-vmwgfx kernels (no driver shipped) — extremely unlikely but
      * report PRECOND_FAIL rather than VULNERABLE. */
-    if (v.major < 4) {
+    if (v->major < 4) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] vmwgfx: kernel %s predates vmwgfx driver\n", v.release);
+            fprintf(stderr, "[+] vmwgfx: kernel %s predates vmwgfx driver\n", v->release);
         }
         return SKELETONKEY_PRECOND_FAIL;
     }
@@ -247,7 +248,7 @@ static skeletonkey_result_t vmwgfx_detect(const struct skeletonkey_ctx *ctx)
     char vendor[128] = {0};
     bool vmware = host_is_vmware_guest(vendor, sizeof vendor);
     if (!ctx->json) {
-        fprintf(stderr, "[i] vmwgfx: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] vmwgfx: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] vmwgfx: dmi sys_vendor = \"%s\"\n",
                 vendor[0] ? vendor : "(unreadable)");
     }
@@ -520,7 +521,8 @@ static skeletonkey_result_t vmwgfx_exploit_linux(const struct skeletonkey_ctx *c
         fprintf(stderr, "[-] vmwgfx: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] vmwgfx: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

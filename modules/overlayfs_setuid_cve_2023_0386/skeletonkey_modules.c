@@ -50,6 +50,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -71,18 +72,10 @@ static const struct kernel_range overlayfs_setuid_range = {
                       sizeof(overlayfs_setuid_patched_branches[0]),
 };
 
-static int can_unshare_userns_mount(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
+/* The unprivileged-userns precondition is now read from the shared
+ * host fingerprint (ctx->host->unprivileged_userns_allowed), which
+ * probes once at startup via core/host.c. The previous per-detect
+ * fork-probe helper was removed. */
 
 static const char *find_setuid_in_lower(void)
 {
@@ -101,39 +94,43 @@ static const char *find_setuid_in_lower(void)
 
 static skeletonkey_result_t overlayfs_setuid_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] overlayfs_setuid: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] overlayfs_setuid: host fingerprint missing kernel "
+                "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug introduced in 5.11 when ovl copy-up was generalized.
      * Pre-5.11 immune via a different code path. */
-    if (v.major < 5 || (v.major == 5 && v.minor < 11)) {
+    if (v->major < 5 || (v->major == 5 && v->minor < 11)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] overlayfs_setuid: kernel %s predates the bug "
-                            "(introduced in 5.11)\n", v.release);
+                            "(introduced in 5.11)\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&overlayfs_setuid_range, &v);
+    bool patched = kernel_range_is_patched(&overlayfs_setuid_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] overlayfs_setuid: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] overlayfs_setuid: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns_mount();
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
     if (!ctx->json) {
-        fprintf(stderr, "[i] overlayfs_setuid: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] overlayfs_setuid: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] overlayfs_setuid: user_ns+mount_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] overlayfs_setuid: user_ns denied → unprivileged exploit unreachable\n");
         }
@@ -200,7 +197,10 @@ static skeletonkey_result_t overlayfs_setuid_exploit(const struct skeletonkey_ct
         fprintf(stderr, "[-] overlayfs_setuid: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    /* Consult ctx->host->is_root so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] overlayfs_setuid: already root\n");
         return SKELETONKEY_OK;
     }

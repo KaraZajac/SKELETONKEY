@@ -29,6 +29,7 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -331,7 +332,8 @@ static skeletonkey_result_t sudoedit_editor_exploit(const struct skeletonkey_ctx
         fprintf(stderr, "[-] sudoedit_editor: refusing exploit — pass --i-know to authorize\n");
         return SKELETONKEY_PRECOND_FAIL;
     }
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] sudoedit_editor: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

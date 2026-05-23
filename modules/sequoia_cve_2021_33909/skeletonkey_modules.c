@@ -90,6 +90,7 @@
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -166,25 +167,6 @@ static bool write_file(const char *path, const char *s)
     return n == (ssize_t)strlen(s);
 }
 
-/* Probe: can this user unshare(CLONE_NEWUSER|CLONE_NEWNS) and get
- * CAP_SYS_ADMIN-in-userns? We need this for the bind-mount step. The
- * deeply-nested mkdir works without it, but the trigger needs the
- * extra mountinfo entry to push the rendered string past INT_MAX. */
-static int can_unshare_userns_mount(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-#ifdef __linux__
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0) _exit(0);
-#endif
-        _exit(1);
-    }
-    int status = 0;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 #ifdef __linux__
 static bool enter_userns_root(void)
 {
@@ -215,31 +197,30 @@ static bool enter_userns_root(void)
 
 static skeletonkey_result_t sequoia_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] sequoia: could not parse kernel version\n");
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json) fprintf(stderr, "[!] sequoia: host fingerprint missing kernel version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* The bug predates every kernel we'd run on, so there's no
      * "pre-introduction" cutoff; only patched-or-not matters. */
-    bool patched = kernel_range_is_patched(&sequoia_range, &v);
+    bool patched = kernel_range_is_patched(&sequoia_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] sequoia: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] sequoia: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns_mount();
+    bool userns_ok = ctx->host->unprivileged_userns_allowed;
     if (!ctx->json) {
-        fprintf(stderr, "[i] sequoia: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] sequoia: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] sequoia: user_ns+mount_ns clone (CAP_SYS_ADMIN gate): %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] sequoia: user_ns denied → unprivileged "
                             "exploit unreachable via bind-mount path\n");
@@ -408,7 +389,8 @@ static skeletonkey_result_t sequoia_exploit_linux(const struct skeletonkey_ctx *
     }
 
     /* (R1) refuse if already root. */
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         if (!ctx->json) {
             fprintf(stderr, "[i] sequoia: already root — nothing to escalate\n");
         }

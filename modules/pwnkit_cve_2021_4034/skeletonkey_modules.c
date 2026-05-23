@@ -23,6 +23,7 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -215,7 +216,10 @@ static skeletonkey_result_t pwnkit_exploit(const struct skeletonkey_ctx *ctx)
     const char *pkexec = find_pkexec();
     if (!pkexec) return SKELETONKEY_PRECOND_FAIL;
 
-    if (geteuid() == 0) {
+    /* Consult ctx->host->is_root so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] pwnkit: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

@@ -49,6 +49,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
@@ -74,44 +75,40 @@ static const struct kernel_range cgroup_ra_range = {
                       sizeof(cgroup_ra_patched_branches[0]),
 };
 
-static int can_unshare_userns_mount(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
+/* The unprivileged-userns precondition is now read from the shared
+ * host fingerprint (ctx->host->unprivileged_userns_allowed), which
+ * probes once at startup via core/host.c. The previous per-detect
+ * fork-probe helper was removed. */
 
 static skeletonkey_result_t cgroup_ra_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] cgroup_release_agent: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] cgroup_release_agent: host fingerprint missing kernel "
+                "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    bool patched = kernel_range_is_patched(&cgroup_ra_range, &v);
+    bool patched = kernel_range_is_patched(&cgroup_ra_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] cgroup_release_agent: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] cgroup_release_agent: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns_mount();
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
     if (!ctx->json) {
-        fprintf(stderr, "[i] cgroup_release_agent: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] cgroup_release_agent: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] cgroup_release_agent: user_ns+mount_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] cgroup_release_agent: user_ns denied → unprivileged exploit unreachable\n");
         }
@@ -157,7 +154,10 @@ static skeletonkey_result_t cgroup_ra_exploit(const struct skeletonkey_ctx *ctx)
         fprintf(stderr, "[-] cgroup_release_agent: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    /* Consult ctx->host->is_root so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] cgroup_release_agent: already root\n");
         return SKELETONKEY_OK;
     }

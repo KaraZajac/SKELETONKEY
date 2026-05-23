@@ -58,6 +58,7 @@
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
@@ -129,9 +130,14 @@ static bool can_create_af_unix(void)
 
 static skeletonkey_result_t af_unix_gc_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] af_unix_gc: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] af_unix_gc: host fingerprint missing kernel "
+                            "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
@@ -139,10 +145,10 @@ static skeletonkey_result_t af_unix_gc_detect(const struct skeletonkey_ctx *ctx)
      * the dawn of time. ANY kernel below the fix is vulnerable. The
      * kernel_range walker handles "older than every entry" correctly
      * (returns false → not patched → vulnerable). */
-    bool patched = kernel_range_is_patched(&af_unix_gc_range, &v);
+    bool patched = kernel_range_is_patched(&af_unix_gc_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] af_unix_gc: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] af_unix_gc: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
@@ -157,7 +163,7 @@ static skeletonkey_result_t af_unix_gc_detect(const struct skeletonkey_ctx *ctx)
     }
 
     if (!ctx->json) {
-        fprintf(stderr, "[!] af_unix_gc: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[!] af_unix_gc: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] af_unix_gc: bug is reachable as PLAIN UNPRIVILEGED USER\n"
                         "    (no userns / no CAP_* required — AF_UNIX is universally\n"
                         "    creatable). The race window is microseconds wide and\n"
@@ -549,7 +555,8 @@ static skeletonkey_result_t af_unix_gc_exploit_linux(const struct skeletonkey_ct
         fprintf(stderr, "[-] af_unix_gc: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] af_unix_gc: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

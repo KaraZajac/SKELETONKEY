@@ -56,6 +56,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
@@ -91,53 +92,44 @@ static const struct kernel_range af_packet2_range = {
                       sizeof(af_packet2_patched_branches[0]),
 };
 
-static int can_unshare_userns(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static skeletonkey_result_t af_packet2_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] af_packet2: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] af_packet2: host fingerprint missing kernel "
+                            "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug introduced in 4.6 (tpacket_rcv VLAN path). Pre-4.6 immune. */
-    if (v.major < 4 || (v.major == 4 && v.minor < 6)) {
+    if (v->major < 4 || (v->major == 4 && v->minor < 6)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] af_packet2: kernel %s predates the bug (introduced in 4.6)\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&af_packet2_range, &v);
+    bool patched = kernel_range_is_patched(&af_packet2_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] af_packet2: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] af_packet2: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns();
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
     if (!ctx->json) {
-        fprintf(stderr, "[i] af_packet2: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] af_packet2: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] af_packet2: user_ns+net_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] af_packet2: user_ns denied → unprivileged exploit unreachable\n");
         }
@@ -513,8 +505,11 @@ static skeletonkey_result_t af_packet2_exploit(const struct skeletonkey_ctx *ctx
         return pre;
     }
 
-    /* 2. Refuse if already root. */
-    if (geteuid() == 0) {
+    /* 2. Refuse if already root. Consult ctx->host first so unit tests
+     *    can construct a non-root fingerprint regardless of the test
+     *    process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] af_packet2: already running as root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

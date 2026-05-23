@@ -68,6 +68,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
@@ -116,53 +117,44 @@ static const struct kernel_range netfilter_xtcompat_range = {
 
 /* ---- Detect ------------------------------------------------------- */
 
-static int can_unshare_userns(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static skeletonkey_result_t netfilter_xtcompat_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] netfilter_xtcompat: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] netfilter_xtcompat: host fingerprint missing kernel "
+                            "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    if (v.major < 2 || (v.major == 2 && v.minor < 6)) {
+    if (v->major < 2 || (v->major == 2 && v->minor < 6)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] netfilter_xtcompat: kernel %s predates the bug introduction\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&netfilter_xtcompat_range, &v);
+    bool patched = kernel_range_is_patched(&netfilter_xtcompat_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] netfilter_xtcompat: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] netfilter_xtcompat: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns();
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
     if (!ctx->json) {
         fprintf(stderr, "[i] netfilter_xtcompat: kernel %s in vulnerable range "
-                        "(bug existed since 2.6.19, 2006)\n", v.release);
+                        "(bug existed since 2.6.19, 2006)\n", v->release);
         fprintf(stderr, "[i] netfilter_xtcompat: user_ns+net_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] netfilter_xtcompat: user_ns denied → "
                             "unprivileged exploit path unreachable\n");
@@ -613,7 +605,10 @@ static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_
 {
     /* 1. Refuse-gate: re-confirm vulnerability through detect(). */
     skeletonkey_result_t pre = netfilter_xtcompat_detect(ctx);
-    if (pre == SKELETONKEY_OK && geteuid() == 0) {
+    /* Consult ctx->host first so unit tests can construct a non-root
+     * fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (pre == SKELETONKEY_OK && is_root) {
         fprintf(stderr, "[i] netfilter_xtcompat: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }
@@ -621,7 +616,7 @@ static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_
         fprintf(stderr, "[-] netfilter_xtcompat: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    if (is_root) {
         fprintf(stderr, "[i] netfilter_xtcompat: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

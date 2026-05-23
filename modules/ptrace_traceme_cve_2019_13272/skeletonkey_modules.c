@@ -38,6 +38,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -66,32 +67,37 @@ static const struct kernel_range ptrace_traceme_range = {
 
 static skeletonkey_result_t ptrace_traceme_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] ptrace_traceme: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] ptrace_traceme: host fingerprint missing kernel "
+                "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug existed since ptrace's inception (early 2.x); anything
      * pre-LTS-backport is vulnerable. Anything < 4.4 in our range
      * model defaults to vulnerable since no entry covers it. */
-    if (v.major < 4 || (v.major == 4 && v.minor < 4)) {
+    if (v->major < 4 || (v->major == 4 && v->minor < 4)) {
         if (!ctx->json) {
             fprintf(stderr, "[!] ptrace_traceme: ancient kernel %s — assume VULNERABLE\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_VULNERABLE;
     }
 
-    bool patched = kernel_range_is_patched(&ptrace_traceme_range, &v);
+    bool patched = kernel_range_is_patched(&ptrace_traceme_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] ptrace_traceme: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] ptrace_traceme: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
     if (!ctx->json) {
-        fprintf(stderr, "[!] ptrace_traceme: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[!] ptrace_traceme: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] ptrace_traceme: no exotic preconditions — works on default config "
                         "(no user_ns required)\n");
     }
@@ -186,7 +192,10 @@ static skeletonkey_result_t ptrace_traceme_exploit(const struct skeletonkey_ctx 
         fprintf(stderr, "[-] ptrace_traceme: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    /* Consult ctx->host->is_root so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] ptrace_traceme: already root\n");
         return SKELETONKEY_OK;
     }

@@ -55,6 +55,7 @@
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
+#include "../../core/host.h"
 
 #include <stdint.h>
 #include <sched.h>
@@ -103,19 +104,6 @@ static const struct kernel_range nft_fwd_dup_range = {
  * Probes.
  * ------------------------------------------------------------------ */
 
-static int can_unshare_userns(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static bool nf_tables_loaded(void)
 {
     FILE *f = fopen("/proc/modules", "r");
@@ -131,45 +119,43 @@ static bool nf_tables_loaded(void)
 
 static skeletonkey_result_t nft_fwd_dup_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] nft_fwd_dup: could not parse kernel version\n");
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json) fprintf(stderr, "[!] nft_fwd_dup: host fingerprint missing kernel version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* The offload code path only exists from 5.4 onward. Anything
      * older predates the bug. */
-    if (v.major < 5 || (v.major == 5 && v.minor < 4)) {
+    if (v->major < 5 || (v->major == 5 && v->minor < 4)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] nft_fwd_dup: kernel %s predates the bug "
-                            "(nft offload hook introduced in 5.4)\n", v.release);
+                            "(nft offload hook introduced in 5.4)\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&nft_fwd_dup_range, &v);
+    bool patched = kernel_range_is_patched(&nft_fwd_dup_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] nft_fwd_dup: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] nft_fwd_dup: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    int userns_ok = can_unshare_userns();
+    bool userns_ok = ctx->host->unprivileged_userns_allowed;
     bool nft_loaded = nf_tables_loaded();
 
     if (!ctx->json) {
         fprintf(stderr, "[i] nft_fwd_dup: kernel %s is in the vulnerable range\n",
-                v.release);
+                v->release);
         fprintf(stderr, "[i] nft_fwd_dup: unprivileged user_ns+net_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" :
-                                 "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
         fprintf(stderr, "[i] nft_fwd_dup: nf_tables module currently loaded: %s\n",
                 nft_loaded ? "yes" : "no (will autoload)");
     }
 
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] nft_fwd_dup: kernel vulnerable but user_ns clone "
                             "denied → unprivileged path unreachable\n");
@@ -733,7 +719,8 @@ static skeletonkey_result_t nft_fwd_dup_exploit(const struct skeletonkey_ctx *ct
         return SKELETONKEY_PRECOND_FAIL;
     }
     /* Gate 1: already root? */
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         if (!ctx->json)
             fprintf(stderr, "[i] nft_fwd_dup: already running as root\n");
         return SKELETONKEY_OK;

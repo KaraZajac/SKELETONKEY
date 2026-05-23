@@ -51,6 +51,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
@@ -97,55 +98,46 @@ static bool cls_route4_module_available(void)
     return found;
 }
 
-static int can_unshare_userns(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) return -1;
-    if (pid == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNET) == 0) _exit(0);
-        _exit(1);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static skeletonkey_result_t cls_route4_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] cls_route4: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] cls_route4: host fingerprint missing kernel "
+                            "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug-introduction predates anything we'd reasonably scan; if the
      * kernel is below the oldest LTS we model (5.4), still report
      * vulnerable. */
-    bool patched = kernel_range_is_patched(&cls_route4_range, &v);
+    bool patched = kernel_range_is_patched(&cls_route4_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] cls_route4: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] cls_route4: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
 
     /* Module + userns preconditions. */
     bool nft_loaded = cls_route4_module_available();
-    int userns_ok = can_unshare_userns();
+    bool userns_ok = ctx->host ? ctx->host->unprivileged_userns_allowed : false;
 
     if (!ctx->json) {
-        fprintf(stderr, "[i] cls_route4: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[i] cls_route4: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] cls_route4: cls_route4 module currently loaded: %s\n",
                 nft_loaded ? "yes" : "no (may autoload)");
         fprintf(stderr, "[i] cls_route4: unprivileged user_ns + net_ns clone: %s\n",
-                userns_ok == 1 ? "ALLOWED" :
-                userns_ok == 0 ? "DENIED" : "could not test");
+                userns_ok ? "ALLOWED" : "DENIED");
     }
 
     /* If userns is locked down, unprivileged-LPE path is closed.
      * Kernel still needs patching though — report PRECOND_FAIL so the
      * verdict isn't "VULNERABLE" but the issue isn't masked. */
-    if (userns_ok == 0) {
+    if (!userns_ok) {
         if (!ctx->json) {
             fprintf(stderr, "[+] cls_route4: user_ns denied → unprivileged exploit unreachable\n");
         }
@@ -555,7 +547,8 @@ static skeletonkey_result_t cls_route4_exploit(const struct skeletonkey_ctx *ctx
         fprintf(stderr, "[-] cls_route4: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] cls_route4: already root\n");
         return SKELETONKEY_OK;
     }

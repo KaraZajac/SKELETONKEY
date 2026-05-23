@@ -53,6 +53,7 @@
 #ifdef __linux__
 
 #include "../../core/kernel_range.h"
+#include "../../core/host.h"
 #include <stdint.h>
 #include <stdatomic.h>
 #include <fcntl.h>
@@ -231,22 +232,27 @@ static void revert_passwd_page_cache(void)
 
 static skeletonkey_result_t dirty_cow_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] dirty_cow: could not parse kernel version\n");
+    /* Consult the shared host fingerprint instead of calling
+     * kernel_version_current() ourselves — populated once at startup
+     * and identical across every module's detect(). */
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[!] dirty_cow: host fingerprint missing kernel "
+                "version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    bool patched = kernel_range_is_patched(&dirty_cow_range, &v);
+    bool patched = kernel_range_is_patched(&dirty_cow_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] dirty_cow: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] dirty_cow: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
     if (!ctx->json) {
         fprintf(stderr, "[!] dirty_cow: kernel %s is in the vulnerable range\n",
-                v.release);
+                v->release);
         fprintf(stderr, "[i] dirty_cow: --exploit will race a write to "
                         "/etc/passwd via /proc/self/mem\n");
     }
@@ -261,7 +267,10 @@ static skeletonkey_result_t dirty_cow_exploit(const struct skeletonkey_ctx *ctx)
         return pre;
     }
 
-    if (geteuid() == 0) {
+    /* Consult ctx->host->is_root so unit tests can construct a
+     * non-root fingerprint regardless of the test process's real euid. */
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] dirty_cow: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }

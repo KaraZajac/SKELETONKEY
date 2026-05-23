@@ -72,6 +72,7 @@
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -150,31 +151,31 @@ static bool maple_tree_variant_present(const struct kernel_version *v)
 
 static skeletonkey_result_t stackrot_detect(const struct skeletonkey_ctx *ctx)
 {
-    struct kernel_version v;
-    if (!kernel_version_current(&v)) {
-        fprintf(stderr, "[!] stackrot: could not parse kernel version\n");
+    const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+    if (!v || v->major == 0) {
+        if (!ctx->json) fprintf(stderr, "[!] stackrot: host fingerprint missing kernel version — bailing\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
     /* Bug introduced in 6.1 (when maple tree landed). Pre-6.1 kernels
      * use rbtree-based VMAs and don't have this bug. */
-    if (v.major < 6 || (v.major == 6 && v.minor < 1)) {
+    if (v->major < 6 || (v->major == 6 && v->minor < 1)) {
         if (!ctx->json) {
             fprintf(stderr, "[+] stackrot: kernel %s predates maple-tree VMA code (introduced in 6.1)\n",
-                    v.release);
+                    v->release);
         }
         return SKELETONKEY_OK;
     }
 
-    bool patched = kernel_range_is_patched(&stackrot_range, &v);
+    bool patched = kernel_range_is_patched(&stackrot_range, v);
     if (patched) {
         if (!ctx->json) {
-            fprintf(stderr, "[+] stackrot: kernel %s is patched\n", v.release);
+            fprintf(stderr, "[+] stackrot: kernel %s is patched\n", v->release);
         }
         return SKELETONKEY_OK;
     }
     if (!ctx->json) {
-        fprintf(stderr, "[!] stackrot: kernel %s in vulnerable range\n", v.release);
+        fprintf(stderr, "[!] stackrot: kernel %s in vulnerable range\n", v->release);
         fprintf(stderr, "[i] stackrot: mm-class bug — affects default-config kernels; "
                         "no exotic preconditions\n");
     }
@@ -631,7 +632,8 @@ static skeletonkey_result_t stackrot_exploit_linux(const struct skeletonkey_ctx 
         fprintf(stderr, "[-] stackrot: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    if (geteuid() == 0) {
+    bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+    if (is_root) {
         fprintf(stderr, "[i] stackrot: already root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }
@@ -641,8 +643,8 @@ static skeletonkey_result_t stackrot_exploit_linux(const struct skeletonkey_ctx 
         return SKELETONKEY_PRECOND_FAIL;
     }
     {
-        struct kernel_version v;
-        if (!kernel_version_current(&v) || !maple_tree_variant_present(&v)) {
+        const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
+        if (!v || v->major == 0 || !maple_tree_variant_present(v)) {
             fprintf(stderr, "[-] stackrot: maple-tree variant not detectable\n");
             return SKELETONKEY_PRECOND_FAIL;
         }
