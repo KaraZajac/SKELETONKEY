@@ -149,11 +149,20 @@ fi
 
 # Run the explain probe.
 LOG="$LOG_DIR/verify-${MODULE}-$(date +%Y%m%d-%H%M%S).log"
+
+# Force rsync the source tree in. vagrant up runs rsync automatically on
+# first up but NOT on a resume/already-running VM, so we always rsync here
+# to guarantee /vagrant/ inside the guest matches the host's source tree.
+echo "[*] syncing source into VM..."
+vagrant rsync "$VM_HOSTNAME" 2>&1 | tail -5
+
 echo "[*] running verifier..."
 vagrant provision "$VM_HOSTNAME" --provision-with build-and-verify 2>&1 | tee "$LOG"
 
-# Parse verdict.
-VERDICT=$(grep -E "^VERDICT: " "$LOG" | tail -1 | awk '{print $2}')
+# Parse verdict. Vagrant prefixes provisioner output with the VM name
+# (e.g. "    skk-pwnkit: VERDICT: VULNERABLE"), so anchor on the VERDICT
+# keyword itself. `|| true` keeps pipefail+set-e from killing us on miss.
+VERDICT=$(grep -E "VERDICT:" "$LOG" | tail -1 | awk '{print $NF}' || true)
 [[ -z "$VERDICT" ]] && VERDICT="?"
 
 # Compare.

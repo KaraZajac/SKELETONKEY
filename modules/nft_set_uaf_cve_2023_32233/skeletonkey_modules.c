@@ -79,6 +79,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nf_tables.h>
+#include "../../core/nft_compat.h"
 
 /* NFT_SET_EVAL was added in 5.6; older UAPI headers may not define it.
  * Anonymous-set + lookup exploit shape works on builds with this flag,

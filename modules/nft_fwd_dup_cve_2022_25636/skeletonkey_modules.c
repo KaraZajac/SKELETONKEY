@@ -77,6 +77,7 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nf_tables.h>
+#include "../../core/nft_compat.h"
 
 /* ------------------------------------------------------------------
  * Kernel range table — fixes per branch.
