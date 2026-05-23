@@ -181,16 +181,29 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.5.0 cut 2026-05-17.** 28 verified modules, plus 3
-ported-but-unverified (`dirtydecrypt`, `fragnesia`, `pack2theroot`)
-added since the cut. All 31 build clean on Debian 13 (kernel 6.12)
-and refuse cleanly on patched hosts. `--auto` now auto-enables
-`--active` and runs each `detect()` in a fork-isolated child so one
-crashing probe cannot tear down the scan. Empirical end-to-end
-validation on a vulnerable-target VM matrix is the next roadmap item;
-until then, the corpus is best understood as "compiles + detects +
-structurally correct + honest on failure" — and the three ported
-modules have not been run against a vulnerable target at all.
+**v0.6.0 cut 2026-05-23.** 28 verified modules, plus 3
+ported-but-unverified (`dirtydecrypt`, `fragnesia`, `pack2theroot`).
+All 31 build clean on Debian 13 (kernel 6.12) and refuse cleanly on
+patched hosts.
+
+Reliability + accuracy work in v0.6.0:
+- Shared **host fingerprint** (`core/host.{h,c}`) populated once at
+  startup — kernel/distro/userns gates/sudo+polkit versions — exposed
+  to every module via `ctx->host`. 26 of 27 distinct modules consume it.
+- **Test harness** (`tests/test_detect.c`, `make test`) — 44 unit
+  tests over mocked host fingerprints; runs as a non-root user in CI.
+- `--auto` upgrades: auto-enables `--active`, per-detect 15s timeout,
+  fork-isolated detect + exploit so a crashing module can't tear down
+  the dispatcher, structured per-module verdict table, scan summary.
+- `--dry-run` flag (preview without firing; no `--i-know` needed).
+- Pinned mainline fix commits for the 3 ported modules — `detect()`
+  is version-pinned, not just precondition-only.
+
+Empirical end-to-end validation on a vulnerable-target VM matrix is
+the next roadmap item; until then, the corpus is best understood as
+"compiles + detects + structurally correct + honest on failure" —
+and the three ported modules have not been run against a vulnerable
+target at all.
 
 See [`ROADMAP.md`](ROADMAP.md) for the next planned modules and
 infrastructure work.
