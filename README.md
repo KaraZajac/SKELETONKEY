@@ -214,6 +214,18 @@ PRs welcome for: kernel offsets (run `--dump-offsets` on a target
 kernel, paste into `core/offsets.c`), new modules, detection rules,
 and CVE-status corrections. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+**Keeping `kernel_range` tables current.** `tools/refresh-kernel-ranges.py`
+polls Debian's security tracker and reports drift between each
+module's hardcoded `kernel_patched_from` thresholds and the
+fixed-versions Debian actually ships. Run periodically (or in CI)
+to catch new backports that need to land in the corpus:
+
+```bash
+tools/refresh-kernel-ranges.py            # human report
+tools/refresh-kernel-ranges.py --json     # machine-readable
+tools/refresh-kernel-ranges.py --patch    # proposed C-source edits
+```
+
 ## Acknowledgments
 
 Each module credits the original CVE reporter and PoC author in its
