@@ -32,6 +32,7 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+#include "../../core/host.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -108,40 +109,33 @@ unsigned long entrybleed_leak_kbase_lib(unsigned long entry_syscall_slot_offset)
     return (unsigned long)best_base;
 }
 
-static int read_first_line(const char *path, char *out, size_t n)
-{
-    FILE *f = fopen(path, "r");
-    if (!f) return -1;
-    if (!fgets(out, n, f)) { fclose(f); return -1; }
-    fclose(f);
-    /* trim trailing newline */
-    size_t L = strlen(out);
-    while (L && (out[L-1] == '\n' || out[L-1] == '\r')) out[--L] = 0;
-    return 0;
-}
+/* (read_first_line() removed — meltdown status now comes from
+ * ctx->host->meltdown_mitigation, populated once at startup in
+ * core/host.c. One file open across the corpus instead of per-detect.) */
 
 static skeletonkey_result_t entrybleed_detect(const struct skeletonkey_ctx *ctx)
 {
-    /* Probe KPTI status. /sys/devices/system/cpu/vulnerabilities/meltdown
-     * is the most direct signal: "Mitigation: PTI" means KPTI is on
-     * (= EntryBleed-applicable). "Not affected" means a hardened CPU
-     * (very recent Intel + most AMD = no KPTI = no EntryBleed). */
-    char buf[256];
-    int rc = read_first_line(
-        "/sys/devices/system/cpu/vulnerabilities/meltdown", buf, sizeof buf);
-    if (rc < 0) {
+    /* KPTI status comes from the shared host fingerprint
+     * (ctx->host->meltdown_mitigation) — populated once at startup by
+     * reading /sys/devices/system/cpu/vulnerabilities/meltdown. The
+     * raw string is preserved (not just the kpti_enabled bool) so we
+     * can distinguish "Not affected" (CPU immune; OK) from
+     * "Mitigation: PTI" / "Vulnerable" (KPTI on; vulnerable to
+     * EntryBleed) without re-reading sysfs. */
+    const char *meltdown = ctx->host ? ctx->host->meltdown_mitigation : "";
+    if (meltdown[0] == '\0') {
         if (!ctx->json) {
-            fprintf(stderr, "[?] entrybleed: cannot read meltdown vuln status — "
+            fprintf(stderr, "[?] entrybleed: meltdown vuln status unknown — "
                             "assuming KPTI on (conservative)\n");
         }
         return SKELETONKEY_VULNERABLE;
     }
     if (!ctx->json) {
-        fprintf(stderr, "[i] entrybleed: meltdown status = '%s'\n", buf);
+        fprintf(stderr, "[i] entrybleed: meltdown status = '%s'\n", meltdown);
     }
 
     /* "Not affected" → CPU is Meltdown-immune → no KPTI → no EntryBleed */
-    if (strstr(buf, "Not affected") != NULL) {
+    if (strstr(meltdown, "Not affected") != NULL) {
         if (!ctx->json) {
             fprintf(stderr, "[+] entrybleed: CPU is Meltdown-immune; KPTI off; "
                             "EntryBleed N/A\n");

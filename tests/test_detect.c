@@ -34,6 +34,7 @@ extern const struct skeletonkey_module dirtydecrypt_module;
 extern const struct skeletonkey_module fragnesia_module;
 extern const struct skeletonkey_module pack2theroot_module;
 extern const struct skeletonkey_module overlayfs_module;
+extern const struct skeletonkey_module entrybleed_module;
 extern const struct skeletonkey_module dirty_pipe_module;
 extern const struct skeletonkey_module dirty_cow_module;
 extern const struct skeletonkey_module ptrace_traceme_module;
@@ -593,6 +594,41 @@ static void run_all(void)
 	run_one("nf_tables: 5.10.209 (harmonised entry) → OK via patch table",
 		&nf_tables_module, &h_nf_tables_5_10_209,
 		SKELETONKEY_OK);
+
+	/* ── entrybleed: meltdown_mitigation passthrough ────────────────
+	 * entrybleed reads ctx->host->meltdown_mitigation (raw sysfs line)
+	 * instead of re-opening /sys/.../meltdown. Test the three branches:
+	 *   - empty string ("probe failed")          → conservative VULNERABLE
+	 *   - "Not affected" (Meltdown-immune CPU)   → OK
+	 *   - "Mitigation: PTI" (KPTI on, vulnerable) → VULNERABLE
+	 * The module is x86_64-only; on other arches the stub returns
+	 * PRECOND_FAIL regardless of meltdown status. We test the x86_64
+	 * branch via the synthetic host's `arch` field. */
+#if defined(__x86_64__) || defined(__amd64__)
+	struct skeletonkey_host h_entry_no_data = h_kernel_6_12;
+	h_entry_no_data.meltdown_mitigation[0] = '\0';
+	run_one("entrybleed: meltdown probe unread → conservative VULNERABLE",
+		&entrybleed_module, &h_entry_no_data,
+		SKELETONKEY_VULNERABLE);
+
+	struct skeletonkey_host h_entry_immune = h_kernel_6_12;
+	strcpy(h_entry_immune.meltdown_mitigation, "Not affected");
+	run_one("entrybleed: meltdown=Not affected (immune CPU) → OK",
+		&entrybleed_module, &h_entry_immune,
+		SKELETONKEY_OK);
+
+	struct skeletonkey_host h_entry_kpti = h_kernel_6_12;
+	strcpy(h_entry_kpti.meltdown_mitigation, "Mitigation: PTI");
+	run_one("entrybleed: meltdown=Mitigation: PTI → VULNERABLE",
+		&entrybleed_module, &h_entry_kpti,
+		SKELETONKEY_VULNERABLE);
+#else
+	/* On non-x86_64 dev / CI containers, the stubbed detect() returns
+	 * PRECOND_FAIL regardless of meltdown_mitigation contents. */
+	run_one("entrybleed: non-x86_64 arch → PRECOND_FAIL (stub)",
+		&entrybleed_module, &h_kernel_6_12,
+		SKELETONKEY_PRECOND_FAIL);
+#endif
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

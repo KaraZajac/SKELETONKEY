@@ -190,6 +190,7 @@ static void populate_caps(struct skeletonkey_host *h)
 	h->apparmor_restrict_userns    = false;
 	h->unprivileged_bpf_disabled   = false;
 	h->kpti_enabled                = false;
+	h->meltdown_mitigation[0]      = '\0';
 	h->kernel_lockdown_active      = false;
 	h->selinux_enforcing           = false;
 	h->yama_ptrace_restricted      = false;
@@ -208,8 +209,17 @@ static void populate_caps(struct skeletonkey_host *h)
 		h->yama_ptrace_restricted = (v > 0);
 
 	char buf[256];
-	if (read_first_line("/sys/devices/system/cpu/vulnerabilities/meltdown", buf, sizeof buf))
+	if (read_first_line("/sys/devices/system/cpu/vulnerabilities/meltdown", buf, sizeof buf)) {
 		h->kpti_enabled = (strstr(buf, "Mitigation: PTI") != NULL);
+		/* Stash the raw value so modules that need richer matching
+		 * (e.g. entrybleed distinguishing "Not affected" CPUs from
+		 * "Vulnerable" / "Mitigation: PTI") don't re-read sysfs. */
+		size_t L = strlen(buf);
+		if (L >= sizeof h->meltdown_mitigation)
+			L = sizeof h->meltdown_mitigation - 1;
+		memcpy(h->meltdown_mitigation, buf, L);
+		h->meltdown_mitigation[L] = '\0';
+	}
 
 	/* /sys/kernel/security/lockdown format: "[none] integrity confidentiality"
 	 * — whichever level is bracketed is the active one. */

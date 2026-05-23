@@ -61,6 +61,11 @@ struct skeletonkey_host {
 	bool apparmor_restrict_userns;    /* sysctl: 1 = AA blocks unpriv userns */
 	bool unprivileged_bpf_disabled;   /* /proc/sys/kernel/unprivileged_bpf_disabled = 1 */
 	bool kpti_enabled;                /* /sys/.../meltdown contains "Mitigation: PTI" */
+	char meltdown_mitigation[64];     /* raw first line of
+	                                   * /sys/devices/system/cpu/vulnerabilities/meltdown
+	                                   * — empty string if unreadable. Modules that need
+	                                   * to distinguish "Not affected" (CPU immune) from
+	                                   * "Mitigation: PTI" / "Vulnerable" can read this. */
 	bool kernel_lockdown_active;      /* /sys/kernel/security/lockdown != [none] */
 	bool selinux_enforcing;           /* /sys/fs/selinux/enforce = 1 */
 	bool yama_ptrace_restricted;      /* /proc/sys/kernel/yama/ptrace_scope > 0 */
