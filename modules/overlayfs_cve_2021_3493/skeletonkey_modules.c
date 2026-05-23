@@ -490,6 +490,56 @@ static const char overlayfs_auditd[] =
     "# Watch for security.capability xattr writes (the post-mount step)\n"
     "-a always,exit -F arch=b64 -S setxattr,fsetxattr,lsetxattr -k skeletonkey-overlayfs-cap\n";
 
+static const char overlayfs_sigma[] =
+    "title: Possible CVE-2021-3493 Ubuntu overlayfs capability injection\n"
+    "id: f78a01e6-skeletonkey-overlayfs\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects Ubuntu's overlayfs-in-userns capability-xattr injection:\n"
+    "  unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount('overlay') + setxattr\n"
+    "  with name 'security.capability'. The bug lets caps set inside\n"
+    "  userns persist on the host fs. False positives: legitimate\n"
+    "  rootless container image builds; correlate with subsequent\n"
+    "  execve of the modified binary.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns:   {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  overlay:  {type: 'SYSCALL', syscall: 'mount'}\n"
+    "  setcap:   {type: 'SYSCALL', syscall: 'setxattr'}\n"
+    "  condition: userns and overlay and setcap\n"
+    "level: critical\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2021.3493]\n";
+
+static const char overlayfs_yara[] =
+    "rule overlayfs_cve_2021_3493 : cve_2021_3493 userns_lpe\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2021-3493\"\n"
+    "        description = \"Ubuntu overlayfs userns workdir + security.capability xattr injection\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $work    = /\\/tmp\\/skeletonkey-ovl-[A-Za-z0-9]+/\n"
+    "        $xattr   = \"security.capability\" ascii\n"
+    "    condition:\n"
+    "        $work and $xattr\n"
+    "}\n";
+
+static const char overlayfs_falco[] =
+    "- rule: overlayfs mount + setxattr(security.capability) in userns\n"
+    "  desc: |\n"
+    "    Non-root process inside userns mounts overlayfs and writes a\n"
+    "    security.capability xattr on a binary in the upper layer.\n"
+    "    The xattr persists on the host fs (CVE-2021-3493, Ubuntu).\n"
+    "    False positives: rootless container image builds.\n"
+    "  condition: >\n"
+    "    evt.type = setxattr and not user.uid = 0 and\n"
+    "    evt.args contains security.capability\n"
+    "  output: >\n"
+    "    setxattr(security.capability) by non-root\n"
+    "    (user=%user.name pid=%proc.pid file=%fd.name)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2021.3493]\n";
+
 const struct skeletonkey_module overlayfs_module = {
     .name           = "overlayfs",
     .cve            = "CVE-2021-3493",
@@ -502,9 +552,9 @@ const struct skeletonkey_module overlayfs_module = {
     .cleanup        = NULL,    /* exploit cleans up its own workdir on failure;
                                 * on success, exec replaces us so cleanup-by-us doesn't apply */
     .detect_auditd  = overlayfs_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = overlayfs_sigma,
+    .detect_yara    = overlayfs_yara,
+    .detect_falco   = overlayfs_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) for CAP_SYS_ADMIN; mount('overlay', merged, ...); compile + copy payload into the merged dir (writes upper on host fs); setxattr(upper_payload, 'security.capability', cap_setuid+ep) - the bug is that this xattr persists on the HOST fs despite being set inside userns. Parent then execve's the now-CAP_SETUID payload, calls setuid(0), execs /bin/sh. Artifacts: /tmp/skeletonkey-ovl-XXXXXX/ workdir; cleaned on exit/failure (on success the exec replaces the process so cleanup does not run). Audit-visible via unshare + mount(overlay) + setxattr(security.capability) + execve of attacker-controlled binary. Dmesg silent.",
 };
 

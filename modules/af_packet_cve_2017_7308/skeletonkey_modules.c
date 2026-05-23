@@ -891,6 +891,55 @@ static const char af_packet_auditd[] =
     "-a always,exit -F arch=b64 -S socket -F a0=17 -k skeletonkey-af-packet\n"
     "-a always,exit -F arch=b64 -S unshare -k skeletonkey-af-packet-userns\n";
 
+static const char af_packet_sigma[] =
+    "title: Possible CVE-2017-7308 AF_PACKET TPACKET_V3 exploitation\n"
+    "id: a72b5e91-skeletonkey-af-packet\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the AF_PACKET TPACKET_V3 integer-overflow setup pattern:\n"
+    "  unshare(CLONE_NEWUSER|CLONE_NEWNET) followed by socket(AF_PACKET)\n"
+    "  and a PACKET_RX_RING setsockopt + sendmmsg burst. False positives:\n"
+    "  network sandboxes / containers running raw-packet apps inside\n"
+    "  userns; correlate process tree to distinguish.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns:    {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  afp:       {type: 'SYSCALL', syscall: 'socket', a0: 17}\n"
+    "  send_burst:{type: 'SYSCALL', syscall: 'sendmmsg'}\n"
+    "  condition: userns and afp and send_burst\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2017.7308]\n";
+
+static const char af_packet_yara[] =
+    "rule af_packet_cve_2017_7308 : cve_2017_7308 heap_spray\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2017-7308\"\n"
+    "        description = \"AF_PACKET TPACKET_V3 spray tag from skeletonkey/iam-root tooling\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag1 = \"iamroot-afp-tag\" ascii\n"
+    "        $tag2 = \"skeletonkey-afp-fc-\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char af_packet_falco[] =
+    "- rule: AF_PACKET TPACKET_V3 setup by non-root in userns\n"
+    "  desc: |\n"
+    "    A non-root process creates an AF_PACKET socket and sets up a\n"
+    "    TPACKET_V3 ring inside a user namespace. CVE-2017-7308 trigger\n"
+    "    requires CAP_NET_RAW which userns provides. False positives:\n"
+    "    legitimate packet-capture tools running rootless (rare).\n"
+    "  condition: >\n"
+    "    evt.type = setsockopt and evt.arg.optname contains PACKET_RX_RING\n"
+    "    and not user.uid = 0\n"
+    "  output: >\n"
+    "    AF_PACKET TPACKET_V3 ring setup by non-root\n"
+    "    (user=%user.name proc=%proc.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2017.7308]\n";
+
 const struct skeletonkey_module af_packet_module = {
     .name           = "af_packet",
     .cve            = "CVE-2017-7308",
@@ -902,9 +951,9 @@ const struct skeletonkey_module af_packet_module = {
     .mitigate       = NULL,
     .cleanup        = NULL,
     .detect_auditd  = af_packet_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = af_packet_sigma,
+    .detect_yara    = af_packet_yara,
+    .detect_falco   = af_packet_falco,
     .opsec_notes    = "Creates AF_PACKET socket and TPACKET_V3 ring inside unshare(CLONE_NEWUSER|CLONE_NEWNET); triggers integer overflow with crafted tp_block_size/tp_block_nr and sprays ~200 loopback frames. Audit-visible via socket(AF_PACKET) (a0=17) + sendmmsg from a userns process; KASAN tag 'iamroot-afp-tag' may appear in dmesg if enabled. No persistent files. No cleanup callback - kernel state unwinds on child exit.",
 };
 

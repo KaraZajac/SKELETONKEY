@@ -1021,6 +1021,37 @@ static const char nft_set_uaf_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2023.32233]\n";
 
+static const char nft_set_uaf_yara[] =
+    "rule nft_set_uaf_cve_2023_32233 : cve_2023_32233 kernel_uaf\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-32233\"\n"
+    "        description = \"nft anonymous-set UAF spray tag (SKELETONKEY_SET) and log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag = \"SKELETONKEY_SET\" ascii\n"
+    "        $log = \"/tmp/skeletonkey-nft_set_uaf.log\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char nft_set_uaf_falco[] =
+    "- rule: nft anonymous-set lookup-UAF batch by non-root\n"
+    "  desc: |\n"
+    "    Non-root nfnetlink single-batch transaction: NEWTABLE +\n"
+    "    NEWCHAIN + NEWSET (anonymous, EVAL) + NEWRULE with\n"
+    "    nft_lookup referencing the anon set + DELSET + DELRULE.\n"
+    "    The lookup's set reference isn't deactivated; UAF when\n"
+    "    set frees. CVE-2023-32233.\n"
+    "  condition: >\n"
+    "    evt.type = sendmsg and fd.sockfamily = AF_NETLINK and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    nfnetlink anon-set batch from non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2023.32233]\n";
+
 const struct skeletonkey_module nft_set_uaf_module = {
     .name           = "nft_set_uaf",
     .cve            = "CVE-2023-32233",
@@ -1033,8 +1064,8 @@ const struct skeletonkey_module nft_set_uaf_module = {
     .cleanup        = nft_set_uaf_cleanup,
     .detect_auditd  = nft_set_uaf_auditd,
     .detect_sigma   = nft_set_uaf_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = nft_set_uaf_yara,
+    .detect_falco   = nft_set_uaf_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + single nfnetlink transaction: NEWTABLE + NEWCHAIN + NEWSET (anonymous, ANONYMOUS|CONSTANT|EVAL) + NEWRULE with nft_lookup referencing the anon set + DELSET + DELRULE. Vulnerable kernels do not deactivate the lookup's set ref on commit -> UAF when set frees. msg_msg cg-512 spray (32 queues x 16 msgs, tag 'SKELETONKEY_SET'). --full-chain re-fires with forged headers (data ptr = kaddr) and NEWSETELEM payload. Writes /tmp/skeletonkey-nft_set_uaf.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + msgsnd. Dmesg: KASAN oops on UAF. Cleanup unlinks log.",
 };
 

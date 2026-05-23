@@ -1027,6 +1027,36 @@ static const char nft_fwd_dup_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2022.25636]\n";
 
+static const char nft_fwd_dup_yara[] =
+    "rule nft_fwd_dup_cve_2022_25636 : cve_2022_25636 kernel_oob_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2022-25636\"\n"
+    "        description = \"nft_fwd/dup actions OOB kmalloc-512 spray tag and log\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag = \"SKELETONKEY_FWD\" ascii\n"
+    "        $log = \"/tmp/skeletonkey-nft_fwd_dup.log\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char nft_fwd_dup_falco[] =
+    "- rule: nft_fwd_dup OOB-write batch by non-root\n"
+    "  desc: |\n"
+    "    Non-root nfnetlink batch creating a netdev table with\n"
+    "    HW_OFFLOAD chain containing >15 immediate(NF_ACCEPT)\n"
+    "    expressions + 1 fwd. The offload walk overruns the action\n"
+    "    entries[] array. CVE-2022-25636.\n"
+    "  condition: >\n"
+    "    evt.type = sendmsg and fd.sockfamily = AF_NETLINK and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    nfnetlink HW_OFFLOAD batch from non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2022.25636]\n";
+
 const struct skeletonkey_module nft_fwd_dup_module = {
     .name           = "nft_fwd_dup",
     .cve            = "CVE-2022-25636",
@@ -1040,8 +1070,8 @@ const struct skeletonkey_module nft_fwd_dup_module = {
     .cleanup        = nft_fwd_dup_cleanup,
     .detect_auditd  = nft_fwd_dup_auditd,
     .detect_sigma   = nft_fwd_dup_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = nft_fwd_dup_yara,
+    .detect_falco   = nft_fwd_dup_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE netdev + NEWCHAIN HW_OFFLOAD + NEWRULE with 16 immediate(NF_ACCEPT) + 1 fwd). Offload hook walks the rule advertising num_actions+=16 but allocates only the original-actions size -> OOB write at entries[16] into adjacent kmalloc-512. msg_msg groom tagged 'SKELETONKEY_FWD'. Writes /tmp/skeletonkey-nft_fwd_dup.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + ioctl(SIOCGIFFLAGS/SIOCSIFFLAGS loopback) + msgsnd. Dmesg: KASAN or silent. Cleanup callback drains IPC queues and unlinks log.",
 };
 

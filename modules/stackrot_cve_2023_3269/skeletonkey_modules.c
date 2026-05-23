@@ -952,6 +952,53 @@ static const char stackrot_auditd[] =
     "-a always,exit -F arch=b64 -S mprotect -k skeletonkey-stackrot-mprotect\n"
     "-a always,exit -F arch=b64 -S munmap  -F success=1 -k skeletonkey-stackrot-munmap\n";
 
+static const char stackrot_sigma[] =
+    "title: Possible CVE-2023-3269 maple-tree VMA-split UAF\n"
+    "id: 3c24e5ca-skeletonkey-stackrot\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the StackRot race-groom: unshare(CLONE_NEWUSER) + tight\n"
+    "  loops of mremap/munmap on MAP_GROWSDOWN regions + msg_msg\n"
+    "  spray (msgsnd) for kmalloc-192 grooming. False positives: JIT\n"
+    "  runtimes and aggressive memory allocators may do similar mremap\n"
+    "  bursts but typically without msg_msg grooming.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns: {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  vmas:   {type: 'SYSCALL', syscall: 'mremap'}\n"
+    "  groom:  {type: 'SYSCALL', syscall: 'msgsnd'}\n"
+    "  condition: userns and vmas and groom\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2023.3269]\n";
+
+static const char stackrot_yara[] =
+    "rule stackrot_cve_2023_3269 : cve_2023_3269 kernel_uaf\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-3269\"\n"
+    "        description = \"StackRot maple-tree UAF race log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $log = \"/tmp/skeletonkey-stackrot.log\" ascii\n"
+    "    condition:\n"
+    "        $log\n"
+    "}\n";
+
+static const char stackrot_falco[] =
+    "- rule: mremap/munmap race on MAP_GROWSDOWN regions (StackRot)\n"
+    "  desc: |\n"
+    "    Non-root process driving high-frequency mremap/munmap on\n"
+    "    MAP_GROWSDOWN regions inside a userns + msg_msg (msgsnd)\n"
+    "    grooming of kmalloc-192. Maple-tree node UAF race in\n"
+    "    __vma_adjust. CVE-2023-3269.\n"
+    "  condition: >\n"
+    "    evt.type in (mremap, munmap) and not user.uid = 0\n"
+    "  output: >\n"
+    "    VMA mutation by non-root\n"
+    "    (user=%user.name pid=%proc.pid evt=%evt.type)\n"
+    "  priority: HIGH\n"
+    "  tags: [memory, mitre_privilege_escalation, T1068, cve.2023.3269]\n";
+
 const struct skeletonkey_module stackrot_module = {
     .name           = "stackrot",
     .cve            = "CVE-2023-3269",
@@ -963,9 +1010,9 @@ const struct skeletonkey_module stackrot_module = {
     .mitigate       = NULL,
     .cleanup        = stackrot_cleanup,
     .detect_auditd  = stackrot_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = stackrot_sigma,
+    .detect_yara    = stackrot_yara,
+    .detect_falco   = stackrot_falco,
     .opsec_notes    = "Child forks, enters userns, builds a race region with MAP_GROWSDOWN + anchor VMAs, sprays kmalloc-192 with msg_msg payloads, then spawns Thread A (mremap/munmap of region boundary to rotate maple-tree nodes) + Thread B (fork+fault the growsdown region to deref freed node). UAF in __vma_adjust fires if a sprayed msg_msg reclaims the freed node. Writes /tmp/skeletonkey-stackrot.log (iteration counts + slab delta). Audit-visible via unshare + mremap/munmap bursts on stack regions + msgsnd spray. No network. Cleanup callback unlinks /tmp log.",
 };
 

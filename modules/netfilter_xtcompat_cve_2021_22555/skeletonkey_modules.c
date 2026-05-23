@@ -960,6 +960,55 @@ static const char netfilter_xtcompat_auditd[] =
     "-a always,exit -F arch=b64 -S msgsnd -k skeletonkey-xtcompat-msgmsg\n"
     "-a always,exit -F arch=b64 -S msgrcv -k skeletonkey-xtcompat-msgmsg\n";
 
+static const char netfilter_xtcompat_sigma[] =
+    "title: Possible CVE-2021-22555 xt_compat OOB write\n"
+    "id: e67f90d5-skeletonkey-xtcompat\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects setsockopt(SOL_IP, IPT_SO_SET_REPLACE) from a non-root\n"
+    "  process inside unshare(CLONE_NEWUSER|CLONE_NEWNET) followed by\n"
+    "  msg_msg grooming (msgsnd/msgrcv) and sendmmsg sk_buff spray.\n"
+    "  False positives: iptables config inside rootless containers /\n"
+    "  network namespaces. Correlate with privilege escalation\n"
+    "  (setresuid 0,0,0) to confirm.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns:   {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  sso:      {type: 'SYSCALL', syscall: 'setsockopt', a1: 0}\n"
+    "  groom:    {type: 'SYSCALL', syscall: 'msgsnd'}\n"
+    "  condition: userns and sso and groom\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2021.22555]\n";
+
+static const char netfilter_xtcompat_yara[] =
+    "rule netfilter_xtcompat_cve_2021_22555 : cve_2021_22555 kernel_oob_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2021-22555\"\n"
+    "        description = \"xt_compat 4-byte OOB write log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $log = \"/tmp/skeletonkey-xtcompat.log\" ascii\n"
+    "    condition:\n"
+    "        $log\n"
+    "}\n";
+
+static const char netfilter_xtcompat_falco[] =
+    "- rule: setsockopt IPT_SO_SET_REPLACE by non-root in userns\n"
+    "  desc: |\n"
+    "    Non-root process calls setsockopt(SOL_IP, IPT_SO_SET_REPLACE)\n"
+    "    from inside a userns with CAP_NET_ADMIN. The xt_compat\n"
+    "    target_to_user() handler writes past the xt_table_info\n"
+    "    allocation; CVE-2021-22555. False positives: iptables\n"
+    "    config in rootless containers.\n"
+    "  condition: >\n"
+    "    evt.type = setsockopt and not user.uid = 0\n"
+    "  output: >\n"
+    "    setsockopt SOL_IP by non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2021.22555]\n";
+
 const struct skeletonkey_module netfilter_xtcompat_module = {
     .name           = "netfilter_xtcompat",
     .cve            = "CVE-2021-22555",
@@ -971,9 +1020,9 @@ const struct skeletonkey_module netfilter_xtcompat_module = {
     .mitigate       = NULL,    /* mitigation: upgrade kernel; disable unprivileged_userns_clone */
     .cleanup        = netfilter_xtcompat_cleanup,
     .detect_auditd  = netfilter_xtcompat_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = netfilter_xtcompat_sigma,
+    .detect_yara    = netfilter_xtcompat_yara,
+    .detect_falco   = netfilter_xtcompat_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + setsockopt(SOL_IP, IPT_SO_SET_REPLACE) with a malformed xt_entry_target to trigger xt_compat_target_to_user 4-byte OOB into kmalloc-2k. msg_msg + sk_buff cross-cache groom. Writes /tmp/skeletonkey-xtcompat.log (breadcrumb). Audit-visible via unshare + setsockopt(IPT_SO_SET_REPLACE) + msgsnd/msgrcv + sendmmsg(sk_buff spray). Dmesg silent on success; KASAN oops if the groom misses. Cleanup callback unlinks the log; IPC auto-drains on namespace exit.",
 };
 

@@ -1123,6 +1123,35 @@ static const char nf_tables_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2024.1086]\n";
 
+static const char nf_tables_yara[] =
+    "rule nf_tables_cve_2024_1086 : cve_2024_1086 kernel_uaf\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2024-1086\"\n"
+    "        description = \"nf_tables verdict-init UAF breadcrumb log\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $log = \"/tmp/skeletonkey-nft_set_uaf.log\" ascii\n"
+    "    condition:\n"
+    "        $log\n"
+    "}\n";
+
+static const char nf_tables_falco[] =
+    "- rule: nf_tables verdict-init UAF batch by non-root\n"
+    "  desc: |\n"
+    "    Non-root sendmsg on NETLINK_NETFILTER inside a userns,\n"
+    "    delivering an nfnetlink batch with NEWTABLE + NEWCHAIN +\n"
+    "    NEWSET (verdict-key) + NEWSETELEM with malformed NFT_GOTO\n"
+    "    committed twice. CVE-2024-1086 nft_verdict_init double-free.\n"
+    "  condition: >\n"
+    "    evt.type = sendmsg and fd.sockfamily = AF_NETLINK and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    nfnetlink batch from non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2024.1086]\n";
+
 const struct skeletonkey_module nf_tables_module = {
     .name           = "nf_tables",
     .cve            = "CVE-2024-1086",
@@ -1135,8 +1164,8 @@ const struct skeletonkey_module nf_tables_module = {
     .cleanup        = NULL,
     .detect_auditd  = nf_tables_auditd,
     .detect_sigma   = nf_tables_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = nf_tables_yara,
+    .detect_falco   = nf_tables_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE + NEWCHAIN/LOCAL_OUT + NEWSET verdict-key + NEWSETELEM malformed NFT_GOTO) committed twice to trigger the nft_verdict_init double-free. msg_msg cg-96 groom with forged pipapo_elem headers; --full-chain sprays kaddr-tagged forged elems and re-fires. Writes /tmp/skeletonkey-nft_set_uaf.log (conditional). Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg batches + msgget/msgsnd. Dmesg: KASAN double-free panic on vulnerable kernels; silent otherwise. Cleanup is finisher-gated; no persistent files on success.",
 };
 

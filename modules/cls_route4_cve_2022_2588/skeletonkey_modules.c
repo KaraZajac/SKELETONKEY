@@ -826,6 +826,54 @@ static const char cls_route4_auditd[] =
     "-a always,exit -F arch=b64 -S unshare -k skeletonkey-cls-route4-userns\n"
     "-a always,exit -F arch=b64 -S msgsnd -k skeletonkey-cls-route4-spray\n";
 
+static const char cls_route4_sigma[] =
+    "title: Possible CVE-2022-2588 cls_route4 dead-UAF\n"
+    "id: d56e8fc4-skeletonkey-cls-route4\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the net/sched cls_route4 dead-UAF setup: unshare userns +\n"
+    "  netns + tc qdisc/filter rules with handle 0 + delete + msg_msg\n"
+    "  spray + UDP sendto on a dummy interface. False positives:\n"
+    "  traffic-shaping config in rootless containers.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns: {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  udp:    {type: 'SYSCALL', syscall: 'sendto'}\n"
+    "  groom:  {type: 'SYSCALL', syscall: 'msgsnd'}\n"
+    "  condition: userns and udp and groom\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2022.2588]\n";
+
+static const char cls_route4_yara[] =
+    "rule cls_route4_cve_2022_2588 : cve_2022_2588 kernel_uaf\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2022-2588\"\n"
+    "        description = \"cls_route4 dead-UAF kmalloc-1k spray tag and log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag = \"SKELETONKEY4\" ascii\n"
+    "        $log = \"/tmp/skeletonkey-cls_route4.log\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char cls_route4_falco[] =
+    "- rule: tc route4 filter manipulation by non-root in userns\n"
+    "  desc: |\n"
+    "    Non-root tc qdisc + route4 filter add/delete inside a userns\n"
+    "    + UDP sendto trigger. CVE-2022-2588 dead-UAF pattern. False\n"
+    "    positives: legitimate traffic shaping inside rootless\n"
+    "    containers.\n"
+    "  condition: >\n"
+    "    evt.type = sendto and fd.sockfamily = AF_INET and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    UDP sendto on dummy iface from non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2022.2588]\n";
+
 const struct skeletonkey_module cls_route4_module = {
     .name           = "cls_route4",
     .cve            = "CVE-2022-2588",
@@ -837,9 +885,9 @@ const struct skeletonkey_module cls_route4_module = {
     .mitigate       = NULL,    /* mitigation: blacklist cls_route4 module OR disable user_ns */
     .cleanup        = cls_route4_cleanup,
     .detect_auditd  = cls_route4_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = cls_route4_sigma,
+    .detect_yara    = cls_route4_yara,
+    .detect_falco   = cls_route4_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET); ip link/addr/route to make a dummy interface, htb qdisc + class + route4 filter with handle 0, delete filter (leaves dangling tcf_proto pointer), msg_msg spray kmalloc-1k tagged 'SKELETONKEY4', UDP sendto to trigger classify(). Writes /tmp/skeletonkey-cls_route4.log. Audit-visible via unshare + sendto(AF_INET) + msgsnd. Cleanup callback removes /tmp log + dummy interface.",
 };
 

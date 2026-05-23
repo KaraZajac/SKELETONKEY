@@ -646,6 +646,12 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
     if (m->detect_sigma) {
         fprintf(stdout, "\n--- sigma rule ---\n%s", m->detect_sigma);
     }
+    if (m->detect_yara) {
+        fprintf(stdout, "\n--- yara rule ---\n%s", m->detect_yara);
+    }
+    if (m->detect_falco) {
+        fprintf(stdout, "\n--- falco rule ---\n%s", m->detect_falco);
+    }
     return 0;
 }
 

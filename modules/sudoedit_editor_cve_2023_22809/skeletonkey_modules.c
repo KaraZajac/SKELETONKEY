@@ -618,6 +618,36 @@ static const char sudoedit_editor_sigma[] =
 
 /* ----- module registration ------------------------------------------- */
 
+static const char sudoedit_editor_yara[] =
+    "rule sudoedit_editor_cve_2023_22809 : cve_2023_22809 setuid_abuse\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-22809\"\n"
+    "        description = \"skeletonkey sudoedit backdoor: appended skel UID=0 user in /etc/passwd\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $skel = \"skel::0:0:skeletonkey\" ascii\n"
+    "    condition:\n"
+    "        $skel\n"
+    "}\n";
+
+static const char sudoedit_editor_falco[] =
+    "- rule: sudoedit with EDITOR/VISUAL containing '--' separator\n"
+    "  desc: |\n"
+    "    sudoedit spawned with EDITOR / VISUAL / SUDO_EDITOR env var\n"
+    "    containing the substring ' -- '. The argv-split bug treats\n"
+    "    everything after '--' as an additional file argument that\n"
+    "    sudoedit then opens with root privileges. CVE-2023-22809.\n"
+    "  condition: >\n"
+    "    spawned_process and proc.name = sudoedit and\n"
+    "    (proc.env contains \"EDITOR=\" or proc.env contains \"VISUAL=\"\n"
+    "     or proc.env contains \"SUDO_EDITOR=\")\n"
+    "  output: >\n"
+    "    sudoedit with EDITOR-style env var\n"
+    "    (user=%user.name pid=%proc.pid env=%proc.env)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [process, mitre_privilege_escalation, T1068, cve.2023.22809]\n";
+
 const struct skeletonkey_module sudoedit_editor_module = {
     .name           = "sudoedit_editor",
     .cve            = "CVE-2023-22809",
@@ -630,8 +660,8 @@ const struct skeletonkey_module sudoedit_editor_module = {
     .cleanup        = sudoedit_editor_cleanup,
     .detect_auditd  = sudoedit_editor_auditd,
     .detect_sigma   = sudoedit_editor_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = sudoedit_editor_yara,
+    .detect_falco   = sudoedit_editor_falco,
     .opsec_notes    = "Sets EDITOR='<helper> -- /etc/passwd' so sudoedit splits on the literal '--' and treats /etc/passwd as an additional editable file. Compiled helper appends 'skel::0:0:skeletonkey:/root:/bin/sh' to the post-'--' target; sudoedit runs the helper as root and copies back. Artifacts: /tmp/skeletonkey-sudoedit-XXXXXX (helper.c, helper binary, optional passwd.before backup); /etc/passwd gets the new 'skel' entry; drops root via 'su skel'. Audit-visible via execve(/usr/bin/sudoedit) with EDITOR/VISUAL/SUDO_EDITOR containing the literal '--' token. No network. Cleanup callback restores /etc/passwd from backup (if root) or removes the 'skel' line, and removes the /tmp dir.",
 };
 

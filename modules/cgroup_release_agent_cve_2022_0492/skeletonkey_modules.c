@@ -359,6 +359,36 @@ static const char cgroup_ra_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1611, cve.2022.0492]\n";
 
+static const char cgroup_release_agent_yara[] =
+    "rule cgroup_release_agent_cve_2022_0492 : cve_2022_0492 container_escape\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2022-0492\"\n"
+    "        description = \"cgroup v1 release_agent payload + dropped setuid shell artifacts\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $payload = \"/tmp/skeletonkey-cgroup-payload.sh\" ascii\n"
+    "        $shell   = \"/tmp/skeletonkey-cgroup-sh\" ascii\n"
+    "        $mnt     = \"/tmp/skeletonkey-cgroup-mnt\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char cgroup_release_agent_falco[] =
+    "- rule: cgroup v1 mount by non-root with release_agent write\n"
+    "  desc: |\n"
+    "    A non-root process inside a userns mounts cgroup v1 and\n"
+    "    writes to a release_agent file. CVE-2022-0492 trigger:\n"
+    "    release_agent runs as init-ns root when cgroup empties.\n"
+    "  condition: >\n"
+    "    evt.type = mount and evt.arg.fstype = cgroup and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    cgroup v1 mount by non-root\n"
+    "    (user=%user.name pid=%proc.pid target=%evt.arg.name)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [container, mitre_privilege_escalation, T1611, cve.2022.0492]\n";
+
 const struct skeletonkey_module cgroup_release_agent_module = {
     .name           = "cgroup_release_agent",
     .cve            = "CVE-2022-0492",
@@ -371,8 +401,8 @@ const struct skeletonkey_module cgroup_release_agent_module = {
     .cleanup        = cgroup_ra_cleanup,
     .detect_auditd  = cgroup_ra_auditd,
     .detect_sigma   = cgroup_ra_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = cgroup_release_agent_yara,
+    .detect_falco   = cgroup_release_agent_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS), mount cgroup v1 at /tmp/skeletonkey-cgroup-mnt, write payload path to release_agent file at cgroup root, echo 1 to notify_on_release in subdir, add PID to cgroup.procs and exit. Payload at /tmp/skeletonkey-cgroup-payload.sh runs as init-namespace root when cgroup empties, dropping setuid /tmp/skeletonkey-cgroup-sh. Audit-visible via unshare + mount(cgroup) + open/write of release_agent. Cleanup callback removes /tmp/skeletonkey-cgroup-* and umounts.",
 };
 

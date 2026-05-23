@@ -317,6 +317,42 @@ static const char ptrace_traceme_auditd[] =
     "-a always,exit -F arch=b64 -S ptrace -F a0=0 -k skeletonkey-ptrace-traceme\n"
     "-a always,exit -F arch=b32 -S ptrace -F a0=0 -k skeletonkey-ptrace-traceme\n";
 
+static const char ptrace_traceme_sigma[] =
+    "title: Possible CVE-2019-13272 PTRACE_TRACEME stale-cred LPE\n"
+    "id: 1a02c3a8-skeletonkey-ptrace-traceme\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects ptrace(PTRACE_TRACEME) immediately followed by parent\n"
+    "  execve of a setuid binary. The kernel stores the parent's pre-\n"
+    "  execve credentials on the ptrace_link; after execve the link\n"
+    "  is stale but ptrace still grants privileges. False positives:\n"
+    "  debuggers (gdb, strace) tracing setuid processes legitimately.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  traceme: {type: 'SYSCALL', syscall: 'ptrace', a0: 0}\n"
+    "  execve:  {type: 'SYSCALL', syscall: 'execve'}\n"
+    "  condition: traceme and execve\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2019.13272]\n";
+
+static const char ptrace_traceme_falco[] =
+    "- rule: PTRACE_TRACEME followed by setuid execve (cred escalation)\n"
+    "  desc: |\n"
+    "    Child calls ptrace(PTRACE_TRACEME) (recording parent's pre-\n"
+    "    execve creds); parent then execve's a setuid binary\n"
+    "    (pkexec, su, sudo). The stale ptrace_link grants the\n"
+    "    unprivileged child ptrace privileges over the now-root\n"
+    "    parent. CVE-2019-13272. False positives: debuggers (gdb,\n"
+    "    strace) tracing setuid processes legitimately.\n"
+    "  condition: >\n"
+    "    evt.type = ptrace and evt.arg.request = PTRACE_TRACEME and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    PTRACE_TRACEME by non-root\n"
+    "    (user=%user.name pid=%proc.pid ppid=%proc.ppid)\n"
+    "  priority: HIGH\n"
+    "  tags: [process, mitre_privilege_escalation, T1068, cve.2019.13272]\n";
+
 const struct skeletonkey_module ptrace_traceme_module = {
     .name           = "ptrace_traceme",
     .cve            = "CVE-2019-13272",
@@ -328,9 +364,9 @@ const struct skeletonkey_module ptrace_traceme_module = {
     .mitigate       = NULL,    /* mitigation: upgrade kernel; OR sysctl kernel.yama.ptrace_scope=2 */
     .cleanup        = NULL,    /* exploit replaces our process image; no cleanup applies */
     .detect_auditd  = ptrace_traceme_auditd,
-    .detect_sigma   = NULL,
+    .detect_sigma   = ptrace_traceme_sigma,
     .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_falco   = ptrace_traceme_falco,
     .opsec_notes    = "Parent and child cooperate: child calls ptrace(PTRACE_TRACEME) (recording the parent's current credentials), then sleeps; parent execve's a setuid binary (pkexec or su) and elevates. The stale ptrace_link in the child still holds the old (non-root) credentials, so PTRACE_ATTACH succeeds against the now-root parent; the child injects shellcode at the parent's RIP via PTRACE_POKETEXT and detaches. Audit-visible via ptrace with a0=0 (PTRACE_TRACEME) closely followed by execve of a setuid binary in the parent process. No file artifacts; no persistent changes. No cleanup callback - the exploit execs /bin/sh and does not return.",
 };
 

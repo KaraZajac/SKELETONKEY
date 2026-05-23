@@ -390,6 +390,35 @@ static const char dirty_cow_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2016.5195]\n";
 
+static const char dirty_cow_yara[] =
+    "rule dirty_cow_cve_2016_5195 : cve_2016_5195 page_cache_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2016-5195\"\n"
+    "        description = \"Dirty COW /etc/passwd UID-flip pattern (non-root user remapped to 0000+)\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $uid_flip = /\\n[a-z_][a-z0-9_-]{0,30}:[^:]{0,8}:0{4,}:[0-9]+:/\n"
+    "    condition:\n"
+    "        $uid_flip\n"
+    "}\n";
+
+static const char dirty_cow_falco[] =
+    "- rule: Dirty COW pwrite on /proc/self/mem by non-root\n"
+    "  desc: |\n"
+    "    Non-root pwrite() targeting /proc/self/mem at an offset that\n"
+    "    overlaps a private mmap of /etc/passwd. Combined with a\n"
+    "    racing madvise(MADV_DONTNEED) loop this is the Dirty COW\n"
+    "    primitive (CVE-2016-5195).\n"
+    "  condition: >\n"
+    "    evt.type = pwrite and fd.name = /proc/self/mem and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    pwrite to /proc/self/mem by non-root\n"
+    "    (user=%user.name proc=%proc.name pid=%proc.pid)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2016.5195]\n";
+
 const struct skeletonkey_module dirty_cow_module = {
     .name           = "dirty_cow",
     .cve            = "CVE-2016-5195",
@@ -402,8 +431,8 @@ const struct skeletonkey_module dirty_cow_module = {
     .cleanup        = dirty_cow_cleanup,
     .detect_auditd  = dirty_cow_auditd,
     .detect_sigma   = dirty_cow_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = dirty_cow_yara,
+    .detect_falco   = dirty_cow_falco,
     .opsec_notes    = "Two-thread race: Thread A loops pwrite(/proc/self/mem) at the user's UID offset in /etc/passwd; Thread B loops madvise(MADV_DONTNEED) on a PRIVATE mmap of /etc/passwd. Overwrites the UID field with all-zeros, then execlp('su') to claim root. UID offset is parsed from the file, not hardcoded. Audit-visible via open(/proc/self/mem) + write + madvise(MADV_DONTNEED) bursts + /etc/passwd page-cache poisoning. Cleanup callback calls posix_fadvise(POSIX_FADV_DONTNEED) on /etc/passwd and writes 3 to /proc/sys/vm/drop_caches to evict.",
 };
 

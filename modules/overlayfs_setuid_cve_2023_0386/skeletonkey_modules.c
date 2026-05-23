@@ -407,6 +407,56 @@ static const char overlayfs_setuid_auditd[] =
     "-a always,exit -F arch=b64 -S mount -F a2=overlay -k skeletonkey-overlayfs\n"
     "-a always,exit -F arch=b64 -S chown,fchown,fchownat -k skeletonkey-overlayfs-chown\n";
 
+static const char overlayfs_setuid_sigma[] =
+    "title: Possible CVE-2023-0386 overlayfs setuid copy-up\n"
+    "id: 0891b2f7-skeletonkey-overlayfs-setuid\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the upstream overlayfs setuid copy-up bug: unshare\n"
+    "  (CLONE_NEWUSER|CLONE_NEWNS) + mount('overlay') with a setuid-\n"
+    "  root binary in lower + chown on the merged view to trigger\n"
+    "  copy-up. Setuid bit persists in upper layer despite\n"
+    "  unprivileged ownership.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns:    {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  overlay:   {type: 'SYSCALL', syscall: 'mount'}\n"
+    "  chown_up:  {type: 'SYSCALL', syscall: 'chown'}\n"
+    "  condition: userns and overlay and chown_up\n"
+    "level: critical\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2023.0386]\n";
+
+static const char overlayfs_setuid_yara[] =
+    "rule overlayfs_setuid_cve_2023_0386 : cve_2023_0386 userns_lpe\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-0386\"\n"
+    "        description = \"overlayfs setuid copy-up workdir signature\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $work = /\\/tmp\\/skeletonkey-ovlsu-[A-Za-z0-9]+/\n"
+    "    condition:\n"
+    "        $work\n"
+    "}\n";
+
+static const char overlayfs_setuid_falco[] =
+    "- rule: overlayfs chown on setuid binary in userns (copy-up)\n"
+    "  desc: |\n"
+    "    Non-root chown on a setuid-root binary inside an overlayfs\n"
+    "    mount in a userns. Triggers copy-up that preserves the\n"
+    "    setuid bit despite unprivileged upper-layer ownership.\n"
+    "    CVE-2023-0386.\n"
+    "  condition: >\n"
+    "    evt.type in (chown, fchown, fchownat) and not user.uid = 0\n"
+    "    and (fd.name in (/usr/bin/su, /bin/su, /usr/bin/sudo,\n"
+    "                     /usr/bin/passwd, /usr/bin/pkexec)\n"
+    "         or fd.name endswith /su)\n"
+    "  output: >\n"
+    "    chown on setuid binary by non-root\n"
+    "    (user=%user.name pid=%proc.pid file=%fd.name)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2023.0386]\n";
+
 const struct skeletonkey_module overlayfs_setuid_module = {
     .name           = "overlayfs_setuid",
     .cve            = "CVE-2023-0386",
@@ -418,9 +468,9 @@ const struct skeletonkey_module overlayfs_setuid_module = {
     .mitigate       = NULL,
     .cleanup        = overlayfs_setuid_cleanup,
     .detect_auditd  = overlayfs_setuid_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = overlayfs_setuid_sigma,
+    .detect_yara    = overlayfs_setuid_yara,
+    .detect_falco   = overlayfs_setuid_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) + overlayfs mount with a setuid-root binary in lower (e.g. /usr/bin/su); chown on the merged view triggers copy-up that preserves the setuid bit in upper - but upper is owned by the unprivileged user. Overwrites upper-layer contents with attacker payload and execve's for root. Artifacts: /tmp/skeletonkey-ovlsu-XXXXXX/ (workdir with payload.c, binary, overlay mounts); cleanup callback removes these. Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount(overlay) + chown on the merged view. No network. Dmesg silent on success.",
 };
 

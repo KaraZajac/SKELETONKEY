@@ -669,6 +669,54 @@ static const char af_packet2_auditd[] =
     "# non-root via userns is the canonical footprint.\n"
     "-a always,exit -F arch=b64 -S socket -F a0=17 -k skeletonkey-af-packet\n";
 
+static const char af_packet2_sigma[] =
+    "title: Possible CVE-2020-14386 AF_PACKET VLAN underflow exploitation\n"
+    "id: b83c6fa2-skeletonkey-af-packet2\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the AF_PACKET TPACKET_V2 nested-VLAN frame pattern:\n"
+    "  unshare(CLONE_NEWUSER|CLONE_NEWNET) followed by socket(AF_PACKET),\n"
+    "  PACKET_RX_RING setsockopt, and a sendmmsg burst (>=64) on a unix\n"
+    "  socketpair spray. False positives: legitimate packet capture in\n"
+    "  rootless containers.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns:    {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  afp:       {type: 'SYSCALL', syscall: 'socket', a0: 17}\n"
+    "  send_burst:{type: 'SYSCALL', syscall: 'sendmmsg'}\n"
+    "  condition: userns and afp and send_burst\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2020.14386]\n";
+
+static const char af_packet2_yara[] =
+    "rule af_packet2_cve_2020_14386 : cve_2020_14386 heap_spray\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2020-14386\"\n"
+    "        description = \"AF_PACKET VLAN-underflow spray tag (skeletonkey-afp-fc-)\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag = \"skeletonkey-afp-fc-\" ascii\n"
+    "    condition:\n"
+    "        $tag\n"
+    "}\n";
+
+static const char af_packet2_falco[] =
+    "- rule: AF_PACKET TPACKET_V2 nested-VLAN trigger by non-root\n"
+    "  desc: |\n"
+    "    A non-root process sets up TPACKET_V2 and sends a burst of\n"
+    "    sendmmsg packets carrying nested VLAN tags (CVE-2020-14386\n"
+    "    trigger). False positives: legitimate VLAN/network capture\n"
+    "    tools in unprivileged containers.\n"
+    "  condition: >\n"
+    "    evt.type = sendmmsg and fd.type = socket and\n"
+    "    fd.sockfamily = AF_PACKET and not user.uid = 0\n"
+    "  output: >\n"
+    "    sendmmsg burst on AF_PACKET socket by non-root\n"
+    "    (user=%user.name pid=%proc.pid vlen=%evt.arg.vlen)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2020.14386]\n";
+
 const struct skeletonkey_module af_packet2_module = {
     .name           = "af_packet2",
     .cve            = "CVE-2020-14386",
@@ -680,9 +728,9 @@ const struct skeletonkey_module af_packet2_module = {
     .mitigate       = NULL,
     .cleanup        = NULL,
     .detect_auditd  = af_packet2_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = af_packet2_sigma,
+    .detect_yara    = af_packet2_yara,
+    .detect_falco   = af_packet2_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + TPACKET_V2 ring on AF_PACKET; crafts nested-VLAN ETH_P_8021AD frames with 0x88A8/0x8100 TPIDs to trigger tpacket_rcv underflow; fires 256 frames + 64 sendmmsg via AF_UNIX socketpair spray. Tag 'skeletonkey-afp-fc-' visible in KASAN splats. Audit-visible via socket(AF_PACKET) + sendmsg/sendto from userns. No persistent artifacts; kernel cleans up on child exit.",
 };
 

@@ -686,6 +686,57 @@ static const char sequoia_auditd[] =
     "# within 5s AND a subsequent skeletonkey-sequoia-mount event is\n"
     "# the canonical trigger shape.\n";
 
+static const char sequoia_sigma[] =
+    "title: Possible CVE-2021-33909 seq_file size_t-int wrap\n"
+    "id: 2b13d4b9-skeletonkey-sequoia\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects the seq_file OOB-write trigger pattern: unshare\n"
+    "  (CLONE_NEWUSER|CLONE_NEWNS) + a burst of ~5000 mkdir/mkdirat\n"
+    "  syscalls + bind-mount + read(/proc/self/mountinfo). The\n"
+    "  rendered string exceeds INT_MAX, wrapping to negative.\n"
+    "  False positives: unusual; bursts of >1000 mkdir/s are rare in\n"
+    "  normal workloads.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  userns: {type: 'SYSCALL', syscall: 'unshare'}\n"
+    "  mkdir:  {type: 'SYSCALL', syscall: 'mkdir'}\n"
+    "  bind:   {type: 'SYSCALL', syscall: 'mount'}\n"
+    "  condition: userns and mkdir and bind\n"
+    "level: critical\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2021.33909]\n";
+
+static const char sequoia_yara[] =
+    "rule sequoia_cve_2021_33909 : cve_2021_33909 kernel_oob_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2021-33909\"\n"
+    "        description = \"Sequoia deep-mountpoint workdir + log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $work = \"/tmp/skeletonkey-sequoia\" ascii\n"
+    "        $log  = \"/tmp/skeletonkey-sequoia.log\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char sequoia_falco[] =
+    "- rule: Deeply nested mkdir burst + /proc/self/mountinfo read (Sequoia)\n"
+    "  desc: |\n"
+    "    Non-root process reading /proc/self/mountinfo after a burst\n"
+    "    of ~5000 mkdir()s and a bind-mount of the deep leaf. The\n"
+    "    rendered mountinfo string exceeds INT_MAX. CVE-2021-33909.\n"
+    "    False positives: rare; mkdir bursts of this size are not\n"
+    "    seen in normal workloads.\n"
+    "  condition: >\n"
+    "    evt.type = open and fd.name = /proc/self/mountinfo and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    /proc/self/mountinfo read by non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2021.33909]\n";
+
 const struct skeletonkey_module sequoia_module = {
     .name           = "sequoia",
     .cve            = "CVE-2021-33909",
@@ -697,9 +748,9 @@ const struct skeletonkey_module sequoia_module = {
     .mitigate       = NULL,
     .cleanup        = sequoia_cleanup,
     .detect_auditd  = sequoia_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = sequoia_sigma,
+    .detect_yara    = sequoia_yara,
+    .detect_falco   = sequoia_falco,
     .opsec_notes    = "Builds ~5000 nested directories under /tmp/skeletonkey-sequoia (each name 200 'A' chars); enters userns for CAP_SYS_ADMIN; bind-mounts the leaf over itself to amplify the rendered mountinfo string length; reads /proc/self/mountinfo to trigger the int-vs-size_t overflow in seq_buf_alloc(), producing an OOB write of mountinfo bytes off the stack buffer. Artifacts: /tmp/skeletonkey-sequoia/ (deep tree + bind mounts) and /tmp/skeletonkey-sequoia.log (byte count + dmesg sample). Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount() + burst of ~5000 mkdir/mkdirat. No network. Cleanup callback walks back down the tree, unmounts, removes dirs, unlinks the .log.",
 };
 

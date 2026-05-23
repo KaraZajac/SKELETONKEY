@@ -1138,6 +1138,35 @@ static const char nft_payload_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2023.0179]\n";
 
+static const char nft_payload_yara[] =
+    "rule nft_payload_cve_2023_0179 : cve_2023_0179 kernel_oob_read_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-0179\"\n"
+    "        description = \"nft_payload OOB-via-verdict-index breadcrumb log\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $log = \"/tmp/skeletonkey-nft_payload.log\" ascii\n"
+    "    condition:\n"
+    "        $log\n"
+    "}\n";
+
+static const char nft_payload_falco[] =
+    "- rule: nft_payload OOB via verdict-code index by non-root\n"
+    "  desc: |\n"
+    "    Non-root nfnetlink batch with an oversized NFTA_SET_DESC\n"
+    "    + NEWSETELEM whose NFTA_PAYLOAD_SREG uses attacker-\n"
+    "    controlled verdict code as an index into regs->data[].\n"
+    "    CVE-2023-0179.\n"
+    "  condition: >\n"
+    "    evt.type = sendmsg and fd.sockfamily = AF_NETLINK and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    nfnetlink payload batch from non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2023.0179]\n";
+
 const struct skeletonkey_module nft_payload_module = {
     .name           = "nft_payload",
     .cve            = "CVE-2023-0179",
@@ -1151,8 +1180,8 @@ const struct skeletonkey_module nft_payload_module = {
     .cleanup        = nft_payload_cleanup,
     .detect_auditd  = nft_payload_auditd,
     .detect_sigma   = nft_payload_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = nft_payload_yara,
+    .detect_falco   = nft_payload_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE + NEWCHAIN/LOCAL_OUT + NEWSET with oversized NFTA_SET_DESC + NEWSETELEM whose NFTA_PAYLOAD_SREG = attacker verdict code). On packet eval, regs->verdict.code is used unchecked as index into regs->data[] -> OOB. Dual-slab groom (kmalloc-1k + kmalloc-cg-96). Trigger via sendto(AF_INET, 127.0.0.1:31337). Writes /tmp/skeletonkey-nft_payload.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + msgsnd + socket(AF_INET)/sendto. Cleanup callback unlinks log.",
 };
 

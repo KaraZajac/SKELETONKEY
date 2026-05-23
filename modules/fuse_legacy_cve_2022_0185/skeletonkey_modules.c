@@ -871,6 +871,36 @@ static const char fuse_legacy_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1611, cve.2022.0185]\n";
 
+static const char fuse_legacy_yara[] =
+    "rule fuse_legacy_cve_2022_0185 : cve_2022_0185 kernel_overflow\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2022-0185\"\n"
+    "        description = \"fs_context legacy_parse_param oversized-source pattern (fsopen cgroup2)\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $fsopen  = \"fsopen\" ascii\n"
+    "        $cgrp2   = \"cgroup2\" ascii\n"
+    "    condition:\n"
+    "        all of them\n"
+    "}\n";
+
+static const char fuse_legacy_falco[] =
+    "- rule: fsopen/fsconfig in userns (CVE-2022-0185 trigger)\n"
+    "  desc: |\n"
+    "    Non-root fsopen + fsconfig(FSCONFIG_SET_STRING) sequence\n"
+    "    inside a userns. legacy_parse_param() integer-underflow\n"
+    "    overflow into kmalloc-4k. False positives: containers may\n"
+    "    mount their own filesystems but FSCONFIG with oversized\n"
+    "    'source' option strings is unusual.\n"
+    "  condition: >\n"
+    "    evt.type in (fsopen, fsconfig) and not user.uid = 0\n"
+    "  output: >\n"
+    "    fsopen/fsconfig by non-root\n"
+    "    (user=%user.name pid=%proc.pid evt=%evt.type)\n"
+    "  priority: HIGH\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2022.0185]\n";
+
 const struct skeletonkey_module fuse_legacy_module = {
     .name           = "fuse_legacy",
     .cve            = "CVE-2022-0185",
@@ -883,8 +913,8 @@ const struct skeletonkey_module fuse_legacy_module = {
     .cleanup        = NULL,
     .detect_auditd  = fuse_legacy_auditd,
     .detect_sigma   = fuse_legacy_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = fuse_legacy_yara,
+    .detect_falco   = fuse_legacy_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) for CAP_SYS_ADMIN; fsopen('cgroup2') + multiple fsconfig(FSCONFIG_SET_STRING, 'source', ...) calls to overflow legacy_parse_param's buffer. OOB write lands in kmalloc-4k adjacent to a msg_msg groom. No persistent files (msg_msg lives in the IPC namespace which disappears with the child). Dmesg silent on success; KASAN would show slab corruption if enabled. Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + fsopen + fsconfig pattern in a single process. No cleanup callback - IPC queues auto-drain on namespace exit.",
 };
 

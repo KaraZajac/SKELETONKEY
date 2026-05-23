@@ -833,6 +833,56 @@ static const char af_unix_gc_auditd[] =
     "-a always,exit -F arch=b64 -S sendmsg    -k skeletonkey-afunixgc-sendmsg\n"
     "-a always,exit -F arch=b64 -S msgsnd     -k skeletonkey-afunixgc-spray\n";
 
+static const char af_unix_gc_sigma[] =
+    "title: Possible CVE-2023-4622 AF_UNIX GC UAF race\n"
+    "id: c45d7eb3-skeletonkey-af-unix-gc\n"
+    "status: experimental\n"
+    "description: |\n"
+    "  Detects tight-loop socketpair(AF_UNIX) + sendmsg with SCM_RIGHTS\n"
+    "  + msgsnd grooming pattern characteristic of the AF_UNIX garbage\n"
+    "  collector race. False positives: legitimate IPC apps use\n"
+    "  SCM_RIGHTS, but the high-frequency close-and-recreate cycle is\n"
+    "  unusual outside fuzzing / exploit harnesses.\n"
+    "logsource: {product: linux, service: auditd}\n"
+    "detection:\n"
+    "  sp:    {type: 'SYSCALL', syscall: 'socketpair', a0: 1}\n"
+    "  scm:   {type: 'SYSCALL', syscall: 'sendmsg'}\n"
+    "  groom: {type: 'SYSCALL', syscall: 'msgsnd'}\n"
+    "  condition: sp and scm and groom\n"
+    "level: high\n"
+    "tags: [attack.privilege_escalation, attack.t1068, cve.2023.4622]\n";
+
+static const char af_unix_gc_yara[] =
+    "rule af_unix_gc_cve_2023_4622 : cve_2023_4622 kernel_uaf\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2023-4622\"\n"
+    "        description = \"AF_UNIX GC race kmalloc-512 spray tag or log breadcrumb\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $tag = \"SKELETONKEYU\" ascii\n"
+    "        $log = \"/tmp/skeletonkey-af_unix_gc.log\" ascii\n"
+    "    condition:\n"
+    "        any of them\n"
+    "}\n";
+
+static const char af_unix_gc_falco[] =
+    "- rule: SCM_RIGHTS cycling on AF_UNIX with msg_msg groom\n"
+    "  desc: |\n"
+    "    Tight socketpair(AF_UNIX) + sendmsg(SCM_RIGHTS) + msgsnd\n"
+    "    pattern characteristic of the AF_UNIX garbage collector\n"
+    "    race (CVE-2023-4622). False positives: IPC libraries use\n"
+    "    SCM_RIGHTS legitimately but rarely with the close-and-\n"
+    "    recreate cycle at this frequency.\n"
+    "  condition: >\n"
+    "    evt.type = sendmsg and fd.sockfamily = AF_UNIX and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    SCM_RIGHTS sendmsg on AF_UNIX by non-root\n"
+    "    (user=%user.name pid=%proc.pid)\n"
+    "  priority: HIGH\n"
+    "  tags: [ipc, mitre_privilege_escalation, T1068, cve.2023.4622]\n";
+
 const struct skeletonkey_module af_unix_gc_module = {
     .name           = "af_unix_gc",
     .cve            = "CVE-2023-4622",
@@ -844,9 +894,9 @@ const struct skeletonkey_module af_unix_gc_module = {
     .mitigate       = NULL,
     .cleanup        = af_unix_gc_cleanup,
     .detect_auditd  = af_unix_gc_auditd,
-    .detect_sigma   = NULL,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_sigma   = af_unix_gc_sigma,
+    .detect_yara    = af_unix_gc_yara,
+    .detect_falco   = af_unix_gc_falco,
     .opsec_notes    = "Two-threaded race: Thread A creates socketpair(AF_UNIX) with SCM_RIGHTS cycle then close; Thread B drives independent SCM_RIGHTS traffic on a held pair. ~5s budget (30s with --full-chain). msg_msg kmalloc-512 spray tagged 'SKELETONKEYU'. Writes /tmp/skeletonkey-af_unix_gc.log with empirical stats. Audit-visible via socketpair(AF_UNIX) + sendmsg(SCM_RIGHTS) + msgsnd triple. Dmesg may show UAF KASAN if kernel vulnerable. Cleanup callback unlinks the log.",
 };
 

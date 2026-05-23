@@ -474,6 +474,23 @@ static const char sudo_samedit_sigma[] =
 
 /* ---- Module registration ----------------------------------------- */
 
+static const char sudo_samedit_falco[] =
+    "- rule: sudoedit with -s and trailing-backslash argv (Baron Samedit)\n"
+    "  desc: |\n"
+    "    sudoedit invoked with -s and one or more args ending in '\\'.\n"
+    "    The parser's unescape loop walks past the argv string into\n"
+    "    adjacent stack/env, overflowing the heap buffer.\n"
+    "    CVE-2021-3156. False positives: extraordinarily rare;\n"
+    "    legitimate sudoedit usage does not need trailing backslashes.\n"
+    "  condition: >\n"
+    "    spawned_process and proc.name = sudoedit and\n"
+    "    proc.args contains \"-s \\\\\"\n"
+    "  output: >\n"
+    "    Possible Baron Samedit sudoedit invocation\n"
+    "    (user=%user.name pid=%proc.pid cmdline=\"%proc.cmdline\")\n"
+    "  priority: CRITICAL\n"
+    "  tags: [process, mitre_privilege_escalation, T1068, cve.2021.3156]\n";
+
 const struct skeletonkey_module sudo_samedit_module = {
     .name           = "sudo_samedit",
     .cve            = "CVE-2021-3156",
@@ -487,7 +504,7 @@ const struct skeletonkey_module sudo_samedit_module = {
     .detect_auditd  = sudo_samedit_auditd,
     .detect_sigma   = sudo_samedit_sigma,
     .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_falco   = sudo_samedit_falco,
     .opsec_notes    = "Invokes sudoedit with argv = { 'sudoedit', '-s', trailing-backslash, then ~60 padding args each ending in backslash }; the parser's unescape loop in set_cmnd() walks past the end of the argv string for the trailing-backslash argument, copying adjacent stack/env into an undersized heap buffer. Audit-visible via execve(/usr/bin/sudoedit) with -s and a trailing-backslash argv. No persistent file artifacts (only best-effort removal of /tmp/.sudo_edit_*). No network. Dmesg silent unless sudo crashes (SIGSEGV). Per-distro heap layout determines landing; verifies geteuid()==0 afterward.",
 };
 
