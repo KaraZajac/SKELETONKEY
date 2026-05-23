@@ -305,7 +305,12 @@ static skeletonkey_result_t p2tr_detect(const struct skeletonkey_ctx *ctx)
 {
 	p2tr_verbose = !ctx->json;
 
-	if (geteuid() == 0) {
+	/* "Already root" check — consult ctx->host first so unit tests
+	 * can construct a non-root fingerprint regardless of the test
+	 * process's real euid. Production main() populates host->is_root
+	 * from geteuid() at startup, so behaviour is unchanged. */
+	bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
+	if (is_root) {
 		if (!ctx->json)
 			fprintf(stderr, "[i] pack2theroot: already root — nothing to do\n");
 		return SKELETONKEY_OK;

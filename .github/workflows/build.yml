@@ -22,7 +22,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential clang make linux-libc-dev
+            build-essential clang make linux-libc-dev \
+            libglib2.0-dev pkg-config
 
       - name: show compiler
         run: ${{ matrix.cc }} --version
@@ -54,6 +55,18 @@ jobs:
       - name: sanity — --detect-rules sigma
         run: ./skeletonkey --detect-rules --format=sigma | head -50
 
+      - name: tests — detect() unit suite
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          # Run as a non-root user so modules' "already root" gates do
+          # not short-circuit before the synthetic host-fingerprint
+          # checks fire. The test binary itself is platform-agnostic;
+          # the assertions are #ifdef __linux__ guarded.
+          sudo useradd -m -s /bin/bash skeletonkeyci 2>/dev/null || true
+          sudo chown -R skeletonkeyci .
+          sudo -u skeletonkeyci make test
+
   # Static build job: ensures the project links cleanly when -static is
   # requested. Useful for deployment to minimal containers / fleet scans
   # where shared-libc availability isn't guaranteed.
@@ -66,7 +79,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential make linux-libc-dev libc6-dev
+            build-essential make linux-libc-dev libc6-dev \
+            libglib2.0-dev pkg-config
       - name: make static
         # Glibc static linking pulls in NSS at runtime which breaks
         # getpwnam; the legacy DIRTYFAIL Makefile noted this. For now,

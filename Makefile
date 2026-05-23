@@ -177,14 +177,39 @@ $(P2TR_OBJS): CFLAGS += $(P2TR_CFLAGS)
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS)
+# All module objects in one var so both the main binary and the test
+# binary can re-use the list without duplicating the long enumeration.
+MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
+               $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) \
+               $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) \
+               $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) \
+               $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) \
+               $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS)
 
-.PHONY: all clean debug static help
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(MODULE_OBJS)
+
+# Tests — `make test` builds and runs the detect() unit-test harness.
+# Links against the same module objects as the main binary minus the
+# top-level dispatcher (which provides main(); the test has its own).
+TEST_DIR  := tests
+TEST_SRCS := $(TEST_DIR)/test_detect.c
+TEST_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(TEST_SRCS))
+TEST_BIN  := skeletonkey-test
+TEST_ALL_OBJS := $(TEST_OBJS) $(CORE_OBJS) $(MODULE_OBJS)
+
+.PHONY: all clean debug static help test
 
 all: $(BIN)
 
 $(BIN): $(ALL_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
+
+$(TEST_BIN): $(TEST_ALL_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
+
+test: $(TEST_BIN)
+	@echo "[*] running test suite ($(TEST_BIN))"
+	./$(TEST_BIN)
 
 # Generic compile: any .c → corresponding .o under build/
 $(BUILD)/%.o: %.c
@@ -198,13 +223,14 @@ static: LDFLAGS += -static
 static: clean $(BIN)
 
 clean:
-	rm -rf $(BUILD) $(BIN)
+	rm -rf $(BUILD) $(BIN) $(TEST_BIN)
 
 help:
 	@echo "Targets:"
 	@echo "  make           build optimized skeletonkey binary"
 	@echo "  make debug     build with -O0 -g3"
 	@echo "  make static    build a fully static binary"
+	@echo "  make test      build + run the detect() unit test suite"
 	@echo "  make clean     remove build artifacts"
 	@echo ""
 	@echo "Per-module (legacy) — not built by default:"
