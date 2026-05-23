@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07070d"/>
+      <stop offset="1" stop-color="#0c0c16"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.2" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#10b981" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.85" cy="0.8" r="0.5">
+      <stop offset="0" stop-color="#a855f7" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- backgrounds -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow1)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- diamond mark -->
+  <g transform="translate(80,140)">
+    <rect x="0" y="0" width="36" height="36" transform="rotate(45 18 18)" fill="url(#brand)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="142" y="170" font-family="'Space Grotesk','Inter',sans-serif" font-weight="700" font-size="68" fill="#ecedf7" letter-spacing="-2">
+    SKELETONKEY
+  </text>
+
+  <!-- tagline -->
+  <text x="80" y="240" font-family="'Inter',sans-serif" font-size="32" fill="#c5c5d3" font-weight="500">
+    Curated Linux LPE corpus.
+  </text>
+  <text x="80" y="282" font-family="'Inter',sans-serif" font-size="32" fill="#c5c5d3" font-weight="500">
+    SOC-ready detection in the box.
+  </text>
+
+  <!-- stat chips -->
+  <g transform="translate(80,360)">
+    <!-- 31 modules -->
+    <rect x="0" y="0" width="220" height="58" rx="29" fill="#161628" stroke="#25253c"/>
+    <text x="32" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">31</text>
+    <text x="68" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">modules</text>
+
+    <!-- 10 KEV -->
+    <rect x="238" y="0" width="220" height="58" rx="29" fill="#161628" stroke="#ef4444" stroke-opacity="0.4"/>
+    <text x="270" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ef4444">10</text>
+    <text x="306" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">★ in CISA KEV</text>
+
+    <!-- 119 rules -->
+    <rect x="476" y="0" width="240" height="58" rx="29" fill="#161628" stroke="#25253c"/>
+    <text x="508" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">119</text>
+    <text x="554" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">detection rules</text>
+  </g>
+
+  <!-- terminal mockup -->
+  <g transform="translate(80,478)">
+    <rect x="0" y="0" width="1040" height="92" rx="12" fill="#0a0a14" stroke="#25253c"/>
+    <!-- bar -->
+    <circle cx="22" cy="22" r="6" fill="#ff5f57"/>
+    <circle cx="42" cy="22" r="6" fill="#febc2e"/>
+    <circle cx="62" cy="22" r="6" fill="#28c840"/>
+    <line x1="0" y1="44" x2="1040" y2="44" stroke="#1c1c2d"/>
+    <text x="24" y="78" font-family="'JetBrains Mono',monospace" font-size="20" fill="#ecedf7">
+      <tspan fill="#10b981">$</tspan> skeletonkey --explain nf_tables    <tspan fill="#5b5b75"># operator briefing in one command</tspan>
+    </text>
+  </g>
+
+  <!-- subtle url at very bottom -->
+  <text x="1120" y="610" font-family="'JetBrains Mono',monospace" font-size="14" fill="#5b5b75" text-anchor="end">
+    karazajac.github.io/SKELETONKEY
+  </text>
+</svg>

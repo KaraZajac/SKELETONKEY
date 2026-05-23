@@ -3,287 +3,603 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SKELETONKEY — Curated Linux LPE corpus with detection rules</title>
-<meta name="description" content="One curated binary. 28 Linux privilege-escalation exploits from 2016 → 2026. Auditd + sigma + yara + falco rules in the box. One command picks the safest LPE and runs it.">
-<meta property="og:title" content="SKELETONKEY — Curated Linux LPE corpus">
-<meta property="og:description" content="28 Linux LPE exploits, 2016 → 2026, with detection rules in the box. One command picks the safest one and runs it.">
+<title>SKELETONKEY — Linux LPE corpus with SOC-ready detection</title>
+<meta name="description" content="One binary. 31 Linux privilege-escalation modules from 2016 to 2026. 10 of 26 CVEs in CISA's Known Exploited Vulnerabilities catalog. 119 detection rules across auditd/sigma/yara/falco. MITRE ATT&CK and CWE annotated. --explain gives operator briefings.">
+<meta property="og:title" content="SKELETONKEY — Linux LPE corpus with SOC-ready detection">
+<meta property="og:description" content="31 Linux LPE modules (10 KEV). 119 detection rules. ATT&CK + CWE + OPSEC annotated. --explain in one command.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://karazajac.github.io/SKELETONKEY/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://karazajac.github.io/SKELETONKEY/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://karazajac.github.io/SKELETONKEY/og.png">
+<meta name="theme-color" content="#0a0a14">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<!-- gradient mesh background, animated, fixed behind content -->
+<div class="bg-mesh" aria-hidden="true">
+  <div class="mesh-blob mesh-blob-1"></div>
+  <div class="mesh-blob mesh-blob-2"></div>
+  <div class="mesh-blob mesh-blob-3"></div>
+</div>
+
 <nav class="nav">
-  <span class="nav-brand">SKELETONKEY</span>
-  <a class="nav-github" href="https://github.com/KaraZajac/SKELETONKEY"
-     aria-label="View on GitHub">
-    <svg height="20" viewBox="0 0 16 16" width="20" fill="currentColor" aria-hidden="true">
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
-        0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
-        -.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66
-        .07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15
-        -.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0
-        1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82
-        1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01
-        1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-    </svg>
-    <span>GitHub</span>
-  </a>
+  <div class="container nav-inner">
+    <a class="nav-brand" href="#">
+      <span class="nav-mark" aria-hidden="true">◆</span>
+      SKELETONKEY
+    </a>
+    <div class="nav-links">
+      <a href="#corpus">Corpus</a>
+      <a href="#explain">--explain</a>
+      <a href="#detection">Detection</a>
+      <a href="#quickstart">Quickstart</a>
+      <a class="nav-github" href="https://github.com/KaraZajac/SKELETONKEY" aria-label="GitHub">
+        <svg height="18" viewBox="0 0 16 16" width="18" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+      </a>
+    </div>
+  </div>
 </nav>
 
+<!-- ──────────────── HERO ──────────────── -->
 <header class="hero">
-  <div class="container">
-    <h1>SKELETONKEY</h1>
-    <p class="tag">
-      One curated binary. <strong>28 Linux LPE exploits</strong> from
-      2016 → 2026. Detection rules in the box.
-      <strong>One command picks the safest one and runs it.</strong>
+  <div class="container hero-inner">
+    <div class="hero-eyebrow">
+      <span class="dot dot-pulse"></span>
+      v0.6.0 — released 2026-05-23
+    </div>
+    <h1 class="hero-title">
+      <span class="display-wordmark">SKELETONKEY</span>
+    </h1>
+    <p class="hero-tag">
+      One binary. <strong>31 Linux LPE modules</strong> from
+      2016 to 2026. SOC-ready detection rules in four SIEM formats.
+      MITRE ATT&amp;CK + CWE + CISA KEV annotated.
+      <span class="hero-tag-pop">--explain gives a one-page operator briefing per CVE.</span>
     </p>
 
     <div class="install-block">
-      <button class="copy" onclick="copyInstall(this)">copy</button>
-<pre id="install-cmd"><span class="prompt">$</span> curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
-  &amp;&amp; skeletonkey --auto --i-know</pre>
+      <div class="install-bar">
+        <span class="install-dots" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span class="install-title">terminal</span>
+        <button class="copy" onclick="copyInstall(this)" aria-label="Copy install command">copy</button>
+      </div>
+      <pre id="install-cmd"><span class="prompt">$</span> <span id="install-typed"></span><span class="cursor" id="install-cursor">▋</span></pre>
     </div>
 
-    <p class="warn">⚠ Authorized testing only — see <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ETHICS.md">ETHICS.md</a></p>
+    <div class="stats-row" id="stats-row">
+      <div class="stat-chip"><span class="num" data-target="31">0</span><span>modules</span></div>
+      <div class="stat-chip stat-kev"><span class="num" data-target="10">0</span><span>★ in CISA KEV</span></div>
+      <div class="stat-chip"><span class="num" data-target="119">0</span><span>detection rules</span></div>
+      <div class="stat-chip"><span class="num" data-target="88">0</span><span>tests passing</span></div>
+    </div>
 
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/KaraZajac/SKELETONKEY/releases/latest">Latest release</a>
-      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY">View on GitHub</a>
-      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">Full CVE inventory</a>
+      <a class="btn btn-primary" href="https://github.com/KaraZajac/SKELETONKEY/releases/latest">
+        ↓ Latest release
+      </a>
+      <a class="btn" href="#explain">See <code>--explain</code> in action</a>
+      <a class="btn btn-ghost" href="https://github.com/KaraZajac/SKELETONKEY">
+        <svg height="16" viewBox="0 0 16 16" width="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        Source on GitHub
+      </a>
     </div>
+
+    <p class="hero-warn">Authorized testing only. See <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ETHICS.md">ETHICS.md</a>.</p>
   </div>
 </header>
 
-<section>
+<!-- ──────────────── TRUST STRIP ──────────────── -->
+<section class="trust-strip">
   <div class="container">
-    <h2>Why this exists</h2>
-    <p class="lead">
-      Most Linux privesc tooling is broken in one of three ways:
-    </p>
-    <ul class="tight">
-      <li><strong>linux-exploit-suggester / linpeas</strong> — tell you what <em>might</em> work, run nothing</li>
-      <li><strong>auto-root-exploit / kernelpop</strong> — bundle exploits but ship no detection signatures and went stale years ago</li>
-      <li><strong>Per-CVE PoC repos</strong> — one author, one distro, abandoned within months</li>
-    </ul>
-    <p class="lead" style="margin-top:1rem">
-      SKELETONKEY is one binary, actively maintained, with detection
-      rules for every CVE it bundles — same project for red and blue
-      teams.
-    </p>
+    <div class="trust-row">
+      <span class="trust-label">Grounded in authoritative sources</span>
+      <ul class="trust-items">
+        <li>CISA KEV catalog</li>
+        <li>NVD CVE API</li>
+        <li>MITRE ATT&amp;CK</li>
+        <li>kernel.org stable tree</li>
+        <li>Debian Security Tracker</li>
+        <li>NIST CWE</li>
+      </ul>
+    </div>
   </div>
 </section>
 
-<section>
+<!-- ──────────────── --EXPLAIN SHOWCASE ──────────────── -->
+<section id="explain" class="section section-feature reveal">
   <div class="container">
-    <h2>Corpus at a glance</h2>
-
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-num">28</span>
-        <span class="stat-label">verified modules</span>
-      </div>
-      <div class="stat">
-        <span class="stat-num green">14</span>
-        <span class="stat-label">🟢 land root by default</span>
-      </div>
-      <div class="stat">
-        <span class="stat-num yellow">14</span>
-        <span class="stat-label">🟡 primitive + opt-in chain</span>
-      </div>
-      <div class="stat">
-        <span class="stat-num">10y</span>
-        <span class="stat-label">2016 → 2026 coverage</span>
-      </div>
+    <div class="section-head">
+      <span class="section-tag">flagship feature</span>
+      <h2>One command. Complete briefing.</h2>
+      <p class="lead">
+        <code>skeletonkey --explain &lt;module&gt;</code> renders the page every
+        team needs: CVE / CWE / MITRE ATT&amp;CK / CISA KEV status, host
+        fingerprint, live detect() trace with verdict, OPSEC footprint, and
+        the detection-rule coverage matrix. Triage tickets and SOC handoffs
+        in one paste.
+      </p>
     </div>
 
-    <h3 style="color: var(--green);">🟢 Lands root on a vulnerable host</h3>
-    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Structural exploits + page-cache writes. No per-kernel offsets needed.</p>
+    <div class="terminal-shell">
+      <div class="terminal-bar">
+        <span class="install-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="install-title">skk-host ~ $</span>
+      </div>
+      <pre class="terminal-body" id="explain-output"></pre>
+    </div>
+
+    <div class="explain-annotations">
+      <div class="annotation">
+        <span class="anno-num">1</span>
+        <div>
+          <strong>Triage metadata in the header</strong>
+          <p>CWE class, MITRE ATT&amp;CK technique, CISA KEV status with
+          date_added. Fed from <code>tools/refresh-cve-metadata.py</code>
+          which pulls fresh from federal data sources.</p>
+        </div>
+      </div>
+      <div class="annotation">
+        <span class="anno-num">2</span>
+        <div>
+          <strong>Live host fingerprint</strong>
+          <p>Cached once at startup by <code>core/host.c</code>. Every
+          module sees the same kernel / arch / distro / userns / apparmor
+          / selinux / lockdown picture.</p>
+        </div>
+      </div>
+      <div class="annotation">
+        <span class="anno-num">3</span>
+        <div>
+          <strong>Real detect() trace</strong>
+          <p>The verbose stderr of the module's own probe — each gate
+          fires, each kernel_range entry checked, each verdict justified.
+          No more black-box "VULNERABLE" outputs.</p>
+        </div>
+      </div>
+      <div class="annotation">
+        <span class="anno-num">4</span>
+        <div>
+          <strong>OPSEC footprint</strong>
+          <p>Per-exploit description of what the SOC would see if this
+          fired: file artifacts, dmesg signatures, syscall observables,
+          network activity, cleanup behavior.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────── BENTO FEATURES ──────────────── -->
+<section class="section section-bento reveal">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">capabilities</span>
+      <h2>Built for every side of the desk</h2>
+    </div>
+
+    <div class="bento">
+      <article class="bento-card bento-lg">
+        <div class="bento-icon">⚡</div>
+        <h3>Auto-pick the safest exploit</h3>
+        <p>
+          <code>--auto</code> ranks vulnerable modules by stability
+          (structural escapes &gt; page-cache writes &gt; userspace races
+          &gt; kernel races) and runs the safest one. Never crashes a
+          production box looking for root.
+        </p>
+        <pre class="bento-code">$ skeletonkey --auto --i-know
+[*] 3 vulnerable; safest is 'pwnkit' (rank 100)
+[*] launching --exploit pwnkit...
+# id
+uid=0(root) gid=0(root)</pre>
+      </article>
+
+      <article class="bento-card">
+        <div class="bento-icon">🛡</div>
+        <h3>119 detection rules</h3>
+        <p>
+          auditd · sigma · yara · falco. One command emits the corpus for
+          your SIEM. Each rule grounded in the module's own syscalls.
+        </p>
+        <div class="rule-cov">
+          <div class="rule-row"><span>auditd</span><span class="rule-bar"><i style="width:96.7%"></i></span><span>30/31</span></div>
+          <div class="rule-row"><span>sigma</span><span class="rule-bar"><i style="width:100%"></i></span><span>31/31</span></div>
+          <div class="rule-row"><span>yara</span><span class="rule-bar"><i style="width:90.3%"></i></span><span>28/31</span></div>
+          <div class="rule-row"><span>falco</span><span class="rule-bar"><i style="width:96.7%"></i></span><span>30/31</span></div>
+        </div>
+      </article>
+
+      <article class="bento-card bento-kev">
+        <div class="bento-icon">★</div>
+        <h3>CISA KEV prioritized</h3>
+        <p>
+          10 of 26 CVEs in the corpus are in CISA's Known Exploited
+          Vulnerabilities catalog — actively exploited in the wild.
+          Refreshed on demand via <code>tools/refresh-cve-metadata.py</code>.
+        </p>
+      </article>
+
+      <article class="bento-card">
+        <div class="bento-icon">🧬</div>
+        <h3>OPSEC notes per exploit</h3>
+        <p>
+          Each module ships a runtime-footprint paragraph: files, dmesg,
+          syscall observables, network, persistence. The inverse of the
+          detection rules — what an attacker would leave behind on
+          <em>your</em> host.
+        </p>
+      </article>
+
+      <article class="bento-card bento-lg">
+        <div class="bento-icon">🎯</div>
+        <h3>One host fingerprint, every module</h3>
+        <p>
+          <code>core/host.c</code> probes kernel / arch / distro / userns /
+          apparmor / selinux / lockdown / sudo version / polkit version
+          <em>once</em> at startup. Every <code>detect()</code> reads the
+          same cached snapshot, so verdicts stay coherent across the
+          corpus.
+        </p>
+        <pre class="bento-code">struct skeletonkey_host {
+    struct kernel_version kernel;
+    char arch[32], distro_id[64];
+    bool unprivileged_userns_allowed;
+    bool apparmor_restrict_userns;
+    bool kpti_enabled, selinux_enforcing;
+    char meltdown_mitigation[64];
+    char sudo_version[64], polkit_version[64];
+    ...
+};</pre>
+      </article>
+
+      <article class="bento-card">
+        <div class="bento-icon">📡</div>
+        <h3>JSON for pipelines</h3>
+        <p>
+          <code>--scan --json</code> emits a stable schema (see
+          <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/JSON_SCHEMA.md">JSON_SCHEMA.md</a>)
+          with triage metadata, opsec notes, and rule coverage embedded.
+          Ready for Splunk / Elastic / Sentinel ingest.
+        </p>
+      </article>
+
+      <article class="bento-card">
+        <div class="bento-icon">🔒</div>
+        <h3>No SaaS. No telemetry.</h3>
+        <p>
+          One static binary. No phone-home, no analytics, no cloud
+          accounts. Reads <code>/proc</code> + <code>/sys</code>, runs the
+          probe, exits. JSON or plain text — your pipeline owns the data.
+        </p>
+      </article>
+
+      <article class="bento-card">
+        <div class="bento-icon">🧪</div>
+        <h3>Verifier ready</h3>
+        <p>
+          <code>tools/verify-vm/</code> ships a Vagrant + Parallels
+          scaffold that spins up known-vulnerable kernels and runs
+          <code>--explain</code> per module — verification records as
+          JSON, ready to feed the per-module <code>verified_on</code>
+          table.
+        </p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────── MODULE CORPUS ──────────────── -->
+<section id="corpus" class="section reveal">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-tag">corpus</span>
+      <h2>26 CVEs across 10 years. ★ = actively exploited (CISA KEV).</h2>
+    </div>
+
+    <h3 class="corpus-h" data-color="green">
+      <span class="corpus-dot green"></span>
+      Lands root on a vulnerable host
+      <span class="corpus-h-sub">structural escapes + page-cache writes; no per-kernel offsets needed</span>
+    </h3>
     <div class="pills">
       <span class="pill green">copy_fail</span>
       <span class="pill green">copy_fail_gcm</span>
       <span class="pill green">dirty_frag_esp</span>
       <span class="pill green">dirty_frag_esp6</span>
       <span class="pill green">dirty_frag_rxrpc</span>
-      <span class="pill green">dirty_pipe</span>
-      <span class="pill green">dirty_cow</span>
-      <span class="pill green">pwnkit</span>
-      <span class="pill green">overlayfs</span>
-      <span class="pill green">overlayfs_setuid</span>
+      <span class="pill green kev">★ dirty_pipe</span>
+      <span class="pill green kev">★ dirty_cow</span>
+      <span class="pill green kev">★ pwnkit</span>
+      <span class="pill green kev">★ overlayfs</span>
+      <span class="pill green kev">★ overlayfs_setuid</span>
       <span class="pill green">cgroup_release_agent</span>
-      <span class="pill green">ptrace_traceme</span>
+      <span class="pill green kev">★ ptrace_traceme</span>
       <span class="pill green">sudoedit_editor</span>
       <span class="pill green">entrybleed</span>
     </div>
 
-    <h3 style="color: var(--yellow);">🟡 Fires kernel primitive · opt-in <code>--full-chain</code></h3>
-    <p style="color: var(--text-muted); font-size:0.92rem; margin:0.25rem 0 0.25rem;">Default returns <code>EXPLOIT_FAIL</code> honestly. With <code>--full-chain</code> + resolved offsets, runs the shared modprobe_path finisher.</p>
+    <h3 class="corpus-h" data-color="yellow">
+      <span class="corpus-dot yellow"></span>
+      Fires kernel primitive · opt-in <code>--full-chain</code>
+      <span class="corpus-h-sub">honest <code>EXPLOIT_FAIL</code> default; <code>--full-chain</code> runs the shared modprobe_path finisher</span>
+    </h3>
     <div class="pills">
-      <span class="pill yellow">nf_tables</span>
+      <span class="pill yellow kev">★ nf_tables</span>
       <span class="pill yellow">nft_set_uaf</span>
       <span class="pill yellow">nft_fwd_dup</span>
       <span class="pill yellow">nft_payload</span>
-      <span class="pill yellow">netfilter_xtcompat</span>
+      <span class="pill yellow kev">★ netfilter_xtcompat</span>
       <span class="pill yellow">af_packet</span>
       <span class="pill yellow">af_packet2</span>
       <span class="pill yellow">af_unix_gc</span>
       <span class="pill yellow">cls_route4</span>
-      <span class="pill yellow">fuse_legacy</span>
+      <span class="pill yellow kev">★ fuse_legacy</span>
       <span class="pill yellow">stackrot</span>
-      <span class="pill yellow">sudo_samedit</span>
+      <span class="pill yellow kev">★ sudo_samedit</span>
       <span class="pill yellow">sequoia</span>
       <span class="pill yellow">vmwgfx</span>
     </div>
+
+    <p class="corpus-foot">
+      Full inventory with kernel ranges, mitigations, and detection
+      coverage:
+      <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">CVES.md</a>
+      ·
+      <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/KEV_CROSSREF.md">KEV cross-reference</a>
+      ·
+      <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/CVE_METADATA.json">CVE_METADATA.json</a>
+    </p>
   </div>
 </section>
 
-<section>
+<!-- ──────────────── AUDIENCE ──────────────── -->
+<section class="section section-audience reveal">
   <div class="container">
-    <h2>Who it's for</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>🔴 Red team / pentesters</h3>
-        <p>One tested binary. <code>--auto</code> ranks vulnerable modules by safety and runs the safest. Honest scope reporting — never claims root it didn't actually get. No more curating stale PoC repos.</p>
+    <div class="section-head">
+      <span class="section-tag">who it's for</span>
+      <h2>Same project. Both sides of the engagement.</h2>
+    </div>
+
+    <div class="audience-grid">
+      <div class="audience-card audience-red">
+        <div class="audience-icon">🔴</div>
+        <h3>Red team / pentesters</h3>
+        <p>
+          <code>--auto</code> picks the safest exploit and runs it. Honest
+          scope reporting — never claims root it didn't actually get.
+          Per-exploit OPSEC notes tell you what telemetry you'll leave.
+          No more curating stale PoC repos.
+        </p>
+        <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/README.md" class="audience-link">Walkthrough →</a>
       </div>
-      <div class="card">
-        <h3>🔵 Blue team / SOC</h3>
-        <p>Auditd + sigma + yara + falco rules for every CVE. One command ships SIEM coverage: <code>--detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules</code>.</p>
+      <div class="audience-card audience-blue">
+        <div class="audience-icon">🔵</div>
+        <h3>Blue team / SOC</h3>
+        <p>
+          One command ships SIEM coverage for the entire corpus.
+          <code>--explain</code> renders a triage briefing per CVE with
+          CWE / ATT&amp;CK / KEV / OPSEC — paste into the ticket.
+          KEV-prioritized so you fix what attackers are already using.
+        </p>
+        <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/DETECTION_PLAYBOOK.md" class="audience-link">Playbook →</a>
       </div>
-      <div class="card">
-        <h3>🛠 Sysadmins</h3>
-        <p><code>skeletonkey --scan</code> (no sudo needed) tells you which boxes still need patching. JSON output for CI gates. Fleet-scan tool included. No SaaS, no telemetry.</p>
+      <div class="audience-card audience-gray">
+        <div class="audience-icon">🛠</div>
+        <h3>Sysadmins / IT</h3>
+        <p>
+          <code>--scan</code> works without sudo. JSON output for CI
+          gates. Fleet-scan helper bundled. Compatible with everything
+          back to glibc 2.17 via the static-musl binary. No SaaS,
+          no analytics, no cloud accounts.
+        </p>
+        <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/JSON_SCHEMA.md" class="audience-link">JSON schema →</a>
       </div>
-      <div class="card">
-        <h3>🎓 CTF / training</h3>
-        <p>Reproducible LPE environment with public CVEs across a 10-year timeline. Each module documents the bug, the trigger, and the fix. Detection rules let you practice both sides.</p>
+      <div class="audience-card audience-purple">
+        <div class="audience-icon">🎓</div>
+        <h3>Researchers / CTF</h3>
+        <p>
+          26 CVEs, 10-year span, each with the original PoC author
+          credited and the kernel-range citation auditable.
+          <code>--explain</code> shows the reasoning chain; detection
+          rules let you practice both sides. Source is the documentation.
+        </p>
+        <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ARCHITECTURE.md" class="audience-link">Architecture →</a>
       </div>
     </div>
   </div>
 </section>
 
-<section>
+<!-- ──────────────── HONESTY CALLOUT ──────────────── -->
+<section class="section section-callout reveal">
   <div class="container">
-    <h2>What it looks like</h2>
-    <p class="lead"><code>--auto</code> on a vulnerable Ubuntu 22.04 box:</p>
-
-<pre class="code"><span class="prompt">$</span> id
-uid=1000(kara) gid=1000(kara) groups=1000(kara)
-
-<span class="prompt">$</span> skeletonkey --auto --i-know
-<span class="hl-muted">[*]</span> auto: host=demo kernel=5.15.0-56-generic arch=x86_64
-<span class="hl-muted">[*]</span> auto: scanning 31 modules for vulnerabilities...
-<span class="hl-green">[+]</span> auto: dirty_pipe             <span class="hl-yellow">VULNERABLE</span> (safety rank 90)
-<span class="hl-green">[+]</span> auto: cgroup_release_agent   <span class="hl-yellow">VULNERABLE</span> (safety rank 98)
-<span class="hl-green">[+]</span> auto: pwnkit                 <span class="hl-yellow">VULNERABLE</span> (safety rank 100)
-
-<span class="hl-muted">[*]</span> auto: 3 vulnerable modules found. Safest is <span class="hl-accent">'pwnkit'</span> (rank 100).
-<span class="hl-muted">[*]</span> auto: launching --exploit pwnkit...
-
-<span class="hl-green">[+]</span> pwnkit: writing gconv-modules cache + payload.so...
-<span class="hl-green">[+]</span> pwnkit: execve(pkexec) with NULL argv + crafted envp...
-<span class="hl-green">#</span> id
-uid=0(root) gid=0(root) groups=0(root)</pre>
-
-    <p style="color: var(--text-muted); font-size: 0.92rem; margin-top: 1rem">
-      Safety ranking goes <strong>structural escapes</strong> →
-      <strong>page-cache writes</strong> →
-      <strong>userspace cred-races</strong> →
-      <strong>kernel primitives</strong> →
-      <strong>kernel races</strong>. The goal is to never crash a
-      production box looking for root.
-    </p>
+    <div class="callout">
+      <div class="callout-mark">✓</div>
+      <div>
+        <h3>The verified-vs-claimed bar</h3>
+        <p>
+          Most public PoC repos hardcode offsets for one kernel build and
+          silently break elsewhere. <strong>SKELETONKEY refuses to ship
+          fabricated offsets.</strong> The shared <code>--full-chain</code>
+          finisher returns <code>EXPLOIT_OK</code> only when a setuid
+          bash sentinel file <em>actually appears</em>. Modules with a
+          primitive but no portable cred-overwrite chain default to
+          firing the primitive + grooming the slab + recording a witness,
+          then return <code>EXPLOIT_FAIL</code> with diagnostic.
+          Operators populate the offset table once per kernel via
+          <code>--dump-offsets</code> and upstream the entry via PR.
+        </p>
+      </div>
+    </div>
   </div>
 </section>
 
-<section>
+<!-- ──────────────── QUICKSTART ──────────────── -->
+<section id="quickstart" class="section reveal">
   <div class="container">
-    <h2>The verified-vs-claimed bar</h2>
-    <p class="lead">
-      Most public PoC repos hardcode offsets for one kernel build and
-      silently break elsewhere. SKELETONKEY refuses to ship fabricated
-      offsets.
-    </p>
-    <ul class="tight">
-      <li>The shared <code>--full-chain</code> finisher returns <code>EXPLOIT_OK</code> only when a setuid bash sentinel file <em>actually appears</em></li>
-      <li>Modules with a primitive but no portable cred-overwrite chain default to firing the primitive + grooming the slab + recording a witness, then return <code>EXPLOIT_FAIL</code> with diagnostic</li>
-      <li>Operators populate the offset table once per kernel via <code>skeletonkey --dump-offsets</code> (parses <code>/proc/kallsyms</code> or <code>/boot/System.map</code>) and upstream the entry via PR — see <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a></li>
-    </ul>
-  </div>
-</section>
+    <div class="section-head">
+      <span class="section-tag">quickstart</span>
+      <h2>Five commands.</h2>
+    </div>
 
-<section>
-  <div class="container">
-    <h2>Quickstart commands</h2>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="install" role="tab">install</button>
+      <button class="tab" data-tab="scan" role="tab">scan</button>
+      <button class="tab" data-tab="explain" role="tab">explain</button>
+      <button class="tab" data-tab="auto" role="tab">auto</button>
+      <button class="tab" data-tab="detect" role="tab">detect-rules</button>
+    </div>
 
-<pre class="code"><span class="cmt"># Install (x86_64 / arm64; checksum-verified)</span>
+    <div class="tab-panel active" data-tab="install">
+<pre class="code"><span class="cmt"># install (x86_64 / arm64; checksum-verified)</span>
 <span class="prompt">$</span> curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh
-
-<span class="cmt"># What's this box vulnerable to?  (no sudo)</span>
+<span class="cmt"># default is the musl-static x86_64 binary — works back to glibc 2.17</span></pre>
+    </div>
+    <div class="tab-panel" data-tab="scan">
+<pre class="code"><span class="cmt"># inventory — no sudo needed</span>
 <span class="prompt">$</span> skeletonkey --scan
-
-<span class="cmt"># Pick the safest LPE and run it</span>
+<span class="cmt"># or machine-readable for a SIEM</span>
+<span class="prompt">$</span> skeletonkey --scan --json | jq '.findings[] | select(.verdict == "VULNERABLE")'</pre>
+    </div>
+    <div class="tab-panel" data-tab="explain">
+<pre class="code"><span class="cmt"># one-page operator briefing for a single CVE</span>
+<span class="prompt">$</span> skeletonkey --explain nf_tables
+<span class="cmt"># shows CVE/CWE/ATT&amp;CK/KEV header, host fingerprint, live trace,</span>
+<span class="cmt"># verdict, OPSEC footprint, detection coverage. Paste into your ticket.</span></pre>
+    </div>
+    <div class="tab-panel" data-tab="auto">
+<pre class="code"><span class="cmt"># pick the safest exploit and run it</span>
 <span class="prompt">$</span> skeletonkey --auto --i-know
+<span class="cmt"># --dry-run for "what would it do?" without launching</span>
+<span class="prompt">$</span> skeletonkey --auto --dry-run</pre>
+    </div>
+    <div class="tab-panel" data-tab="detect">
+<pre class="code"><span class="cmt"># deploy SIEM coverage (needs sudo to write to /etc/audit/rules.d/)</span>
+<span class="prompt">$</span> skeletonkey --detect-rules --format=auditd | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
+<span class="prompt">$</span> sudo augenrules --load
 
-<span class="cmt"># Deploy detection rules (needs sudo to write into /etc/audit/rules.d/)</span>
-<span class="prompt">$</span> skeletonkey --detect-rules --format=auditd \
-    | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
-
-<span class="cmt"># Fleet scan — many hosts via SSH, aggregated JSON for SIEM</span>
-<span class="prompt">$</span> ./tools/skeletonkey-fleet-scan.sh --binary skeletonkey \
-    --ssh-key ~/.ssh/id_rsa hosts.txt</pre>
+<span class="cmt"># or in YAML for falco / sigma / yara</span>
+<span class="prompt">$</span> skeletonkey --detect-rules --format=falco &gt; /etc/falco/skeletonkey_rules.yaml</pre>
+    </div>
   </div>
 </section>
 
-<section>
+<!-- ──────────────── ROADMAP / TIMELINE ──────────────── -->
+<section class="section section-timeline reveal">
   <div class="container">
-    <h2>Status</h2>
-    <p class="lead">
-      <strong>v0.5.0</strong> cut 2026-05-17. 28 verified modules build
-      clean on Debian 13 (kernel 6.12) and refuse cleanly on patched
-      hosts; 3 further modules (dirtydecrypt, fragnesia, pack2theroot)
-      are ported from public PoCs but not yet VM-verified.
-      Empirical end-to-end validation on a vulnerable-kernel VM matrix
-      is the next roadmap item; until then, the corpus is best
-      understood as "compiles + detects + structurally correct +
-      honest on failure."
-    </p>
-    <p style="margin-top:1rem">
-      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/ROADMAP.md">Read the roadmap</a>
-      <a class="btn" href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">How to contribute</a>
+    <div class="section-head">
+      <span class="section-tag">where we are</span>
+      <h2>Recently shipped · in flight · next.</h2>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-col tl-shipped">
+        <div class="tl-tag">shipped</div>
+        <ul>
+          <li><strong>--explain mode</strong> — one-page operator briefing per CVE</li>
+          <li><strong>OPSEC notes</strong> — per-module runtime footprint</li>
+          <li><strong>CISA KEV + NVD CWE + MITRE ATT&amp;CK</strong> metadata pipeline</li>
+          <li>119 detection rules across all four SIEM formats</li>
+          <li><code>core/host.c</code> shared host-fingerprint refactor</li>
+          <li>88-test harness (kernel_range + detect integration)</li>
+          <li>kernel_range drift detector → 9 corpus fixes</li>
+          <li>Vagrant + Parallels VM verification scaffold</li>
+        </ul>
+      </div>
+      <div class="tl-col tl-active">
+        <div class="tl-tag">in flight</div>
+        <ul>
+          <li>Empirical end-to-end VM verification across the corpus</li>
+          <li>Per-module <code>verified_on[]</code> table fed by verifier records</li>
+          <li>9 deferred TOO_TIGHT kernel-range drift findings</li>
+        </ul>
+      </div>
+      <div class="tl-col tl-next">
+        <div class="tl-tag">next</div>
+        <ul>
+          <li>arm64 musl-static binary (Raspberry-Pi-class deployments)</li>
+          <li>Mass-fleet scan aggregator → heat-map dashboard</li>
+          <li>SIEM query templates (Splunk SPL, Elastic KQL, Sentinel KQL)</li>
+          <li>CWE / ATT&amp;CK filter for <code>--scan --json</code></li>
+          <li>CI hardening: clang-tidy, scan-build, drift-check job</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="tl-foot">
+      Full roadmap and contribution guide:
+      <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/ROADMAP.md">ROADMAP.md</a>
+      ·
+      <a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
     </p>
   </div>
 </section>
 
-<footer>
-  <div class="container">
+<!-- ──────────────── FOOTER ──────────────── -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-col">
+      <div class="footer-brand">
+        <span class="nav-mark" aria-hidden="true">◆</span>
+        SKELETONKEY
+      </div>
+      <p class="footer-tag">
+        Curated Linux LPE corpus with SOC-ready detection rules. One
+        binary, no SaaS, no telemetry. MIT licensed.
+      </p>
+    </div>
+    <div class="footer-col">
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY">Source</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/releases">Releases</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CVES.md">CVE inventory</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/ROADMAP.md">Roadmap</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Docs</h4>
+      <ul>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ARCHITECTURE.md">Architecture</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/DETECTION_PLAYBOOK.md">Detection playbook</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/JSON_SCHEMA.md">JSON schema</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/OFFSETS.md">Offsets</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Ethics</h4>
+      <ul>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/ETHICS.md">ETHICS.md</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/docs/DEFENDERS.md">For defenders</a></li>
+        <li><a href="https://github.com/KaraZajac/SKELETONKEY/blob/main/CONTRIBUTING.md">Contribute</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="container footer-bottom">
     <p>
       Each module credits the original CVE reporter and PoC author in its
       <code>NOTICE.md</code>. The research credit belongs to the people
       who found the bugs.
     </p>
-    <p>
-      MIT licensed ·
-      <a href="https://github.com/KaraZajac/SKELETONKEY">github.com/KaraZajac/SKELETONKEY</a>
+    <p class="footer-meta">
+      v0.6.0 · MIT · <a href="https://github.com/KaraZajac/SKELETONKEY">github.com/KaraZajac/SKELETONKEY</a>
     </p>
   </div>
 </footer>
 
-<script>
-function copyInstall(btn) {
-  var cmd = document.getElementById('install-cmd').innerText.replace(/^\$\s*/, '');
-  navigator.clipboard.writeText(cmd).then(function() {
-    btn.textContent = 'copied!';
-    btn.classList.add('copied');
-    setTimeout(function() {
-      btn.textContent = 'copy';
-      btn.classList.remove('copied');
-    }, 1500);
-  });
-}
-
-</script>
+<script src="app.js" defer></script>
 
 </body>
 </html>
