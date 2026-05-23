@@ -221,6 +221,24 @@ static const struct skeletonkey_host h_kernel_6_12 = {
 	.unprivileged_userns_allowed = true,
 };
 
+/* Vulnerable-era kernel (5.14.0) with userns ENABLED. The mirror
+ * of h_kernel_5_14_no_userns — for testing the VULNERABLE-by-version
+ * happy path on modules whose detect() reaches VULNERABLE once both
+ * version and userns gates are satisfied. Carrier file presence
+ * (sudo, su, etc.) is read from the actual filesystem; in CI the
+ * standard Debian containers provide those, so these tests are
+ * deterministic on Linux. */
+static const struct skeletonkey_host h_kernel_5_14_userns_ok = {
+	.kernel  = { .major = 5, .minor = 14, .patch = 0,
+		     .release = "5.14.0-vuln-userns-ok" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = true,
+};
+
 /* Vulnerable-era kernel (5.14.0) with userns DISABLED. Most
  * netfilter / overlayfs / cgroup-class modules need both an in-range
  * kernel AND unprivileged userns. Kernel 5.14 was deliberately
@@ -442,6 +460,32 @@ static void run_all(void)
 	run_one("sudoedit_editor: sudo_version=1.9.13p1 → OK",
 		&sudoedit_editor_module, &h_fixed_sudo,
 		SKELETONKEY_OK);
+
+	/* ── happy-path VULNERABLE coverage ──────────────────────────
+	 * Vulnerable kernel + userns allowed reaches the VULNERABLE
+	 * branch on modules whose detect() short-circuits there once
+	 * both gates are satisfied. Tests the affirmative verdict
+	 * path, not just precondition gates. */
+
+	run_one("nf_tables: vuln kernel 5.14 + userns ok → VULNERABLE",
+		&nf_tables_module, &h_kernel_5_14_userns_ok,
+		SKELETONKEY_VULNERABLE);
+
+	run_one("cls_route4: vuln kernel 5.14 + userns ok → VULNERABLE",
+		&cls_route4_module, &h_kernel_5_14_userns_ok,
+		SKELETONKEY_VULNERABLE);
+
+	run_one("nft_set_uaf: vuln kernel 5.14 + userns ok → VULNERABLE",
+		&nft_set_uaf_module, &h_kernel_5_14_userns_ok,
+		SKELETONKEY_VULNERABLE);
+
+	run_one("nft_fwd_dup: vuln kernel 5.14 + userns ok → VULNERABLE",
+		&nft_fwd_dup_module, &h_kernel_5_14_userns_ok,
+		SKELETONKEY_VULNERABLE);
+
+	run_one("nft_payload: vuln kernel 5.14 + userns ok → VULNERABLE",
+		&nft_payload_module, &h_kernel_5_14_userns_ok,
+		SKELETONKEY_VULNERABLE);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");
