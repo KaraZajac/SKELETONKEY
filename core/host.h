@@ -88,4 +88,19 @@ const struct skeletonkey_host *skeletonkey_host_get(void);
  * --auto / --scan verbose output. Silent on JSON mode. */
 void skeletonkey_host_print_banner(const struct skeletonkey_host *h, bool json);
 
+/* True iff h->kernel >= the (major, minor, patch) provided. Returns
+ * false if h is NULL or its kernel version was never populated (major
+ * == 0). Replaces the manual `v->major < X` / `(v->major == X &&
+ * v->minor < Y)` patterns scattered across detect()s — cleaner reads
+ * and one place to get the comparison right.
+ *
+ * Examples:
+ *   if (!host_kernel_at_least(h, 7, 0, 0))    // kernel predates 7.0
+ *       return SKELETONKEY_OK;
+ *   if ( host_kernel_at_least(h, 6, 8, 0))    // kernel post-fix
+ *       return SKELETONKEY_OK;
+ */
+bool skeletonkey_host_kernel_at_least(const struct skeletonkey_host *h,
+                                      int major, int minor, int patch);
+
 #endif /* SKELETONKEY_HOST_H */

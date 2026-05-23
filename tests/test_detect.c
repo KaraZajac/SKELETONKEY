@@ -33,6 +33,14 @@ extern const struct skeletonkey_module dirtydecrypt_module;
 extern const struct skeletonkey_module fragnesia_module;
 extern const struct skeletonkey_module pack2theroot_module;
 extern const struct skeletonkey_module overlayfs_module;
+extern const struct skeletonkey_module dirty_pipe_module;
+extern const struct skeletonkey_module dirty_cow_module;
+extern const struct skeletonkey_module ptrace_traceme_module;
+extern const struct skeletonkey_module cgroup_release_agent_module;
+extern const struct skeletonkey_module nf_tables_module;
+extern const struct skeletonkey_module fuse_legacy_module;
+extern const struct skeletonkey_module cls_route4_module;
+extern const struct skeletonkey_module overlayfs_setuid_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -132,6 +140,54 @@ static const struct skeletonkey_host h_ubuntu_24_userns_ok = {
 	.has_dbus_system    = true,
 	.has_systemd        = true,
 };
+
+/* Ancient kernel that predates many bugs (Linux 4.4 LTS). Useful for
+ * the "kernel predates the bug → OK" path in dirty_pipe (bug
+ * introduced 5.8). */
+static const struct skeletonkey_host h_kernel_4_4 = {
+	.kernel  = { .major = 4, .minor = 4, .patch = 0,
+		     .release = "4.4.0-ancient" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = true,
+};
+
+/* Recent kernel (Linux 6.12 LTS). Above virtually every backport
+ * threshold in the corpus — modules should report OK via the
+ * "patched by mainline inheritance" branch of kernel_range_is_patched. */
+static const struct skeletonkey_host h_kernel_6_12 = {
+	.kernel  = { .major = 6, .minor = 12, .patch = 0,
+		     .release = "6.12.0-recent" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = true,
+};
+
+/* Vulnerable-era kernel (5.14.0) with userns DISABLED. Most
+ * netfilter / overlayfs / cgroup-class modules need both an in-range
+ * kernel AND unprivileged userns. Kernel 5.14 was deliberately
+ * chosen to clear every module's "predates the bug" pre-check in
+ * this batch (nf_tables introduced 5.14; overlayfs_setuid 5.11;
+ * cls_route4/fuse_legacy older still) while remaining below every
+ * stable-branch backport entry (5.15.x / 5.18.x / 5.19.x in the
+ * relevant tables). The version check therefore says "VULNERABLE by
+ * version", and the userns gate fires next. */
+static const struct skeletonkey_host h_kernel_5_14_no_userns = {
+	.kernel  = { .major = 5, .minor = 14, .patch = 0,
+		     .release = "5.14.0-vuln-no-userns" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = false,
+};
 #endif /* __linux__ */
 
 /* ── tests ───────────────────────────────────────────────────────── */
@@ -175,6 +231,57 @@ static void run_all(void)
 	run_one("overlayfs: distro=fedora → not Ubuntu → OK",
 		&overlayfs_module, &h_fedora_no_debian,
 		SKELETONKEY_OK);
+
+	/* ── kernel-version-gate cases (post-migration coverage) ──── */
+
+	/* dirty_pipe: bug introduced in 5.8; kernel 4.4 predates → OK */
+	run_one("dirty_pipe: kernel 4.4 predates 5.8 → OK",
+		&dirty_pipe_module, &h_kernel_4_4,
+		SKELETONKEY_OK);
+
+	/* dirty_pipe: kernel 6.12 is above every backport entry → OK */
+	run_one("dirty_pipe: kernel 6.12 above all backports → OK",
+		&dirty_pipe_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* dirty_cow: fix in mainline 4.9; kernel 6.12 is far above → OK */
+	run_one("dirty_cow: kernel 6.12 above 4.9 fix → OK",
+		&dirty_cow_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* ptrace_traceme: fix in 5.1.17; kernel 6.12 above → OK */
+	run_one("ptrace_traceme: kernel 6.12 above 5.1.17 fix → OK",
+		&ptrace_traceme_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* cgroup_release_agent: fix in mainline 5.17; kernel 6.12 above → OK */
+	run_one("cgroup_release_agent: kernel 6.12 above 5.17 fix → OK",
+		&cgroup_release_agent_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* ── userns-gate cases ───────────────────────────────────── */
+
+	/* nf_tables: vulnerable kernel 5.10.0 + userns off → PRECOND_FAIL */
+	run_one("nf_tables: vuln kernel + userns=false → PRECOND_FAIL",
+		&nf_tables_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* fuse_legacy: vulnerable kernel + userns off → PRECOND_FAIL */
+	run_one("fuse_legacy: vuln kernel + userns=false → PRECOND_FAIL",
+		&fuse_legacy_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* cls_route4: vulnerable kernel + userns off → PRECOND_FAIL */
+	run_one("cls_route4: vuln kernel + userns=false → PRECOND_FAIL",
+		&cls_route4_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* overlayfs_setuid: vulnerable kernel (5.14, past the 5.11
+	 * introduction and below every backport) + userns off
+	 * → PRECOND_FAIL via userns gate */
+	run_one("overlayfs_setuid: vuln kernel + userns=false → PRECOND_FAIL",
+		&overlayfs_setuid_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");

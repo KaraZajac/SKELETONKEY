@@ -242,6 +242,16 @@ const struct skeletonkey_host *skeletonkey_host_get(void)
 	return &g_host;
 }
 
+bool skeletonkey_host_kernel_at_least(const struct skeletonkey_host *h,
+				      int major, int minor, int patch)
+{
+	if (!h || h->kernel.major == 0)
+		return false;
+	if (h->kernel.major != major) return h->kernel.major > major;
+	if (h->kernel.minor != minor) return h->kernel.minor > minor;
+	return h->kernel.patch >= patch;
+}
+
 void skeletonkey_host_print_banner(const struct skeletonkey_host *h, bool json)
 {
 	if (json || h == NULL) return;

@@ -697,7 +697,7 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 	}
 
 	/* Predates the bug: rxgk RESPONSE-handling code was added in 7.0. */
-	if (v->major < 7) {
+	if (!skeletonkey_host_kernel_at_least(ctx->host, 7, 0, 0)) {
 		if (!ctx->json)
 			fprintf(stderr, "[i] dirtydecrypt: kernel %s predates the rxgk "
 				"RESPONSE-handling code added in 7.0 — not applicable\n",
