@@ -95,7 +95,7 @@
 
 static const struct kernel_patched_from nf_tables_patched_branches[] = {
     {5,  4, 269},   /* 5.4.x */
-    {5, 10, 210},   /* 5.10.x */
+    {5, 10, 209},   /* 5.10.x (harmonised with Debian bullseye fix-version) */
     {5, 15, 149},   /* 5.15.x */
     {6,  1,  74},   /* 6.1.x */
     {6,  6,  13},   /* 6.6.x */

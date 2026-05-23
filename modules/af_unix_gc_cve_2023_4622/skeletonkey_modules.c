@@ -105,6 +105,7 @@ static const struct kernel_patched_from af_unix_gc_patched_branches[] = {
     {5, 10, 197},
     {5, 15, 130},
     {6,  1,  51},   /* 6.1 LTS */
+    {6,  4,  13},   /* 6.4.x stable (per Debian tracker — forky/sid/trixie) */
     {6,  5,   0},   /* mainline fix landed in 6.5 (technically 6.6-rc1
                        but stable 6.5.x carries the patch) */
 };

@@ -97,9 +97,9 @@
 static const struct kernel_patched_from nft_set_uaf_patched_branches[] = {
     {4, 19, 283},   /* 4.19.x safety patch (bug never reached this branch) */
     {5,  4, 243},   /* 5.4.x   */
-    {5, 10, 180},   /* 5.10.x  */
+    {5, 10, 179},   /* 5.10.x (harmonised with Debian bullseye fix-version) */
     {5, 15, 111},   /* 5.15.x  */
-    {6,  1,  28},   /* 6.1.x   */
+    {6,  1,  27},   /* 6.1.x (harmonised with Debian bookworm fix-version) */
     {6,  2,  15},   /* 6.2.x   */
     {6,  3,   2},   /* 6.3.x   */
     {6,  4,   0},   /* mainline 6.4-rc4 */

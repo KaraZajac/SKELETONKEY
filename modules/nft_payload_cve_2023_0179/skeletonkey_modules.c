@@ -89,7 +89,7 @@ static const struct kernel_patched_from nft_payload_patched_branches[] = {
     {4, 14, 302},   /* 4.14.x */
     {4, 19, 269},   /* 4.19.x */
     {5,  4, 229},   /* 5.4.x */
-    {5, 10, 163},   /* 5.10.x */
+    {5, 10, 162},   /* 5.10.x (harmonised with Debian bullseye fix-version) */
     {5, 15,  88},   /* 5.15.x */
     {6,  1,   6},   /* 6.1.x */
     {6,  2,   0},   /* mainline fix in 6.2-rc4 */

@@ -673,7 +673,8 @@ static int dd_active_probe(void)
  *                    or weird distro rebuilds the version check missed)
  */
 static const struct kernel_patched_from dirtydecrypt_patched_branches[] = {
-	{7, 0, 0},   /* mainline fix commit a2567217 landed in Linux 7.0 */
+	{6, 19, 13}, /* 6.19.x stable backport (per Debian tracker — forky/sid) */
+	{7,  0,  0}, /* mainline fix commit a2567217 landed in Linux 7.0 */
 };
 static const struct kernel_range dirtydecrypt_range = {
 	.patched_from = dirtydecrypt_patched_branches,

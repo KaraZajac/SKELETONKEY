@@ -119,9 +119,11 @@ union drm_vmw_alloc_dmabuf_arg {
 /* ---- kernel range ------------------------------------------------- */
 
 static const struct kernel_patched_from vmwgfx_patched_branches[] = {
-    {6,  1, 23},   /* 6.1 LTS backport */
-    {6,  2, 10},   /* 6.2.x stable backport */
-    {6,  3,  0},   /* mainline (6.3-rc6) */
+    {5, 10, 127},  /* 5.10.x stable (per Debian tracker — bullseye) */
+    {5, 18,  14},  /* 5.18.x stable (per Debian tracker — bookworm/forky/sid/trixie) */
+    {6,  1,  23},  /* 6.1 LTS backport */
+    {6,  2,  10},  /* 6.2.x stable backport */
+    {6,  3,   0},  /* mainline (6.3-rc6) */
 };
 
 static const struct kernel_range vmwgfx_range = {
