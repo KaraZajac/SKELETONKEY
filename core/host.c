@@ -224,6 +224,63 @@ static void populate_services(struct skeletonkey_host *h)
 	h->has_dbus_system = path_exists("/run/dbus/system_bus_socket");
 }
 
+/* Best-effort: run `cmd`, capture first stdout line, strip newline,
+ * copy up to (cap - 1) bytes into dst. Returns true iff popen
+ * succeeded, the command exited 0, and we got at least one line.
+ * Used for sudo/pkexec/packagekitd version parsing at startup. */
+static bool capture_first_line(const char *cmd, char *dst, size_t cap)
+{
+	dst[0] = '\0';
+	FILE *p = popen(cmd, "r");
+	if (!p) return false;
+	char buf[256];
+	bool got = (fgets(buf, sizeof buf, p) != NULL);
+	int rc = pclose(p);
+	if (!got || rc != 0) return false;
+	size_t L = strlen(buf);
+	while (L > 0 && (buf[L-1] == '\n' || buf[L-1] == '\r'))
+		buf[--L] = '\0';
+	if (L >= cap) L = cap - 1;
+	memcpy(dst, buf, L);
+	dst[L] = '\0';
+	return true;
+}
+
+/* Extract the version-string token from a line of the form
+ * "<prefix>: <version> [rest]" or "<prefix> <version> [rest]". The
+ * version token is everything from the first non-space after
+ * `prefix` up to the next whitespace. Empty result when prefix not
+ * found. */
+static void extract_version_after_prefix(const char *line,
+					 const char *prefix,
+					 char *dst, size_t cap)
+{
+	dst[0] = '\0';
+	const char *p = strstr(line, prefix);
+	if (!p) return;
+	p += strlen(prefix);
+	while (*p == ' ' || *p == ':' || *p == '\t') p++;
+	size_t i = 0;
+	while (*p && *p != ' ' && *p != '\t' && i + 1 < cap)
+		dst[i++] = *p++;
+	dst[i] = '\0';
+}
+
+static void populate_userspace_versions(struct skeletonkey_host *h)
+{
+	h->sudo_version[0]   = '\0';
+	h->polkit_version[0] = '\0';
+
+	char line[256];
+	if (capture_first_line("sudo -V 2>/dev/null", line, sizeof line))
+		extract_version_after_prefix(line, "Sudo version",
+			h->sudo_version, sizeof h->sudo_version);
+
+	if (capture_first_line("pkexec --version 2>/dev/null", line, sizeof line))
+		extract_version_after_prefix(line, "pkexec version",
+			h->polkit_version, sizeof h->polkit_version);
+}
+
 /* ── public entrypoints ───────────────────────────────────────────── */
 
 const struct skeletonkey_host *skeletonkey_host_get(void)
@@ -237,6 +294,7 @@ const struct skeletonkey_host *skeletonkey_host_get(void)
 	populate_platform_family(&g_host);
 	populate_caps(&g_host);
 	populate_services(&g_host);
+	populate_userspace_versions(&g_host);
 	g_host.probe_source = "skeletonkey core/host.c";
 	g_host_ready = true;
 	return &g_host;
@@ -280,4 +338,8 @@ void skeletonkey_host_print_banner(const struct skeletonkey_host *h, bool json)
 		h->kernel_lockdown_active      ? "on"  : "off",
 		h->selinux_enforcing           ? "on"  : "off",
 		h->yama_ptrace_restricted      ? "yes" : "no");
+	if (h->sudo_version[0] || h->polkit_version[0])
+		fprintf(stderr, "[*] userspace: sudo=%s  polkit=%s\n",
+			h->sudo_version[0]   ? h->sudo_version   : "-",
+			h->polkit_version[0] ? h->polkit_version : "-");
 }

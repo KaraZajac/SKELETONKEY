@@ -70,6 +70,16 @@ struct skeletonkey_host {
 	bool has_systemd;                 /* /run/systemd/system exists */
 	bool has_dbus_system;             /* /run/dbus/system_bus_socket exists */
 
+	/* ── userspace component versions ─────────────────────────
+	 * Parsed once at startup via popen() of the relevant binary's
+	 * --version output. Empty string ("") means "tool not installed
+	 * or version parse failed" — modules should treat that as
+	 * PRECOND_FAIL (no exploit target). The exact format mirrors
+	 * what the tool prints (`Sudo version 1.9.5p2`, `pkexec version
+	 * 0.105`, …); modules do their own range parsing. */
+	char sudo_version[64];            /* "1.9.13p1" or "" */
+	char polkit_version[64];          /* "0.105" or "126" or "" */
+
 	/* Informational: the SKELETONKEY component that populated this
 	 * snapshot (for log/JSON output). */
 	const char *probe_source;

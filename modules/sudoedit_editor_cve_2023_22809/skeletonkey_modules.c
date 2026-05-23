@@ -210,7 +210,13 @@ static skeletonkey_result_t sudoedit_editor_detect(const struct skeletonkey_ctx 
         fprintf(stderr, "[i] sudoedit_editor: sudoedit at %s\n", sudoedit_path);
 
     char ver[128] = {0};
-    if (!get_sudo_version(sudo_path, ver, sizeof ver)) {
+    /* Prefer the centrally-fingerprinted sudo version (populated once
+     * at startup by core/host.c) — saves a popen per scan and gives
+     * unit tests a clean mock point. Fall back to the local popen if
+     * ctx->host is missing the version. */
+    if (ctx->host && ctx->host->sudo_version[0]) {
+        snprintf(ver, sizeof ver, "%s", ctx->host->sudo_version);
+    } else if (!get_sudo_version(sudo_path, ver, sizeof ver)) {
         if (!ctx->json)
             fprintf(stderr, "[?] sudoedit_editor: could not parse `sudo --version`\n");
         return SKELETONKEY_TEST_ERROR;

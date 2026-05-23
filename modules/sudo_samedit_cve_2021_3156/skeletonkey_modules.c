@@ -151,30 +151,42 @@ static const char *find_sudoedit(void)
 
 static skeletonkey_result_t sudo_samedit_detect(const struct skeletonkey_ctx *ctx)
 {
-    const char *sudo_path = find_sudo();
-    if (!sudo_path) {
-        if (!ctx->json) {
-            fprintf(stderr, "[+] sudo_samedit: sudo not on path; no attack surface\n");
-        }
-        return SKELETONKEY_PRECOND_FAIL;
-    }
-    if (!ctx->json) {
-        fprintf(stderr, "[i] sudo_samedit: found setuid sudo at %s\n", sudo_path);
-    }
-
-    char cmd[512];
-    snprintf(cmd, sizeof cmd, "%s --version 2>&1 | head -1", sudo_path);
-    FILE *p = popen(cmd, "r");
-    if (!p) return SKELETONKEY_TEST_ERROR;
-
+    /* Prefer the centrally-fingerprinted sudo version (populated once
+     * at startup by core/host.c) — saves a popen per scan and gives
+     * unit tests a clean mock point. Fall back to the local popen if
+     * ctx->host is missing the version (e.g. degenerate test ctx, or
+     * a future refactor that disables userspace probing). */
     char line[256] = {0};
-    char *r = fgets(line, sizeof line, p);
-    pclose(p);
-    if (!r) {
+    if (ctx->host && ctx->host->sudo_version[0]) {
+        snprintf(line, sizeof line, "Sudo version %s",
+                 ctx->host->sudo_version);
         if (!ctx->json) {
-            fprintf(stderr, "[?] sudo_samedit: could not read `sudo --version` output\n");
+            fprintf(stderr, "[i] sudo_samedit: host fingerprint reports "
+                "sudo version %s\n", ctx->host->sudo_version);
         }
-        return SKELETONKEY_TEST_ERROR;
+    } else {
+        const char *sudo_path = find_sudo();
+        if (!sudo_path) {
+            if (!ctx->json) {
+                fprintf(stderr, "[+] sudo_samedit: sudo not on path; no attack surface\n");
+            }
+            return SKELETONKEY_PRECOND_FAIL;
+        }
+        if (!ctx->json) {
+            fprintf(stderr, "[i] sudo_samedit: found setuid sudo at %s\n", sudo_path);
+        }
+        char cmd[512];
+        snprintf(cmd, sizeof cmd, "%s --version 2>&1 | head -1", sudo_path);
+        FILE *p = popen(cmd, "r");
+        if (!p) return SKELETONKEY_TEST_ERROR;
+        char *r = fgets(line, sizeof line, p);
+        pclose(p);
+        if (!r) {
+            if (!ctx->json) {
+                fprintf(stderr, "[?] sudo_samedit: could not read `sudo --version` output\n");
+            }
+            return SKELETONKEY_TEST_ERROR;
+        }
     }
 
     /* Trim newline for nicer logging. */

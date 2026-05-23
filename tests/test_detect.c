@@ -55,6 +55,8 @@ extern const struct skeletonkey_module copy_fail_gcm_module;
 extern const struct skeletonkey_module dirty_frag_esp_module;
 extern const struct skeletonkey_module dirty_frag_esp6_module;
 extern const struct skeletonkey_module dirty_frag_rxrpc_module;
+extern const struct skeletonkey_module sudo_samedit_module;
+extern const struct skeletonkey_module sudoedit_editor_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -134,6 +136,37 @@ static const struct skeletonkey_host h_fedora_no_debian = {
 	.unprivileged_userns_allowed = true,
 	.has_dbus_system    = true,
 	.has_systemd        = true,
+};
+
+/* Modern fingerprint with a known-vulnerable sudo (1.8.31 sits in
+ * both the samedit [1.8.2, 1.9.5p1] and sudoedit_editor
+ * [1.8.0, 1.9.12p2) vulnerable ranges). Used to assert the sudo
+ * modules accept the host-fingerprint version string and reach the
+ * VULNERABLE-by-version path. */
+static const struct skeletonkey_host h_vuln_sudo = {
+	.kernel  = { .major = 5, .minor = 15, .patch = 0,
+		     .release = "5.15.0-vulnsudo" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = true,
+	.sudo_version       = "1.8.31",
+};
+
+/* Modern fingerprint with a fixed sudo (1.9.13p1 is above both
+ * sudo_samedit and sudoedit_editor vulnerable ranges). */
+static const struct skeletonkey_host h_fixed_sudo = {
+	.kernel  = { .major = 6, .minor = 12, .patch = 0,
+		     .release = "6.12.0-fixedsudo" },
+	.arch    = "x86_64",
+	.nodename = "test",
+	.distro_id          = "debian",
+	.is_linux           = true,
+	.is_debian_family   = true,
+	.unprivileged_userns_allowed = true,
+	.sudo_version       = "1.9.13p1",
 };
 
 /* Ubuntu 24.04, userns allowed, D-Bus running, Debian family
@@ -365,6 +398,21 @@ static void run_all(void)
 	run_one("dirty_frag_rxrpc: userns_allowed=false → PRECOND_FAIL",
 		&dirty_frag_rxrpc_module, &h_kernel_5_14_no_userns,
 		SKELETONKEY_PRECOND_FAIL);
+
+	/* ── userspace version fingerprinting (sudo) ─────────────────
+	 * Both sudo modules now consult ctx->host->sudo_version
+	 * populated once at startup. */
+
+	/* sudo_samedit: vulnerable sudo 1.8.31 (range [1.8.2, 1.9.5p1])
+	 * → VULNERABLE by version */
+	run_one("sudo_samedit: sudo_version=1.8.31 → VULNERABLE",
+		&sudo_samedit_module, &h_vuln_sudo,
+		SKELETONKEY_VULNERABLE);
+
+	/* sudo_samedit: fixed sudo 1.9.13p1 (above 1.9.5p1) → OK */
+	run_one("sudo_samedit: sudo_version=1.9.13p1 → OK",
+		&sudo_samedit_module, &h_fixed_sudo,
+		SKELETONKEY_OK);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");
