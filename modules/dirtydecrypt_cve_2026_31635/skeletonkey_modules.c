@@ -921,6 +921,55 @@ static const char dd_auditd[] =
 	"-a always,exit -F arch=b64 -S splice -k skeletonkey-dirtydecrypt-splice\n"
 	"-a always,exit -F arch=b32 -S splice -k skeletonkey-dirtydecrypt-splice\n";
 
+static const char dd_yara[] =
+    "rule dirtydecrypt_payload_overlay : cve_2026_31635 page_cache_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-31635\"\n"
+    "        description = \"DirtyDecrypt payload: the 120-byte ET_DYN x86_64 ELF the public V12 PoC overlays onto the first bytes of a setuid binary's page cache. Scan setuid-root binaries (/usr/bin/su etc.); legitimate binaries are much larger and never start with this exact shellcode.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "        reference   = \"https://github.com/v12-security/pocs/tree/main/dirtydecrypt\"\n"
+    "    strings:\n"
+    "        // First 28 bytes of the embedded tiny_elf[] payload.\n"
+    "        $payload_head = { 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00 03 00 3E 00 01 00 00 00 68 00 00 00 }\n"
+    "        // The setuid(0)+execve(/bin/sh) tail at offset 104 of the payload.\n"
+    "        $shellcode    = { B0 69 0F 05 48 8D 3D DD FF FF FF 6A 3B 58 0F 05 }\n"
+    "        $sh           = \"/bin/sh\"\n"
+    "    condition:\n"
+    "        // Setuid binaries are at minimum a few KB; the payload is\n"
+    "        // 120 bytes overlaid at offset 0 so the rest of the file\n"
+    "        // remains the original binary content (or padding).\n"
+    "        $payload_head at 0 and $shellcode and $sh and filesize > 4096\n"
+    "}\n";
+
+static const char dd_falco[] =
+    "- rule: AF_RXRPC socket created by non-root (DirtyDecrypt primitive)\n"
+    "  desc: |\n"
+    "    Non-root process creates an AF_RXRPC socket. AF_RXRPC is the\n"
+    "    family the DirtyDecrypt (CVE-2026-31635) primitive needs to\n"
+    "    trigger the rxgk in-place decrypt. Most production hosts do\n"
+    "    not use AF_RXRPC at all (it's AFS-flavoured); a non-root\n"
+    "    open here is highly suspicious.\n"
+    "  condition: >\n"
+    "    evt.type = socket and evt.arg[0] = 33 and not user.uid = 0\n"
+    "  output: >\n"
+    "    AF_RXRPC socket() by non-root (user=%user.name proc=%proc.name\n"
+    "     pid=%proc.pid parent=%proc.pname)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [process, mitre_privilege_escalation, T1068, cve.2026.31635]\n"
+    "\n"
+    "- rule: rxrpc security key added (DirtyDecrypt handshake setup)\n"
+    "  desc: |\n"
+    "    add_key(\"rxrpc\", …) by a non-root process — the DirtyDecrypt\n"
+    "    PoC adds an rxrpc-typed key carrying a forged rxgk XDR token\n"
+    "    for each fire() of the page-cache write primitive.\n"
+    "  condition: >\n"
+    "    evt.type = add_key and evt.arg[0] contains \"rxrpc\" and not user.uid = 0\n"
+    "  output: >\n"
+    "    rxrpc add_key by non-root (user=%user.name proc=%proc.name)\n"
+    "  priority: WARNING\n"
+    "  tags: [process, cve.2026.31635]\n";
+
 static const char dd_sigma[] =
 	"title: Possible DirtyDecrypt exploitation (CVE-2026-31635)\n"
 	"id: 7c1e9a40-skeletonkey-dirtydecrypt\n"
@@ -953,8 +1002,8 @@ const struct skeletonkey_module dirtydecrypt_module = {
 	.cleanup        = dd_cleanup,
 	.detect_auditd  = dd_auditd,
 	.detect_sigma   = dd_sigma,
-	.detect_yara    = NULL,
-	.detect_falco   = NULL,
+	.detect_yara    = dd_yara,
+	.detect_falco   = dd_falco,
 };
 
 void skeletonkey_register_dirtydecrypt(void)

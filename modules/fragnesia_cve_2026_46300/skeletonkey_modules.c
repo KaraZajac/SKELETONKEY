@@ -1124,6 +1124,58 @@ static const char fg_auditd[] =
 	"# splice() drives page-cache pages into the ESP-in-TCP stream\n"
 	"-a always,exit -F arch=b64 -S splice -k skeletonkey-fragnesia-splice\n";
 
+static const char fg_yara[] =
+    "rule fragnesia_payload_overlay : cve_2026_46300 page_cache_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-46300\"\n"
+    "        description = \"Fragnesia payload: the 192-byte ET_EXEC x86_64 ELF the public V12 PoC overlays onto the first bytes of /usr/bin/su (or sibling setuid binary). Detects post-fire page-cache contents via direct scan.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "        reference   = \"https://github.com/v12-security/pocs/tree/main/fragnesia\"\n"
+    "    strings:\n"
+    "        // First 28 bytes of the embedded shell_elf[] payload.\n"
+    "        $payload_head  = { 7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00 02 00 3E 00 01 00 00 00 78 00 40 00 }\n"
+    "        // The setuid+setgid+seteuid(0) prelude\n"
+    "        $shellcode_drop = { 31 FF 31 F6 31 C0 B0 6A 0F 05 B0 69 0F 05 B0 74 0F 05 }\n"
+    "        $sh             = \"/bin/sh\"\n"
+    "        $term           = \"TERM=xterm\"\n"
+    "    condition:\n"
+    "        $payload_head at 0 and $shellcode_drop and $sh and $term and filesize > 4096\n"
+    "}\n";
+
+static const char fg_falco[] =
+    "- rule: TCP_ULP=espintcp set by non-root (Fragnesia trigger)\n"
+    "  desc: |\n"
+    "    A non-root process flips a TCP socket into the espintcp ULP\n"
+    "    inside an unprivileged userns. Core of the Fragnesia\n"
+    "    (CVE-2026-46300) trigger — also the Dirty Frag ESP-in-TCP\n"
+    "    setup. Legitimate use of TCP_ULP=espintcp from non-root is\n"
+    "    essentially never seen in production.\n"
+    "  condition: >\n"
+    "    evt.type = setsockopt and evt.arg.optname = TCP_ULP and\n"
+    "    not user.uid = 0\n"
+    "  output: >\n"
+    "    Fragnesia-style TCP_ULP=espintcp by non-root\n"
+    "    (user=%user.name proc=%proc.name pid=%proc.pid)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [network, mitre_privilege_escalation, T1068, cve.2026.46300]\n"
+    "\n"
+    "- rule: ESP-in-TCP splice to crafted TCP connection (Fragnesia paged-frag write)\n"
+    "  desc: |\n"
+    "    splice() of a setuid binary's pages into a TCP socket whose\n"
+    "    peer is configured for espintcp. Fragnesia's sender path\n"
+    "    splices the carrier file (/usr/bin/su) into the loopback TCP\n"
+    "    flow to land the in-place decrypt on the carrier's page cache.\n"
+    "  condition: >\n"
+    "    evt.type = splice and not user.uid = 0 and\n"
+    "    (fd.name startswith /usr/bin/su or fd.name startswith /bin/su\n"
+    "     or fd.name startswith /usr/bin/passwd)\n"
+    "  output: >\n"
+    "    splice() of setuid binary by non-root (user=%user.name\n"
+    "     proc=%proc.name fd=%fd.name)\n"
+    "  priority: WARNING\n"
+    "  tags: [filesystem, cve.2026.46300]\n";
+
 static const char fg_sigma[] =
 	"title: Possible Fragnesia exploitation (CVE-2026-46300)\n"
 	"id: 9b3d2e71-skeletonkey-fragnesia\n"
@@ -1156,8 +1208,8 @@ const struct skeletonkey_module fragnesia_module = {
 	.cleanup        = fg_cleanup,
 	.detect_auditd  = fg_auditd,
 	.detect_sigma   = fg_sigma,
-	.detect_yara    = NULL,
-	.detect_falco   = NULL,
+	.detect_yara    = fg_yara,
+	.detect_falco   = fg_falco,
 };
 
 void skeletonkey_register_fragnesia(void)

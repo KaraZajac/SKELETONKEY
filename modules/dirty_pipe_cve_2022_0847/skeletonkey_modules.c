@@ -460,6 +460,39 @@ static const char dirty_pipe_auditd[] =
     "-a always,exit -F arch=b64 -S splice -k skeletonkey-dirty-pipe-splice\n"
     "-a always,exit -F arch=b32 -S splice -k skeletonkey-dirty-pipe-splice\n";
 
+static const char dirty_pipe_yara[] =
+    "rule dirty_pipe_passwd_uid_flip : cve_2022_0847 page_cache_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2022-0847\"\n"
+    "        description = \"Dirty Pipe (CVE-2022-0847): /etc/passwd page-cache UID flip — non-root username remapped to UID 0000+. Scan /etc/passwd directly; legitimate root entries use '0:', never '0000:'.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $uid_flip = /\\n[a-z_][a-z0-9_-]{0,30}:[^:]{0,8}:0{4,}:[0-9]+:/\n"
+    "    condition:\n"
+    "        $uid_flip\n"
+    "}\n";
+
+static const char dirty_pipe_falco[] =
+    "- rule: Dirty Pipe splice from setuid/sensitive file by non-root\n"
+    "  desc: |\n"
+    "    A non-root process calls splice() with a fd pointing at a\n"
+    "    setuid-root binary or a credential file. The Dirty Pipe\n"
+    "    primitive (CVE-2022-0847) splices 1 byte from the target to\n"
+    "    a prepared pipe to inherit the stale PIPE_BUF_FLAG_CAN_MERGE,\n"
+    "    then writes attacker bytes that land in the file's page cache.\n"
+    "  condition: >\n"
+    "    evt.type = splice and not user.uid = 0 and\n"
+    "    (fd.name in (/etc/passwd, /etc/shadow, /etc/sudoers)\n"
+    "     or fd.name startswith /usr/bin/su\n"
+    "     or fd.name startswith /usr/bin/passwd\n"
+    "     or fd.name startswith /bin/su)\n"
+    "  output: >\n"
+    "    Dirty Pipe-style splice from sensitive file by non-root\n"
+    "    (user=%user.name proc=%proc.name fd=%fd.name pid=%proc.pid)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2022.0847]\n";
+
 static const char dirty_pipe_sigma[] =
     "title: Possible Dirty Pipe exploitation (CVE-2022-0847)\n"
     "id: f6b13c08-skeletonkey-dirty-pipe\n"
@@ -487,8 +520,8 @@ const struct skeletonkey_module dirty_pipe_module = {
     .cleanup        = dirty_pipe_cleanup,
     .detect_auditd  = dirty_pipe_auditd,
     .detect_sigma   = dirty_pipe_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = dirty_pipe_yara,
+    .detect_falco   = dirty_pipe_falco,
 };
 
 void skeletonkey_register_dirty_pipe(void)

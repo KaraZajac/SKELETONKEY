@@ -384,6 +384,59 @@ static const char pwnkit_auditd[] =
     "-a always,exit -F arch=b64 -S execve -F path=/usr/bin/pkexec -k skeletonkey-pwnkit-execve\n"
     "-a always,exit -F arch=b32 -S execve -F path=/usr/bin/pkexec -k skeletonkey-pwnkit-execve\n";
 
+static const char pwnkit_yara[] =
+    "rule pwnkit_gconv_modules_cache : cve_2021_4034 lpe\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2021-4034\"\n"
+    "        description = \"Pwnkit gconv-modules cache: redefines UTF-8 to load an attacker .so via iconv when pkexec is invoked with argc==0.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "        reference   = \"https://www.qualys.com/2022/01/25/cve-2021-4034/pwnkit.txt\"\n"
+    "    strings:\n"
+    "        // gconv-modules text format: \"module FROM// TO// SHARED-OBJECT COST\".\n"
+    "        // Published PoCs redefine UTF-8 and point it at a .so dropped in /tmp.\n"
+    "        $line  = /module\\s+UTF-8\\/\\/\\s+\\S+\\/\\/\\s+\\S+\\s+\\d/\n"
+    "        $alias = /alias\\s+\\S+\\s+UTF-8/\n"
+    "        // Hint: PoC workdirs frequently include 'pwnkit' or 'GCONV' in path strings the .so carries.\n"
+    "        $marker_pwn  = \"pwnkit\" nocase\n"
+    "        $marker_gcv  = \"GCONV_PATH\"\n"
+    "    condition:\n"
+    "        // Small text-format file (gconv-modules caches are tiny) with the module redefinition.\n"
+    "        // Pair with -w /tmp -p wa auditd to catch the drop in real time.\n"
+    "        filesize < 4KB and $line and 1 of ($alias, $marker_pwn, $marker_gcv)\n"
+    "}\n";
+
+static const char pwnkit_falco[] =
+    "- rule: Pwnkit-style pkexec invocation (NULL argv)\n"
+    "  desc: |\n"
+    "    pkexec executed without argv (argc == 0). The Qualys PoC for\n"
+    "    CVE-2021-4034 invokes pkexec via execve with NULL argv so the\n"
+    "    out-of-bounds argv read picks up envp as if it were argv[1].\n"
+    "  condition: >\n"
+    "    spawned_process and proc.name = pkexec and\n"
+    "    (proc.cmdline = \"pkexec\" or proc.args = \"\")\n"
+    "  output: >\n"
+    "    Possible Pwnkit (CVE-2021-4034): pkexec spawned with no argv\n"
+    "    (user=%user.name uid=%user.uid pid=%proc.pid ppid=%proc.ppid\n"
+    "     parent=%proc.pname cmdline=\"%proc.cmdline\")\n"
+    "  priority: CRITICAL\n"
+    "  tags: [process, mitre_privilege_escalation, T1068, cve.2021.4034]\n"
+    "\n"
+    "- rule: Pwnkit-style GCONV_PATH injection\n"
+    "  desc: |\n"
+    "    A non-root process sets GCONV_PATH in env before spawning a\n"
+    "    setuid binary. Combined with a controlled .so + gconv-modules\n"
+    "    cache, this is the Qualys exploit shape.\n"
+    "  condition: >\n"
+    "    spawned_process and not user.uid = 0 and\n"
+    "    (proc.env contains \"GCONV_PATH=\" or proc.env contains \"CHARSET=\") and\n"
+    "    proc.name in (pkexec, su, sudo, mount, chsh, passwd)\n"
+    "  output: >\n"
+    "    GCONV_PATH/CHARSET set by non-root before setuid spawn\n"
+    "    (user=%user.name target=%proc.name env=\"%proc.env\")\n"
+    "  priority: WARNING\n"
+    "  tags: [process, env_injection, cve.2021.4034]\n";
+
 static const char pwnkit_sigma[] =
     "title: Possible Pwnkit exploitation (CVE-2021-4034)\n"
     "id: 9e1d4f2c-skeletonkey-pwnkit\n"
@@ -417,8 +470,8 @@ const struct skeletonkey_module pwnkit_module = {
     .cleanup        = pwnkit_cleanup,
     .detect_auditd  = pwnkit_auditd,
     .detect_sigma   = pwnkit_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = pwnkit_yara,
+    .detect_falco   = pwnkit_falco,
 };
 
 void skeletonkey_register_pwnkit(void)

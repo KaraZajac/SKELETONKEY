@@ -157,6 +157,82 @@ static const char copy_fail_family_sigma[] =
     "level: high\n"
     "tags: [attack.privilege_escalation, attack.t1068, cve.2026.31431, cve.2026.43284, cve.2026.43500]\n";
 
+/* YARA + Falco rules shared across the 5 family modules. Scanned via
+ * --detect-rules; the dispatcher dedups by pointer so the rule blob
+ * emits once even though copy_fail / copy_fail_gcm / dirty_frag_*
+ * all point at the same string. */
+static const char copy_fail_family_yara[] =
+    "rule etc_passwd_uid_flip : page_cache_write\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-31431 / CVE-2026-43284 / CVE-2026-43500\"\n"
+    "        description = \"/etc/passwd page-cache UID flip: a non-root user line shows a zero-padded UID (the canonical Copy Fail / Dirty Frag / DirtyDecrypt / Dirty Pipe payload). Scan /etc/passwd; legitimate root uses plain '0:', never '0000:'.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        // lowercase-start username, optional shadow ('x') password, then UID 0000 or longer\n"
+    "        $uid_flip = /\\n[a-z_][a-z0-9_-]{0,30}:[^:]{0,8}:0{4,}:[0-9]+:/\n"
+    "    condition:\n"
+    "        $uid_flip\n"
+    "}\n"
+    "\n"
+    "rule etc_passwd_root_no_password\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-31635 (DirtyDecrypt sliding-window write)\"\n"
+    "        description = \"/etc/passwd root entry rewritten to have an empty password field — the DirtyDecrypt PoC's intermediate corruption (rewrite root's password to empty, then `su root` without password).\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $root_open  = /\\nroot::0:0:/   // empty password (canonical x or ! when shadowed)\n"
+    "    condition:\n"
+    "        $root_open\n"
+    "}\n";
+
+static const char copy_fail_family_falco[] =
+    "- rule: AF_ALG authenc keyblob installed by non-root (Copy Fail primitive)\n"
+    "  desc: |\n"
+    "    A non-root process creates an AF_ALG socket and installs an\n"
+    "    authencesn(hmac(sha256),cbc(aes)) keyblob via ALG_SET_KEY.\n"
+    "    Core of the Copy Fail (CVE-2026-31431) primitive — also\n"
+    "    triggered by the GCM variant. AF_ALG by non-root is rare on\n"
+    "    most servers; tune by allow-listing your crypto-using daemons.\n"
+    "  condition: >\n"
+    "    evt.type = socket and evt.arg[0] = 38 and not user.uid = 0\n"
+    "  output: >\n"
+    "    AF_ALG socket() by non-root (user=%user.name pid=%proc.pid\n"
+    "     ppid=%proc.ppid parent=%proc.pname cmdline=\"%proc.cmdline\")\n"
+    "  priority: WARNING\n"
+    "  tags: [process, cve.2026.31431, copy_fail]\n"
+    "\n"
+    "- rule: XFRM NETLINK_XFRM bind from unprivileged userns (Dirty Frag primitive)\n"
+    "  desc: |\n"
+    "    A NETLINK_XFRM socket is opened from inside an unprivileged\n"
+    "    user namespace, with subsequent XFRM_MSG_NEWSA installing an\n"
+    "    ESP(rfc4106(gcm(aes))) state. Core of the Dirty Frag esp/esp6\n"
+    "    variants — also tripped by Fragnesia's setup phase. Legitimate\n"
+    "    XFRM use is normally privileged (strongSwan, libreswan).\n"
+    "  condition: >\n"
+    "    evt.type = sendto and not user.uid = 0 and\n"
+    "    proc.aname[1] != \"\"   // we want non-init userns; refine with k8s.namespace or container.id\n"
+    "  output: >\n"
+    "    NETLINK_XFRM sendto from non-root (user=%user.name pid=%proc.pid\n"
+    "     proc=%proc.name)\n"
+    "  priority: WARNING\n"
+    "  tags: [process, cve.2026.43284, dirty_frag]\n"
+    "\n"
+    "- rule: /etc/passwd modified by non-root (Copy Fail / Dirty Frag / Dirty Pipe outcome)\n"
+    "  desc: |\n"
+    "    /etc/passwd is read-only for non-root, so a non-root caller\n"
+    "    showing up on its open(W_OK) audit trail indicates a\n"
+    "    page-cache write primitive succeeded. Catches the post-fire\n"
+    "    state for the whole copy_fail family + dirty_pipe.\n"
+    "  condition: >\n"
+    "    open_write and fd.name = /etc/passwd and not user.uid = 0\n"
+    "  output: >\n"
+    "    Non-root write to /etc/passwd (user=%user.name pid=%proc.pid\n"
+    "     proc=%proc.name)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, copy_fail, dirty_frag]\n";
+
 const struct skeletonkey_module copy_fail_module = {
     .name           = "copy_fail",
     .cve            = "CVE-2026-31431",
@@ -169,8 +245,8 @@ const struct skeletonkey_module copy_fail_module = {
     .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = copy_fail_family_yara,
+    .detect_falco   = copy_fail_family_falco,
 };
 
 /* ----- copy_fail_gcm (variant, no CVE) ----- */
@@ -201,8 +277,8 @@ const struct skeletonkey_module copy_fail_gcm_module = {
     .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = copy_fail_family_yara,
+    .detect_falco   = copy_fail_family_falco,
 };
 
 /* ----- dirty_frag_esp (CVE-2026-43284 v4) ----- */
@@ -233,8 +309,8 @@ const struct skeletonkey_module dirty_frag_esp_module = {
     .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = copy_fail_family_yara,
+    .detect_falco   = copy_fail_family_falco,
 };
 
 /* ----- dirty_frag_esp6 (CVE-2026-43284 v6) ----- */
@@ -265,8 +341,8 @@ const struct skeletonkey_module dirty_frag_esp6_module = {
     .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = copy_fail_family_yara,
+    .detect_falco   = copy_fail_family_falco,
 };
 
 /* ----- dirty_frag_rxrpc (CVE-2026-43500) ----- */
@@ -297,8 +373,8 @@ const struct skeletonkey_module dirty_frag_rxrpc_module = {
     .cleanup        = copy_fail_family_cleanup,
     .detect_auditd  = copy_fail_family_auditd,
     .detect_sigma   = copy_fail_family_sigma,
-    .detect_yara    = NULL,
-    .detect_falco   = NULL,
+    .detect_yara    = copy_fail_family_yara,
+    .detect_falco   = copy_fail_family_falco,
 };
 
 /* ----- Family registration ----- */

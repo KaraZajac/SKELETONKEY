@@ -660,6 +660,94 @@ static const char p2tr_auditd[] =
 	"-a always,exit -F arch=b64 -S execve -F path=/usr/bin/apt-get \\\n"
 	"    -F auid!=0 -k skeletonkey-pack2theroot-apt\n";
 
+static const char p2tr_yara[] =
+    "rule pack2theroot_malicious_deb : cve_2026_41651\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-41651\"\n"
+    "        description = \"Pack2TheRoot payload .deb: small ar archive whose postinst installs a setuid copy of bash to /tmp/.suid_bash. The Vozec PoC + SKELETONKEY's port both leave this artifact in /tmp.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "        reference   = \"https://github.com/Vozec/CVE-2026-41651\"\n"
+    "    strings:\n"
+    "        $deb_magic       = \"!<arch>\"\n"
+    "        $postinst_suid   = \"install -m 4755 /bin/bash\"\n"
+    "        $skk_payload     = \"Package: skeletonkey-p2tr-payload\"\n"
+    "        $skk_dummy       = \"Package: skeletonkey-p2tr-dummy\"\n"
+    "        $vozec_payload   = \"Package: pk-poc-payload\"\n"
+    "        $vozec_dummy     = \"Package: pk-poc-dummy\"\n"
+    "    condition:\n"
+    "        // Small ar archive matching .deb layout, containing either\n"
+    "        // the published-PoC package names or the SUID-bash postinst.\n"
+    "        $deb_magic at 0 and\n"
+    "        ($postinst_suid or any of ($skk_payload, $skk_dummy, $vozec_payload, $vozec_dummy)) and\n"
+    "        filesize < 64KB\n"
+    "}\n"
+    "\n"
+    "rule pack2theroot_suid_bash_drop : cve_2026_41651\n"
+    "{\n"
+    "    meta:\n"
+    "        cve         = \"CVE-2026-41651\"\n"
+    "        description = \"Pack2TheRoot SUID-bash artifact: /tmp/.suid_bash is the setuid bash dropped by the malicious postinst. Pair this YARA scan with auditd watch -w /tmp/.suid_bash for catch-on-create.\"\n"
+    "        author      = \"SKELETONKEY\"\n"
+    "    strings:\n"
+    "        $elf  = { 7F 45 4C 46 02 01 01 }\n"
+    "        $bash = \"GNU bash\"\n"
+    "    condition:\n"
+    "        // The rule itself can't see the file path; the operator\n"
+    "        // points YARA at /tmp/.suid_bash specifically. Match\n"
+    "        // confirms the file is a real bash ELF (not a planted decoy).\n"
+    "        $elf at 0 and $bash\n"
+    "}\n";
+
+static const char p2tr_falco[] =
+    "- rule: SUID bash dropped to /tmp (Pack2TheRoot postinst signature)\n"
+    "  desc: |\n"
+    "    A setuid bit appears on /tmp/.suid_bash. The Pack2TheRoot\n"
+    "    (CVE-2026-41651) malicious .deb postinst runs as root via\n"
+    "    the polkit-bypassed PackageKit transaction and lands a SUID\n"
+    "    copy of /bin/bash at this path.\n"
+    "  condition: >\n"
+    "    evt.type in (chmod, fchmod, fchmodat) and\n"
+    "    evt.arg.mode contains \"S_ISUID\" and\n"
+    "    fd.name = /tmp/.suid_bash\n"
+    "  output: >\n"
+    "    SUID bit set on /tmp/.suid_bash (proc=%proc.name pid=%proc.pid\n"
+    "     ppid=%proc.ppid parent=%proc.pname)\n"
+    "  priority: CRITICAL\n"
+    "  tags: [filesystem, mitre_privilege_escalation, T1068, cve.2026.41651]\n"
+    "\n"
+    "- rule: PackageKit InstallFiles invoked twice on same transaction (Pack2TheRoot TOCTOU)\n"
+    "  desc: |\n"
+    "    Two D-Bus InstallFiles() calls hit the same PackageKit\n"
+    "    transaction object in close succession — the exact shape of\n"
+    "    the Pack2TheRoot TOCTOU. Detection requires bus monitoring;\n"
+    "    Falco's k8s/audit ruleset doesn't cover D-Bus natively, but\n"
+    "    if dbus-monitor or systemd's bus audit is wired into the\n"
+    "    feed, this is the trigger.\n"
+    "  condition: >\n"
+    "    // Placeholder: requires dbus-monitor → falco feed.\n"
+    "    // Real-world deployment: pipe `dbus-monitor --system` into\n"
+    "    // a log-source rule keyed on the InstallFiles method name.\n"
+    "    proc.cmdline contains \"InstallFiles\" and proc.cmdline contains \"PackageKit\"\n"
+    "  output: >\n"
+    "    Possible Pack2TheRoot D-Bus TOCTOU shape (cmdline=\"%proc.cmdline\")\n"
+    "  priority: WARNING\n"
+    "  tags: [dbus, cve.2026.41651]\n"
+    "\n"
+    "- rule: dpkg invoked by PackageKit on behalf of non-root caller\n"
+    "  desc: |\n"
+    "    PackageKit forks dpkg to install a .deb on behalf of an\n"
+    "    unprivileged caller. Combined with /tmp/.suid_bash creation,\n"
+    "    this completes the Pack2TheRoot exploit chain.\n"
+    "  condition: >\n"
+    "    spawned_process and proc.name = dpkg and proc.aname = packagekitd and\n"
+    "    proc.cmdline contains \"/tmp/.pk-\"\n"
+    "  output: >\n"
+    "    PackageKit-driven dpkg install of /tmp-resident .deb\n"
+    "    (parent=%proc.pname cmdline=\"%proc.cmdline\")\n"
+    "  priority: CRITICAL\n"
+    "  tags: [process, cve.2026.41651, pack2theroot]\n";
+
 static const char p2tr_sigma[] =
 	"title: Possible Pack2TheRoot exploitation (CVE-2026-41651)\n"
 	"id: 3f2b8d54-skeletonkey-pack2theroot\n"
@@ -700,8 +788,8 @@ const struct skeletonkey_module pack2theroot_module = {
 	.cleanup        = p2tr_cleanup,
 	.detect_auditd  = p2tr_auditd,
 	.detect_sigma   = p2tr_sigma,
-	.detect_yara    = NULL,
-	.detect_falco   = NULL,
+	.detect_yara    = p2tr_yara,
+	.detect_falco   = p2tr_falco,
 };
 
 void skeletonkey_register_pack2theroot(void)
