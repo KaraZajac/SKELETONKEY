@@ -18,10 +18,11 @@ require "yaml"
 
 REPO_ROOT = File.expand_path("../..", __dir__)
 
-box     = ENV["SKK_VM_BOX"]            || "generic/debian12"
-pkg     = ENV["SKK_VM_KERNEL_PKG"]     || ""
-kver    = ENV["SKK_VM_KERNEL_VERSION"] || ""
-host    = ENV["SKK_VM_HOSTNAME"]       || "skk-verify"
+box      = ENV["SKK_VM_BOX"]              || "generic/debian12"
+pkg      = ENV["SKK_VM_KERNEL_PKG"]       || ""
+mainline = ENV["SKK_VM_MAINLINE_VERSION"] || ""
+kver     = ENV["SKK_VM_KERNEL_VERSION"]   || ""
+host     = ENV["SKK_VM_HOSTNAME"]         || "skk-verify"
 
 Vagrant.configure("2") do |c|
   # Define ONE Vagrant machine named after SKK_VM_HOSTNAME. Per-module
@@ -62,7 +63,7 @@ Vagrant.configure("2") do |c|
       fi
     SHELL
 
-    # 2. Pin target kernel if requested. Reboot needed afterward.
+    # 2a. Pin via apt if requested. Reboot needed afterward.
     if !pkg.empty?
       m.vm.provision "shell", name: "pin-kernel-#{pkg}", inline: <<-SHELL
         set -e
@@ -71,15 +72,56 @@ Vagrant.configure("2") do |c|
         else
             echo "[+] installing #{pkg} (kernel target #{kver})"
             export DEBIAN_FRONTEND=noninteractive
-            apt-get install -y -qq #{pkg} || {
-                echo "[-] #{pkg} unavailable in apt; trying snapshot.debian.org" >&2
-                echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20230101T000000Z bookworm main" \
-                    >> /etc/apt/sources.list.d/snapshot.list
-                apt-get update -qq -o Acquire::Check-Valid-Until=false
-                apt-get install -y -qq --allow-downgrades #{pkg}
-            }
+            apt-get install -y -qq #{pkg}
             echo "[i] kernel #{pkg} installed; reboot via 'vagrant reload'"
         fi
+      SHELL
+    end
+
+    # 2b. Pin via kernel.ubuntu.com/mainline/ if mainline_version is set.
+    # Fetches the four .debs (linux-headers _all, linux-headers _amd64
+    # generic, linux-image-unsigned generic, linux-modules generic),
+    # dpkg -i's them, regenerates grub, and prints a reboot hint.
+    # Mainline kernel package version like "5.15.5-051505" sorts ABOVE
+    # Ubuntu's stock "5.15.0-91" in debian-version-compare (numeric
+    # 51505 > 91), so update-grub puts it at boot index 0 and the next
+    # boot lands on it automatically.
+    if !mainline.empty?
+      m.vm.provision "shell", name: "pin-mainline-#{mainline}", inline: <<-SHELL
+        set -e
+        KVER="#{mainline}"
+        # already booted into it?
+        if uname -r | grep -q "^${KVER}-[0-9]\\+-generic"; then
+            echo "[=] mainline ${KVER} already booted ($(uname -r))"
+            exit 0
+        fi
+        # already installed on disk (waiting on reboot)?
+        if ls /boot/vmlinuz-${KVER}-* >/dev/null 2>&1; then
+            echo "[=] mainline ${KVER} already installed; needs reboot"
+            exit 0
+        fi
+        echo "[+] fetching kernel.ubuntu.com mainline v${KVER}"
+        URL="https://kernel.ubuntu.com/mainline/v${KVER}/amd64/"
+        TMP=$(mktemp -d)
+        cd "$TMP"
+        # Pick the 4 canonical generic-kernel .debs by pattern match against
+        # the directory index. Skip lowlatency variants.
+        DEBS=$(curl -sL "$URL" | \\
+            grep -oE 'href="[^"]+\\.deb"' | sed 's/href="//; s/"$//' | \\
+            grep -E '(linux-image-unsigned|linux-modules|linux-headers)-[0-9.]+-[0-9]+-generic_|linux-headers-[0-9.]+-[0-9]+_[^_]+_all\\.deb' | \\
+            grep -v lowlatency)
+        if [ -z "$DEBS" ]; then
+            echo "[-] no .debs found at $URL — does the version exist on kernel.ubuntu.com?" >&2
+            exit 2
+        fi
+        for f in $DEBS; do
+            echo "[+]   $f"
+            curl -fsSL -O "${URL}${f}"
+        done
+        export DEBIAN_FRONTEND=noninteractive
+        dpkg -i *.deb || apt-get install -f -y -qq
+        update-grub 2>&1 | tail -3
+        echo "[i] mainline ${KVER} installed; reboot via 'vagrant reload'"
       SHELL
     end
 

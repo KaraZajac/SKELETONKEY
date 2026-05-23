@@ -47,10 +47,11 @@ af_packet2:
 
 af_unix_gc:
   box: ubuntu2204
-  kernel_pkg: linux-image-5.15.0-43-generic
-  kernel_version: "5.15.0-43"
+  kernel_pkg: ""
+  mainline_version: "5.15.5"  # kernel.ubuntu.com/mainline/v5.15.5/ — below 5.15.130 backport
+  kernel_version: "5.15.5"
   expect_detect: VULNERABLE
-  notes: "CVE-2023-4622; fixed in 6.5 mainline / backported to 5.15.130; 5.15.0-43 is below the backport."
+  notes: "CVE-2023-4622; fix mainline 6.5 + backports 5.15.130/6.1.51/etc. Mainline 5.15.5 (Nov 2021) predates all backports and any silent distro patching. Installed via kernel.ubuntu.com/mainline/v5.15.5/."
 
 cgroup_release_agent:
   box: debian11
@@ -120,10 +121,11 @@ netfilter_xtcompat:
 
 nf_tables:
   box: ubuntu2204
-  kernel_pkg: linux-image-5.15.0-43-generic
-  kernel_version: "5.15.0-43"
+  kernel_pkg: ""
+  mainline_version: "5.15.5"
+  kernel_version: "5.15.5"
   expect_detect: VULNERABLE
-  notes: "CVE-2024-1086; fix 6.8 mainline + 5.15.149 backport; 5.15.0-43 is below."
+  notes: "CVE-2024-1086; bug introduced 5.14; fix mainline 6.8 + 5.15.149/6.1.74 backports. Mainline 5.15.5 (Nov 2021) is well below 5.15.149 — empirically vulnerable. Installed via kernel.ubuntu.com/mainline/v5.15.5/."
 
 nft_fwd_dup:
   box: debian11
@@ -141,10 +143,11 @@ nft_payload:
 
 nft_set_uaf:
   box: ubuntu2204
-  kernel_pkg: linux-image-5.19.0-32-generic
-  kernel_version: "5.19.0-32"
+  kernel_pkg: ""
+  mainline_version: "5.15.5"
+  kernel_version: "5.15.5"
   expect_detect: VULNERABLE
-  notes: "CVE-2023-32233; fix 6.4-rc4 + 6.1.27 / 5.15.110; 5.19.0-32 is below."
+  notes: "CVE-2023-32233; bug introduced 5.1; fix mainline 6.4-rc4 + 6.1.27/5.15.110 backports. Mainline 5.15.5 (Nov 2021) is below 5.15.110 — empirically vulnerable. Installed via kernel.ubuntu.com/mainline/v5.15.5/."
 
 overlayfs:
   box: ubuntu2004
@@ -190,10 +193,11 @@ sequoia:
 
 stackrot:
   box: ubuntu2204
-  kernel_pkg: linux-image-6.1.0-13-generic
-  kernel_version: "6.1.0-13"
+  kernel_pkg: ""
+  mainline_version: "6.1.10"  # below the 6.1.37 backport
+  kernel_version: "6.1.10"
   expect_detect: VULNERABLE
-  notes: "CVE-2023-3269; fix 6.4 mainline + 6.1.37 LTS / 6.3.10; 6.1.0-13 is below."
+  notes: "CVE-2023-3269; bug introduced 6.1; fix mainline 6.4 + 6.1.37/6.3.10 backports. Mainline 6.1.10 (Feb 2023) is below 6.1.37 — empirically vulnerable. Installed via kernel.ubuntu.com/mainline/v6.1.10/."
 
 sudo_samedit:
   box: ubuntu1804

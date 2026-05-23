@@ -95,6 +95,7 @@ fi
 # ── load target ───────────────────────────────────────────────────────────
 BOX=$(yget "$MODULE" box)
 KERNEL_PKG=$(yget "$MODULE" kernel_pkg)
+MAINLINE=$(yget "$MODULE" mainline_version)
 KERNEL_VER=$(yget "$MODULE" kernel_version)
 EXPECT=$(yget "$MODULE" expect_detect)
 MANUAL=$(yget "$MODULE" manual)
@@ -126,6 +127,7 @@ echo
 cd "$VM_DIR"
 export SKK_VM_BOX="$BOX"
 export SKK_VM_KERNEL_PKG="$KERNEL_PKG"
+export SKK_VM_MAINLINE_VERSION="$MAINLINE"
 export SKK_VM_KERNEL_VERSION="$KERNEL_VER"
 export SKK_VM_HOSTNAME="$VM_HOSTNAME"
 export SKK_MODULE="$MODULE"
@@ -137,11 +139,13 @@ if ! vagrant status "$VM_HOSTNAME" 2>&1 | grep -q "running"; then
     vagrant up "$VM_HOSTNAME" --provider=parallels
 fi
 
-# Reboot if a kernel pin was applied (uname -r != target).
-if [[ -n "$KERNEL_PKG" ]]; then
+# Reboot if any kernel pin was applied (uname -r != target).
+if [[ -n "$KERNEL_PKG" || -n "$MAINLINE" ]]; then
     current_kver=$(vagrant ssh "$VM_HOSTNAME" -c "uname -r" 2>/dev/null | tr -d '\r')
-    if [[ "$current_kver" != *"$KERNEL_VER"* ]]; then
-        echo "[*] current kernel $current_kver != target $KERNEL_VER; rebooting..."
+    target_match="$KERNEL_VER"
+    [[ -n "$MAINLINE" ]] && target_match="$MAINLINE"
+    if [[ "$current_kver" != *"$target_match"* ]]; then
+        echo "[*] current kernel $current_kver != target $target_match; rebooting..."
         vagrant reload "$VM_HOSTNAME"
         sleep 5
     fi
