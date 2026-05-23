@@ -7,6 +7,7 @@ modules/*/build/
 modules/*/dirtyfail
 modules/*/skeletonkey
 /skeletonkey
+/skeletonkey-test
 .vscode/
 .idea/
 *.swp
