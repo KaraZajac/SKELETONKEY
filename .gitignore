@@ -8,6 +8,12 @@ modules/*/dirtyfail
 modules/*/skeletonkey
 /skeletonkey
 /skeletonkey-test
+/skeletonkey-x86_64
+/skeletonkey-x86_64-static
+/skeletonkey-x86_64.sha256
+/skeletonkey-x86_64-static.sha256
+/skeletonkey-arm64
+/skeletonkey-arm64.sha256
 .vscode/
 .idea/
 *.swp
