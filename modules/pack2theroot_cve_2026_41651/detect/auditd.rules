@@ -1,0 +1,28 @@
+# Pack2TheRoot (CVE-2026-41651) — auditd detection rules
+#
+# PackageKit TOCTOU LPE: two back-to-back InstallFiles D-Bus calls
+# install a malicious .deb as root, whose postinst drops a SUID bash
+# in /tmp. The D-Bus traffic itself is not auditable without bus
+# monitoring (dbus-monitor / dbus-broker logs), so these rules cover
+# the file-side footprint.
+#
+# Install: copy into /etc/audit/rules.d/ and `augenrules --load`, or
+#   skeletonkey --detect-rules --format=auditd | sudo tee \
+#     /etc/audit/rules.d/99-skeletonkey.rules
+
+# The exact SUID payload path the published PoC lands
+-w /tmp/.suid_bash -p wa -k skeletonkey-pack2theroot
+
+# Any setuid bit set on /tmp/.suid_bash by anyone
+-a always,exit -F arch=b64 -S chmod,fchmod,fchmodat \
+    -F path=/tmp/.suid_bash -k skeletonkey-pack2theroot-suid
+
+# The PoC drops two .deb files in /tmp immediately before the install
+-a always,exit -F arch=b64 -S openat,creat \
+    -F dir=/tmp -F success=1 -k skeletonkey-pack2theroot-deb
+
+# packagekitd-driven dpkg/apt activity initiated by a non-root caller
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/dpkg \
+    -F auid!=0 -k skeletonkey-pack2theroot-dpkg
+-a always,exit -F arch=b64 -S execve -F path=/usr/bin/apt-get \
+    -F auid!=0 -k skeletonkey-pack2theroot-apt

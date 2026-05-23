@@ -21,6 +21,7 @@
 
 #include <time.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 
 #include <getopt.h>
 #include <stdbool.h>
@@ -670,16 +671,81 @@ static int module_safety_rank(const char *n)
     if (!strcmp(n, "cgroup_release_agent"))  return 98;  /* structural, no offsets */
     if (!strcmp(n, "overlayfs_setuid"))      return 97;  /* structural setuid */
     if (!strcmp(n, "overlayfs"))             return 96;  /* userns + xattr */
+    if (!strcmp(n, "pack2theroot"))          return 95;  /* userspace D-Bus TOCTOU; dpkg + /tmp SUID footprint */
     if (!strcmp(n, "dirty_pipe"))            return 90;  /* page-cache write */
     if (!strcmp(n, "dirty_cow"))             return 89;
     if (!strncmp(n, "copy_fail", 9) ||
-        !strncmp(n, "dirty_frag", 10))       return 88;
+        !strncmp(n, "dirty_frag", 10))       return 88;  /* verified page-cache writes */
+    if (!strcmp(n, "dirtydecrypt") ||
+        !strcmp(n, "fragnesia"))             return 86;  /* ported page-cache writes, NOT VM-verified */
     if (!strcmp(n, "ptrace_traceme"))        return 85;  /* userspace cred race */
     if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
     if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */
     if (!strcmp(n, "entrybleed"))            return 0;   /* leak only, not LPE */
     return 50; /* kernel primitives — middle of pack */
+}
+
+/* Run a module's detect() in a forked child so a SIGILL/SIGSEGV/etc.
+ * in one detector cannot tear down the dispatcher. The verdict travels
+ * back via the child's exit status (skeletonkey_result_t values fit in
+ * 0..5). On a crash, returns SKELETONKEY_TEST_ERROR; *crashed_signal
+ * is set to the terminating signal (0 if exited normally).
+ *
+ * This matters because --auto auto-enables active probes, which can
+ * exercise CPU instructions (entrybleed's prefetchnta sweep) or
+ * kernel paths (XFRM ESP-in-TCP setup) that may misbehave under
+ * emulation or hardened containers. Without isolation, one bad probe
+ * stops the whole scan and the operator never sees the rest of the
+ * verdict table. */
+static skeletonkey_result_t run_detect_isolated(
+    const struct skeletonkey_module *m,
+    const struct skeletonkey_ctx *ctx,
+    int *crashed_signal)
+{
+    *crashed_signal = 0;
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        return SKELETONKEY_TEST_ERROR;
+    }
+    if (pid == 0) {
+        skeletonkey_result_t r = m->detect(ctx);
+        fflush(NULL);
+        _exit((int)r);
+    }
+    int st;
+    if (waitpid(pid, &st, 0) < 0) return SKELETONKEY_TEST_ERROR;
+    if (WIFEXITED(st)) return (skeletonkey_result_t)WEXITSTATUS(st);
+    if (WIFSIGNALED(st)) *crashed_signal = WTERMSIG(st);
+    return SKELETONKEY_TEST_ERROR;
+}
+
+/* Best-effort host distro fingerprint via /etc/os-release. Populates
+ * id_out and ver_out with up to 63 chars each; falls back to "?" when
+ * /etc/os-release is missing or unparseable. */
+static void read_os_release(char *id_out, size_t id_cap,
+                            char *ver_out, size_t ver_cap)
+{
+    snprintf(id_out, id_cap, "?");
+    snprintf(ver_out, ver_cap, "?");
+    FILE *f = fopen("/etc/os-release", "r");
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        const char *key = NULL; char *dst = NULL; size_t cap = 0;
+        if (strncmp(line, "ID=", 3) == 0) {
+            key = line + 3; dst = id_out; cap = id_cap;
+        } else if (strncmp(line, "VERSION_ID=", 11) == 0) {
+            key = line + 11; dst = ver_out; cap = ver_cap;
+        } else continue;
+        const char *v = key;
+        if (*v == '"' || *v == '\'') v++;
+        size_t L = strcspn(v, "\"'\n");
+        if (L >= cap) L = cap - 1;
+        memcpy(dst, v, L); dst[L] = '\0';
+    }
+    fclose(f);
 }
 
 static int cmd_auto(struct skeletonkey_ctx *ctx)
@@ -695,28 +761,98 @@ static int cmd_auto(struct skeletonkey_ctx *ctx)
         return 0;
     }
 
+    /* Active probes give --auto a more accurate verdict on modules that
+     * implement them (dirty_pipe, the copy_fail family, dirtydecrypt,
+     * fragnesia, overlayfs). Each per-module probe is documented safe:
+     * /tmp sentinel files + fork-isolated namespace mounts. No real
+     * system state is corrupted by the scan. Without this, --auto can
+     * miss vulnerabilities that a version-only check would flag as
+     * indeterminate (TEST_ERROR), or accept distro silent backports
+     * that the version check is fooled by. */
+    bool prev_active = ctx->active_probe;
+    ctx->active_probe = true;
+
     struct utsname u; uname(&u);
-    fprintf(stderr, "[*] auto: host=%s kernel=%s arch=%s\n", u.nodename, u.release, u.machine);
+    char distro_id[64], distro_ver[64];
+    read_os_release(distro_id, sizeof distro_id, distro_ver, sizeof distro_ver);
+    fprintf(stderr, "[*] auto: host=%s distro=%s/%s kernel=%s arch=%s\n",
+            u.nodename, distro_id, distro_ver, u.release, u.machine);
+    fprintf(stderr, "[*] auto: active probes enabled — brief /tmp file "
+                    "touches and fork-isolated namespace probes\n");
     fprintf(stderr, "[*] auto: scanning %zu modules for vulnerabilities...\n",
             skeletonkey_module_count());
 
     struct cand { const struct skeletonkey_module *m; int rank; } cands[64];
     int nc = 0;
+    int n_vuln = 0, n_ok = 0, n_precond = 0, n_test = 0, n_crash = 0, n_other = 0;
     size_t n = skeletonkey_module_count();
-    for (size_t i = 0; i < n && nc < 64; i++) {
+    for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
         if (!m->detect || !m->exploit) continue;
-        skeletonkey_result_t r = m->detect(ctx);
-        if (r == SKELETONKEY_VULNERABLE) {
-            cands[nc].m = m;
-            cands[nc].rank = module_safety_rank(m->name);
-            fprintf(stderr, "[+] auto: %-22s VULNERABLE (safety rank %d)\n",
-                    m->name, cands[nc].rank);
-            nc++;
+        int sig = 0;
+        skeletonkey_result_t r = run_detect_isolated(m, ctx, &sig);
+        if (sig != 0) {
+            fprintf(stderr, "[?] auto: %-22s detect() crashed "
+                            "(signal %d) — continuing\n", m->name, sig);
+            n_crash++;
+            continue;
+        }
+        switch (r) {
+        case SKELETONKEY_VULNERABLE:
+            if (nc < 64) {
+                cands[nc].m = m;
+                cands[nc].rank = module_safety_rank(m->name);
+                fprintf(stderr, "[+] auto: %-22s VULNERABLE (safety rank %d)\n",
+                        m->name, cands[nc].rank);
+                nc++;
+            } else {
+                fprintf(stderr, "[+] auto: %-22s VULNERABLE (overflow; not "
+                                "considered for pick)\n", m->name);
+            }
+            n_vuln++;
+            break;
+        case SKELETONKEY_OK:
+            fprintf(stderr, "[ ] auto: %-22s patched or not applicable\n",
+                    m->name);
+            n_ok++;
+            break;
+        case SKELETONKEY_PRECOND_FAIL:
+            fprintf(stderr, "[ ] auto: %-22s precondition not met\n", m->name);
+            n_precond++;
+            break;
+        case SKELETONKEY_TEST_ERROR:
+            fprintf(stderr, "[?] auto: %-22s indeterminate "
+                            "(detector could not decide)\n", m->name);
+            n_test++;
+            break;
+        default:
+            fprintf(stderr, "[?] auto: %-22s %s\n", m->name, result_str(r));
+            n_other++;
+            break;
         }
     }
+
+    /* Restore caller's --active setting before we call exploit(). The
+     * exploit() of each module may use ctx->active_probe with different
+     * semantics than detect(); we owned this flag only for the scan. */
+    ctx->active_probe = prev_active;
+
+    fprintf(stderr, "\n[*] auto: scan summary — %d vulnerable, %d patched/"
+                    "n.a., %d precondition-fail, %d indeterminate%s\n",
+            n_vuln, n_ok, n_precond, n_test,
+            n_other ? " (+other)" : "");
+    if (n_crash > 0)
+        fprintf(stderr, "[!] auto: %d module(s) crashed during detect "
+                        "— dispatcher recovered via fork isolation\n", n_crash);
+
     if (nc == 0) {
-        fprintf(stderr, "\n[-] auto: no vulnerable modules. Host appears patched.\n");
+        if (n_test > 0) {
+            fprintf(stderr, "[i] auto: %d module(s) returned indeterminate. "
+                            "Try `skeletonkey --exploit <name> --i-know` if "
+                            "you know the host is vulnerable.\n", n_test);
+        }
+        fprintf(stderr, "[-] auto: no confirmed-vulnerable modules. Host "
+                        "appears patched.\n");
         return 0;
     }
 
@@ -791,6 +927,7 @@ int main(int argc, char **argv)
     skeletonkey_register_vmwgfx();
     skeletonkey_register_dirtydecrypt();
     skeletonkey_register_fragnesia();
+    skeletonkey_register_pack2theroot();
 
     enum mode mode = MODE_SCAN;
     struct skeletonkey_ctx ctx = {0};

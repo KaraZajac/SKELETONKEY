@@ -186,15 +186,39 @@ of the 28-module verified corpus):**
       is closed.
 - [x] **CVE-2026-31635** — DirtyDecrypt: 🟡 rxgk missing-COW in-place
       decrypt page-cache write. Ported from the V12 PoC.
-- [ ] **Verify both on a vulnerable-kernel VM**, pin the CVE fix
-      commits, add `kernel_range` tables, and promote 🟡 → 🟢. Until
-      then `detect()` is precondition-only (no version verdict) and
-      `--auto` will not fire them blind.
+- [x] **CVE-2026-41651** — Pack2TheRoot: 🟡 PackageKit `InstallFiles`
+      TOCTOU. Ported from the public Vozec PoC; original disclosure by
+      Deutsche Telekom security. Userspace D-Bus LPE with high-
+      confidence `detect()` — reads PackageKit's version directly over
+      D-Bus and compares against the pinned fix release 1.3.5 (commit
+      `76cfb675`). Debian-family only (PoC's built-in `.deb` builder).
+      Adds an optional GLib/GIO build dependency, autodetected via
+      `pkg-config gio-2.0`; stub-compiles if absent.
+- [ ] **Verify all three (dirtydecrypt / fragnesia / pack2theroot)
+      on a vulnerable target**, pin remaining CVE fix commits, add
+      version-range tables, and promote 🟡 → 🟢. `--auto` auto-enables
+      `--active` so the probes give definitive verdicts; each
+      `detect()` runs in a fork-isolated child so one bad probe
+      cannot tear down the scan.
+
+**--auto accuracy work (landed 2026-05-22):**
+
+- [x] `--auto` auto-enables `--active`: per-module sentinel probes
+      run in `/tmp` / fork-isolated namespaces, so version-only
+      checks can no longer be fooled by silent distro backports.
+- [x] Per-module verdict table at scan time (VULNERABLE / patched /
+      precondition / indeterminate) instead of only printing the
+      `VULNERABLE` rows.
+- [x] Scan-end summary line counting each verdict class.
+- [x] Distro fingerprint (`ID` + `VERSION_ID` from `/etc/os-release`)
+      printed in the `--auto` banner alongside kernel + arch.
+- [x] Fork-isolated `detect()` calls — a SIGILL/SIGSEGV in any one
+      module's probe is contained and the scan continues. Surfaced
+      while testing entrybleed's `prefetchnta` sweep under emulated
+      CPUs: exactly the failure mode the isolation now handles.
 
 **Carry-overs:**
 
-- [ ] **CVE-2026-41651** — Pack2TheRoot (PackageKit daemon userspace
-      LPE; cross-distro). Candidate — userspace LPE in the pwnkit vein.
 - [ ] Anything we ourselves disclose — bundled AFTER upstream patch
       ships (responsible-disclosure-first)
 

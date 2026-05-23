@@ -46,5 +46,6 @@ void skeletonkey_register_sudoedit_editor(void);
 void skeletonkey_register_vmwgfx(void);
 void skeletonkey_register_dirtydecrypt(void);
 void skeletonkey_register_fragnesia(void);
+void skeletonkey_register_pack2theroot(void);
 
 #endif /* SKELETONKEY_REGISTRY_H */

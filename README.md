@@ -2,11 +2,11 @@
 
 [![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Modules](https://img.shields.io/badge/modules-28%20verified%20%2B%202%20ported-brightgreen.svg)](CVES.md)
+[![Modules](https://img.shields.io/badge/modules-28%20verified%20%2B%203%20ported-brightgreen.svg)](CVES.md)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
 > **One curated binary. 28 verified Linux LPE exploits, 2016 → 2026
-> (+2 ported-but-unverified). Detection rules in the box. One command
+> (+3 ported-but-unverified). Detection rules in the box. One command
 > picks the safest one and runs it.**
 
 ```bash
@@ -44,14 +44,14 @@ for every CVE in the bundle — same project for red and blue teams.
 ## Corpus at a glance
 
 **28 verified modules** spanning the 2016 → 2026 LPE timeline, plus
-**2 ported-but-unverified** modules (`dirtydecrypt`, `fragnesia` —
-see note below):
+**3 ported-but-unverified** modules (`dirtydecrypt`, `fragnesia`,
+`pack2theroot` — see note below):
 
 | Tier | Count | What it means |
 |---|---|---|
 | 🟢 Full chain | **14** | Lands root (or its canonical capability) end-to-end. No per-kernel offsets needed. |
 | 🟡 Primitive | **14** | Fires the kernel primitive + grooms the slab + records a witness. Default returns `EXPLOIT_FAIL` honestly. Pass `--full-chain` to engage the shared `modprobe_path` finisher (needs offsets — see [`docs/OFFSETS.md`](docs/OFFSETS.md)). |
-| ⚪ Ported, unverified | **2** | `dirtydecrypt` + `fragnesia`, ported from public V12 PoCs. Built and registered, but **not yet validated on a vulnerable kernel** — `detect()` is precondition-only and `--auto` will not fire them blind. Excluded from the 28-module verified counts above. |
+| ⚪ Ported, unverified | **3** | `dirtydecrypt`, `fragnesia`, `pack2theroot`. Built and registered, but **not yet validated end-to-end** — for the page-cache pair `detect()` is precondition-only; for `pack2theroot` the fix release IS pinned (high-confidence verdict). `--auto` auto-enables `--active` so the probes turn into definitive verdicts on a vulnerable host. Excluded from the 28-module verified counts above. |
 
 **🟢 Modules that land root on a vulnerable host:**
 copy_fail family ×5 · dirty_pipe · dirty_cow · pwnkit · overlayfs
@@ -65,10 +65,14 @@ nf_tables · nft_set_uaf · nft_fwd_dup · nft_payload ·
 netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
 **⚪ Ported-but-unverified (not in the counts above):**
-dirtydecrypt (CVE-2026-31635) · fragnesia (CVE-2026-46300) — ported
-from public V12 PoCs, **not yet VM-validated**. Self-contained
-page-cache writes (no `--full-chain` finisher); `detect()` is
-precondition-only because the CVE fix commits are not yet pinned.
+dirtydecrypt (CVE-2026-31635) · fragnesia (CVE-2026-46300) ·
+pack2theroot (CVE-2026-41651) — ported from public PoCs, **not yet
+VM-validated**. The two page-cache writes (dirtydecrypt, fragnesia)
+have precondition-only `detect()` because the CVE fix commits are not
+yet pinned in the modules. `pack2theroot` is a userspace D-Bus
+PackageKit TOCTOU; its fix release (PackageKit 1.3.5, commit
+`76cfb675`) is pinned and `detect()` reads the daemon's version over
+D-Bus — high-confidence verdict.
 
 See [`CVES.md`](CVES.md) for per-module CVE, kernel range, and
 detection status.
@@ -106,12 +110,17 @@ $ id
 uid=1000(kara) gid=1000(kara) groups=1000(kara)
 
 $ skeletonkey --auto --i-know
-[*] auto: host=demo kernel=5.15.0-56-generic arch=x86_64
-[*] auto: scanning 30 modules for vulnerabilities...
+[*] auto: host=demo distro=ubuntu/24.04 kernel=5.15.0-56-generic arch=x86_64
+[*] auto: active probes enabled — brief /tmp file touches and fork-isolated namespace probes
+[*] auto: scanning 31 modules for vulnerabilities...
 [+] auto: dirty_pipe             VULNERABLE (safety rank 90)
 [+] auto: cgroup_release_agent   VULNERABLE (safety rank 98)
 [+] auto: pwnkit                 VULNERABLE (safety rank 100)
+[ ] auto: copy_fail              patched or not applicable
+[ ] auto: nf_tables              precondition not met
+...
 
+[*] auto: scan summary — 3 vulnerable, 21 patched/n.a., 7 precondition-fail, 0 indeterminate
 [*] auto: 3 vulnerable modules found. Safest is 'pwnkit' (rank 100).
 [*] auto: launching --exploit pwnkit...
 
@@ -172,14 +181,16 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.5.0 cut 2026-05-17.** 28 verified modules, plus 2
-ported-but-unverified (`dirtydecrypt`, `fragnesia`) added since the
-cut. All 30 build clean on Debian 13 (kernel 6.12) and refuse cleanly
-on patched hosts. Empirical end-to-end validation on a
-vulnerable-kernel VM matrix is the next roadmap item; until then, the
-corpus is best understood as "compiles + detects + structurally
-correct + honest on failure" — and the two ported modules have not
-been run against a vulnerable kernel at all.
+**v0.5.0 cut 2026-05-17.** 28 verified modules, plus 3
+ported-but-unverified (`dirtydecrypt`, `fragnesia`, `pack2theroot`)
+added since the cut. All 31 build clean on Debian 13 (kernel 6.12)
+and refuse cleanly on patched hosts. `--auto` now auto-enables
+`--active` and runs each `detect()` in a fork-isolated child so one
+crashing probe cannot tear down the scan. Empirical end-to-end
+validation on a vulnerable-target VM matrix is the next roadmap item;
+until then, the corpus is best understood as "compiles + detects +
+structurally correct + honest on failure" — and the three ported
+modules have not been run against a vulnerable target at all.
 
 See [`ROADMAP.md`](ROADMAP.md) for the next planned modules and
 infrastructure work.

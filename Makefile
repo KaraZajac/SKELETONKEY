@@ -152,17 +152,39 @@ FGN_DIR  := modules/fragnesia_cve_2026_46300
 FGN_SRCS := $(FGN_DIR)/skeletonkey_modules.c
 FGN_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(FGN_SRCS))
 
+# Family: pack2theroot (CVE-2026-41651) — PackageKit TOCTOU userspace LPE.
+# Needs GLib/GIO for D-Bus; the build autodetects via `pkg-config gio-2.0`.
+# When absent (e.g. no libglib2.0-dev on the build host), the module
+# compiles as a stub that returns PRECOND_FAIL with a hint to install
+# the dev package and rebuild.
+P2TR_DIR  := modules/pack2theroot_cve_2026_41651
+P2TR_SRCS := $(P2TR_DIR)/skeletonkey_modules.c
+P2TR_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(P2TR_SRCS))
+
+P2TR_GIO_OK := $(shell pkg-config --exists gio-2.0 2>/dev/null && echo 1 || echo 0)
+ifeq ($(P2TR_GIO_OK),1)
+  P2TR_CFLAGS := $(shell pkg-config --cflags gio-2.0) -DPACK2TR_HAVE_GIO
+  P2TR_LIBS   := $(shell pkg-config --libs gio-2.0)
+else
+  P2TR_CFLAGS :=
+  P2TR_LIBS   :=
+endif
+
+# Per-object CFLAGS for the pack2theroot translation unit (GLib include
+# paths). Target-specific vars are scoped to this object's recipe.
+$(P2TR_OBJS): CFLAGS += $(P2TR_CFLAGS)
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) $(DDC_OBJS) $(FGN_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) $(OVL_OBJS) $(CR4_OBJS) $(DCOW_OBJS) $(PTM_OBJS) $(NXC_OBJS) $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS)
 
 .PHONY: all clean debug static help
 
 all: $(BIN)
 
 $(BIN): $(ALL_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
 
 # Generic compile: any .c → corresponding .o under build/
 $(BUILD)/%.o: %.c
