@@ -1,0 +1,236 @@
+[
+  {
+    "cve": "CVE-2016-5195",
+    "module_dir": "dirty_cow_cve_2016_5195",
+    "cwe": "CWE-362",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2022-03-03"
+  },
+  {
+    "cve": "CVE-2017-7308",
+    "module_dir": "af_packet_cve_2017_7308",
+    "cwe": "CWE-681",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2019-13272",
+    "module_dir": "ptrace_traceme_cve_2019_13272",
+    "cwe": null,
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2021-12-10"
+  },
+  {
+    "cve": "CVE-2020-14386",
+    "module_dir": "af_packet2_cve_2020_14386",
+    "cwe": "CWE-250",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2021-22555",
+    "module_dir": "netfilter_xtcompat_cve_2021_22555",
+    "cwe": "CWE-787",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2025-10-06"
+  },
+  {
+    "cve": "CVE-2021-3156",
+    "module_dir": "sudo_samedit_cve_2021_3156",
+    "cwe": "CWE-193",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2022-04-06"
+  },
+  {
+    "cve": "CVE-2021-33909",
+    "module_dir": "sequoia_cve_2021_33909",
+    "cwe": "CWE-190",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2021-3493",
+    "module_dir": "overlayfs_cve_2021_3493",
+    "cwe": "CWE-270",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2022-10-20"
+  },
+  {
+    "cve": "CVE-2021-4034",
+    "module_dir": "pwnkit_cve_2021_4034",
+    "cwe": "CWE-787",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2022-06-27"
+  },
+  {
+    "cve": "CVE-2022-0185",
+    "module_dir": "fuse_legacy_cve_2022_0185",
+    "cwe": "CWE-190",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2024-08-21"
+  },
+  {
+    "cve": "CVE-2022-0492",
+    "module_dir": "cgroup_release_agent_cve_2022_0492",
+    "cwe": "CWE-287",
+    "attack_technique": "T1611",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2022-0847",
+    "module_dir": "dirty_pipe_cve_2022_0847",
+    "cwe": "CWE-665",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2022-04-25"
+  },
+  {
+    "cve": "CVE-2022-25636",
+    "module_dir": "nft_fwd_dup_cve_2022_25636",
+    "cwe": "CWE-269",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2022-2588",
+    "module_dir": "cls_route4_cve_2022_2588",
+    "cwe": "CWE-416",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-0179",
+    "module_dir": "nft_payload_cve_2023_0179",
+    "cwe": "CWE-190",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-0386",
+    "module_dir": "overlayfs_setuid_cve_2023_0386",
+    "cwe": "CWE-282",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2025-06-17"
+  },
+  {
+    "cve": "CVE-2023-0458",
+    "module_dir": "entrybleed_cve_2023_0458",
+    "cwe": "CWE-476",
+    "attack_technique": "T1082",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-2008",
+    "module_dir": "vmwgfx_cve_2023_2008",
+    "cwe": "CWE-129",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-22809",
+    "module_dir": "sudoedit_editor_cve_2023_22809",
+    "cwe": "CWE-269",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-32233",
+    "module_dir": "nft_set_uaf_cve_2023_32233",
+    "cwe": "CWE-416",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-3269",
+    "module_dir": "stackrot_cve_2023_3269",
+    "cwe": "CWE-416",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2023-4622",
+    "module_dir": "af_unix_gc_cve_2023_4622",
+    "cwe": "CWE-416",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2024-1086",
+    "module_dir": "nf_tables_cve_2024_1086",
+    "cwe": "CWE-416",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": true,
+    "kev_date_added": "2024-05-30"
+  },
+  {
+    "cve": "CVE-2026-31635",
+    "module_dir": "dirtydecrypt_cve_2026_31635",
+    "cwe": "CWE-130",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2026-41651",
+    "module_dir": "pack2theroot_cve_2026_41651",
+    "cwe": "CWE-367",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2026-46300",
+    "module_dir": "fragnesia_cve_2026_46300",
+    "cwe": null,
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  }
+]

@@ -20,7 +20,8 @@ BUILD   := build
 BIN     := skeletonkey
 
 # core/
-CORE_SRCS := core/registry.c core/kernel_range.c core/offsets.c core/finisher.c core/host.c
+CORE_SRCS := core/registry.c core/kernel_range.c core/offsets.c core/finisher.c \
+             core/host.c core/cve_metadata.c
 CORE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRCS))
 
 # Register-every-module helper. Lives in its own translation unit so

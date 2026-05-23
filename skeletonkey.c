@@ -19,6 +19,7 @@
 #include "core/registry.h"
 #include "core/offsets.h"
 #include "core/host.h"
+#include "core/cve_metadata.h"
 
 #include <time.h>
 #include <sys/utsname.h>
@@ -179,6 +180,36 @@ static void emit_module_json(const struct skeletonkey_module *m, bool include_ru
         m->detect_sigma  ? "true" : "false",
         m->detect_yara   ? "true" : "false",
         m->detect_falco  ? "true" : "false");
+
+    /* CVE-keyed triage metadata (CWE, ATT&CK, KEV). Sourced from CISA
+     * + NVD via tools/refresh-cve-metadata.py; lookup is O(corpus). */
+    const struct cve_metadata *md = cve_metadata_lookup(m->cve);
+    if (md) {
+        char *cwe   = json_escape(md->cwe);
+        char *tech  = json_escape(md->attack_technique);
+        char *sub   = json_escape(md->attack_subtechnique);
+        char *kdate = json_escape(md->kev_date_added);
+        fprintf(stdout,
+            ",\"triage\":{\"cwe\":%s%s%s,"
+            "\"attack_technique\":%s%s%s,"
+            "\"attack_subtechnique\":%s%s%s,"
+            "\"in_kev\":%s,"
+            "\"kev_date_added\":\"%s\"}",
+            cwe   ? "\"" : "", cwe   ? cwe   : "null", cwe   ? "\"" : "",
+            tech  ? "\"" : "", tech  ? tech  : "null", tech  ? "\"" : "",
+            sub   ? "\"" : "", sub   ? sub   : "null", sub   ? "\"" : "",
+            md->in_kev ? "true" : "false",
+            kdate ? kdate : "");
+        free(cwe); free(tech); free(sub); free(kdate);
+    }
+
+    /* Per-module OPSEC notes — telemetry footprint of this exploit. */
+    if (m->opsec_notes) {
+        char *op = json_escape(m->opsec_notes);
+        fprintf(stdout, ",\"opsec_notes\":\"%s\"", op ? op : "");
+        free(op);
+    }
+
     if (include_rules) {
         /* Embed the actual rule text. Useful for --module-info. */
         char *aud = json_escape(m->detect_auditd);
@@ -210,14 +241,17 @@ static int cmd_list(const struct skeletonkey_ctx *ctx)
         fprintf(stdout, "]}\n");
         return 0;
     }
-    fprintf(stdout, "%-20s %-18s %-25s %s\n",
-            "NAME", "CVE", "FAMILY", "SUMMARY");
-    fprintf(stdout, "%-20s %-18s %-25s %s\n",
-            "----", "---", "------", "-------");
+    fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
+            "NAME", "CVE", "KEV", "FAMILY", "SUMMARY");
+    fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
+            "----", "---", "---", "------", "-------");
     for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
-        fprintf(stdout, "%-20s %-18s %-25s %s\n",
-                m->name, m->cve, m->family, m->summary);
+        const struct cve_metadata *md = cve_metadata_lookup(m->cve);
+        fprintf(stdout, "%-20s %-18s %-3s %-25s %s\n",
+                m->name, m->cve,
+                (md && md->in_kev) ? "★"  : "",
+                m->family, m->summary);
     }
     return 0;
 }
@@ -567,6 +601,26 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
     fprintf(stdout, "family:        %s\n", m->family);
     fprintf(stdout, "kernel_range:  %s\n", m->kernel_range);
     fprintf(stdout, "summary:       %s\n", m->summary);
+
+    /* Triage metadata sourced from CISA KEV + NVD (lookup keyed by
+     * m->cve). Only printed when present; mapping for older or
+     * recently-disclosed CVEs may be partial. */
+    const struct cve_metadata *md = cve_metadata_lookup(m->cve);
+    if (md) {
+        if (md->cwe)
+            fprintf(stdout, "cwe:           %s\n", md->cwe);
+        if (md->attack_technique)
+            fprintf(stdout, "att&ck:        %s%s%s\n",
+                md->attack_technique,
+                md->attack_subtechnique ? " / " : "",
+                md->attack_subtechnique ? md->attack_subtechnique : "");
+        if (md->in_kev)
+            fprintf(stdout, "in CISA KEV:   YES (added %s)\n",
+                md->kev_date_added);
+        else
+            fprintf(stdout, "in CISA KEV:   no\n");
+    }
+
     fprintf(stdout, "operations:    %s%s%s%s\n",
         m->detect   ? "detect "   : "",
         m->exploit  ? "exploit "  : "",
@@ -577,6 +631,10 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
         m->detect_sigma  ? "sigma "  : "",
         m->detect_yara   ? "yara "   : "",
         m->detect_falco  ? "falco "  : "");
+
+    if (m->opsec_notes) {
+        fprintf(stdout, "\n--- opsec notes ---\n%s\n", m->opsec_notes);
+    }
     if (m->detect_auditd) {
         fprintf(stdout, "\n--- auditd rules ---\n%s", m->detect_auditd);
     }

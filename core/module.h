@@ -104,6 +104,21 @@ struct skeletonkey_module {
     const char *detect_sigma;    /* sigma YAML content */
     const char *detect_yara;     /* yara rules content */
     const char *detect_falco;    /* falco rules content */
+
+    /* Operational-security notes — telemetry footprint THIS specific
+     * exploit leaves behind. The inverse of detect_auditd/yara/falco
+     * above (the rules catch what these notes describe). Free-form
+     * prose, conventionally listing: dmesg lines triggered, auditd
+     * events, file artifacts created/modified, persistence side-
+     * effects, recommended cleanup. Per-module (not per-CVE) because
+     * different exploits for the same bug can leave different
+     * footprints. NULL if no analysis written yet.
+     *
+     * NB: ATT&CK / CWE / KEV metadata is properties of the CVE itself
+     * (independent of exploit technique) and lives in
+     * core/cve_metadata.{h,c} — looked up by CVE id, refreshed via
+     * tools/refresh-cve-metadata.py. */
+    const char *opsec_notes;
 };
 
 #endif /* SKELETONKEY_MODULE_H */
