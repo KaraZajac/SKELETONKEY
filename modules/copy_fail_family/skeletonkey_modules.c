@@ -17,6 +17,7 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+#include "../../core/host.h"
 
 #include "src/common.h"
 #include "src/copyfail.h"
@@ -41,6 +42,29 @@ static void apply_ctx(const struct skeletonkey_ctx *ctx)
     dirtyfail_assume_yes    = ctx->authorized;
     /* dirtyfail_no_revert is intentionally not driven from ctx —
      * it's a debug knob; default stays off. */
+}
+
+/* Bridge-level userns precondition. The 4 dirty_frag siblings + the
+ * GCM variant all reach the bug via XFRM-ESP / AF_RXRPC paths gated on
+ * unprivileged user-namespace creation (the inner DIRTYFAIL detect
+ * checks for it too, but doing it here gives the dispatcher one
+ * testable point per module and short-circuits the heavier
+ * inner-detect work when the gate is closed). copy_fail itself uses
+ * AF_ALG which doesn't strictly need userns, so it bypasses this
+ * gate — its inner detect still confirms the primitive empirically. */
+static skeletonkey_result_t cff_check_userns(const char *modname,
+                                             const struct skeletonkey_ctx *ctx)
+{
+    if (ctx->host && !ctx->host->unprivileged_userns_allowed) {
+        if (!ctx->json)
+            fprintf(stderr, "[i] %s: unprivileged user namespaces are "
+                "disabled (host fingerprint) — XFRM/RxRPC variant "
+                "unreachable here%s\n", modname,
+                ctx->host->apparmor_restrict_userns
+                    ? "; AppArmor restriction is on" : "");
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+    return SKELETONKEY_OK;
 }
 
 /* ----- Family-wide --mitigate / --cleanup -----
@@ -154,6 +178,8 @@ const struct skeletonkey_module copy_fail_module = {
 static skeletonkey_result_t copy_fail_gcm_detect_wrap(const struct skeletonkey_ctx *ctx)
 {
     apply_ctx(ctx);
+    skeletonkey_result_t pre = cff_check_userns("copy_fail_gcm", ctx);
+    if (pre != SKELETONKEY_OK) return pre;
     return (skeletonkey_result_t)copyfail_gcm_detect();
 }
 
@@ -184,6 +210,8 @@ const struct skeletonkey_module copy_fail_gcm_module = {
 static skeletonkey_result_t dirty_frag_esp_detect_wrap(const struct skeletonkey_ctx *ctx)
 {
     apply_ctx(ctx);
+    skeletonkey_result_t pre = cff_check_userns("dirty_frag_esp", ctx);
+    if (pre != SKELETONKEY_OK) return pre;
     return (skeletonkey_result_t)dirtyfrag_esp_detect();
 }
 
@@ -214,6 +242,8 @@ const struct skeletonkey_module dirty_frag_esp_module = {
 static skeletonkey_result_t dirty_frag_esp6_detect_wrap(const struct skeletonkey_ctx *ctx)
 {
     apply_ctx(ctx);
+    skeletonkey_result_t pre = cff_check_userns("dirty_frag_esp6", ctx);
+    if (pre != SKELETONKEY_OK) return pre;
     return (skeletonkey_result_t)dirtyfrag_esp6_detect();
 }
 
@@ -244,6 +274,8 @@ const struct skeletonkey_module dirty_frag_esp6_module = {
 static skeletonkey_result_t dirty_frag_rxrpc_detect_wrap(const struct skeletonkey_ctx *ctx)
 {
     apply_ctx(ctx);
+    skeletonkey_result_t pre = cff_check_userns("dirty_frag_rxrpc", ctx);
+    if (pre != SKELETONKEY_OK) return pre;
     return (skeletonkey_result_t)dirtyfrag_rxrpc_detect();
 }
 

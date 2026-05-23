@@ -51,6 +51,10 @@ extern const struct skeletonkey_module nft_payload_module;
 extern const struct skeletonkey_module stackrot_module;
 extern const struct skeletonkey_module sequoia_module;
 extern const struct skeletonkey_module vmwgfx_module;
+extern const struct skeletonkey_module copy_fail_gcm_module;
+extern const struct skeletonkey_module dirty_frag_esp_module;
+extern const struct skeletonkey_module dirty_frag_esp6_module;
+extern const struct skeletonkey_module dirty_frag_rxrpc_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -337,6 +341,30 @@ static void run_all(void)
 
 	run_one("stackrot: kernel 4.4 predates 6.1 → OK",
 		&stackrot_module, &h_kernel_4_4, SKELETONKEY_OK);
+
+	/* ── copy_fail_family bridge userns gate ─────────────────────
+	 * The 4 dirty_frag siblings + the GCM variant all reach the
+	 * bug via XFRM-ESP / AF_RXRPC paths gated on unprivileged
+	 * user-namespace creation. Bridge-layer precondition fires
+	 * before delegating to the inner DIRTYFAIL detect. copy_fail
+	 * itself uses AF_ALG (no userns needed) and bypasses the
+	 * gate — its detect would proceed to the inner active probe. */
+
+	run_one("copy_fail_gcm: userns_allowed=false → PRECOND_FAIL",
+		&copy_fail_gcm_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	run_one("dirty_frag_esp: userns_allowed=false → PRECOND_FAIL",
+		&dirty_frag_esp_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	run_one("dirty_frag_esp6: userns_allowed=false → PRECOND_FAIL",
+		&dirty_frag_esp6_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
+
+	run_one("dirty_frag_rxrpc: userns_allowed=false → PRECOND_FAIL",
+		&dirty_frag_rxrpc_module, &h_kernel_5_14_no_userns,
+		SKELETONKEY_PRECOND_FAIL);
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");
