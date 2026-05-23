@@ -276,15 +276,23 @@ static int cmd_list(const struct skeletonkey_ctx *ctx)
             "NAME", "CVE", "KEV", "VFY", "FAMILY", "SUMMARY");
     fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
             "----", "---", "---", "---", "------", "-------");
+    size_t n_kev = 0, n_vfy = 0;
     for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
         const struct cve_metadata *md = cve_metadata_lookup(m->cve);
+        bool in_kev = md && md->in_kev;
+        bool verified = verifications_module_has_match(m->name);
+        if (in_kev)   n_kev++;
+        if (verified) n_vfy++;
         fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
                 m->name, m->cve,
-                (md && md->in_kev) ? "★"  : "",
-                verifications_module_has_match(m->name) ? "✓" : "",
+                in_kev   ? "★" : "",
+                verified ? "✓" : "",
                 m->family, m->summary);
     }
+    fprintf(stdout, "\n%zu modules registered · %zu in CISA KEV (★) · "
+                    "%zu empirically verified in real VMs (✓)\n",
+            n, n_kev, n_vfy);
     return 0;
 }
 

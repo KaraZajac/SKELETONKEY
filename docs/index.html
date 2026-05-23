@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SKELETONKEY — Linux LPE corpus with SOC-ready detection</title>
-<meta name="description" content="One binary. 31 Linux privilege-escalation modules from 2016 to 2026. 10 of 26 CVEs in CISA's Known Exploited Vulnerabilities catalog. 119 detection rules across auditd/sigma/yara/falco. MITRE ATT&CK and CWE annotated. --explain gives operator briefings.">
-<meta property="og:title" content="SKELETONKEY — Linux LPE corpus with SOC-ready detection">
-<meta property="og:description" content="31 Linux LPE modules (10 KEV). 119 detection rules. ATT&CK + CWE + OPSEC annotated. --explain in one command.">
+<title>SKELETONKEY — Linux LPE corpus, VM-verified, SOC-ready detection</title>
+<meta name="description" content="One binary. 31 Linux privilege-escalation modules from 2016 to 2026. 22 of 26 CVEs empirically verified in real Linux VMs. 10 KEV-listed. 119 detection rules across auditd/sigma/yara/falco. MITRE ATT&CK and CWE annotated. --explain gives operator briefings.">
+<meta property="og:title" content="SKELETONKEY — Linux LPE corpus, VM-verified">
+<meta property="og:description" content="31 Linux LPE modules; 22 of 26 CVEs empirically verified in real VMs. 119 detection rules. ATT&CK + CWE + KEV annotated.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://karazajac.github.io/SKELETONKEY/">
 <meta property="og:image" content="https://karazajac.github.io/SKELETONKEY/og.png">
@@ -62,8 +62,9 @@
       <span class="display-wordmark">SKELETONKEY</span>
     </h1>
     <p class="hero-tag">
-      One binary. <strong>31 Linux LPE modules</strong> from
-      2016 to 2026. SOC-ready detection rules in four SIEM formats.
+      One binary. <strong>31 Linux LPE modules</strong> from 2016 to 2026.
+      <strong>22 of 26 CVEs empirically verified</strong> against real
+      Linux kernels in VMs. SOC-ready detection rules in four SIEM formats.
       MITRE ATT&amp;CK + CWE + CISA KEV annotated.
       <span class="hero-tag-pop">--explain gives a one-page operator briefing per CVE.</span>
     </p>
@@ -81,9 +82,9 @@
 
     <div class="stats-row" id="stats-row">
       <div class="stat-chip"><span class="num" data-target="31">0</span><span>modules</span></div>
+      <div class="stat-chip stat-vfy"><span class="num" data-target="22">0</span><span>✓ VM-verified</span></div>
       <div class="stat-chip stat-kev"><span class="num" data-target="10">0</span><span>★ in CISA KEV</span></div>
       <div class="stat-chip"><span class="num" data-target="119">0</span><span>detection rules</span></div>
-      <div class="stat-chip"><span class="num" data-target="88">0</span><span>tests passing</span></div>
     </div>
 
     <div class="cta-row">
@@ -286,15 +287,17 @@ uid=0(root) gid=0(root)</pre>
         </p>
       </article>
 
-      <article class="bento-card">
-        <div class="bento-icon">🧪</div>
-        <h3>Verifier ready</h3>
+      <article class="bento-card bento-vfy">
+        <div class="bento-icon">✓</div>
+        <h3>22 modules empirically verified</h3>
         <p>
-          <code>tools/verify-vm/</code> ships a Vagrant + Parallels
-          scaffold that spins up known-vulnerable kernels and runs
-          <code>--explain</code> per module — verification records as
-          JSON, ready to feed the per-module <code>verified_on</code>
-          table.
+          <code>tools/verify-vm/</code> spins up known-vulnerable
+          kernels (stock distro + mainline from kernel.ubuntu.com), runs
+          <code>--explain --active</code> per module, and records the
+          verdict. <strong>22 of 26 CVEs</strong> confirmed against
+          real Linux across Ubuntu 18.04 / 20.04 / 22.04 + Debian 11 / 12
+          + mainline 5.15.5 / 6.1.10. Records baked into the binary;
+          <code>--list</code> shows ✓ per module.
         </p>
       </article>
     </div>
@@ -508,22 +511,23 @@ uid=0(root) gid=0(root)</pre>
       <div class="tl-col tl-shipped">
         <div class="tl-tag">shipped</div>
         <ul>
+          <li><strong>22 of 26 CVEs empirically verified</strong> in real Linux VMs</li>
+          <li><strong>kernel.ubuntu.com/mainline/</strong> kernel fetch path — unblocks pin-not-in-apt targets</li>
+          <li>Per-module <code>verified_on[]</code> table baked into the binary</li>
           <li><strong>--explain mode</strong> — one-page operator briefing per CVE</li>
           <li><strong>OPSEC notes</strong> — per-module runtime footprint</li>
           <li><strong>CISA KEV + NVD CWE + MITRE ATT&amp;CK</strong> metadata pipeline</li>
           <li>119 detection rules across all four SIEM formats</li>
           <li><code>core/host.c</code> shared host-fingerprint refactor</li>
           <li>88-test harness (kernel_range + detect integration)</li>
-          <li>kernel_range drift detector → 9 corpus fixes</li>
-          <li>Vagrant + Parallels VM verification scaffold</li>
         </ul>
       </div>
       <div class="tl-col tl-active">
         <div class="tl-tag">in flight</div>
         <ul>
-          <li>Empirical end-to-end VM verification across the corpus</li>
-          <li>Per-module <code>verified_on[]</code> table fed by verifier records</li>
           <li>9 deferred TOO_TIGHT kernel-range drift findings</li>
+          <li>PackageKit provisioner so pack2theroot can hit the VULNERABLE path</li>
+          <li>Custom Vagrant box for kernels ≤ 4.4 (unblock dirty_cow verification)</li>
         </ul>
       </div>
       <div class="tl-col tl-next">

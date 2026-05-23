@@ -350,6 +350,8 @@ code, pre { font-family: var(--mono); font-size: 0.93em; }
 }
 .stat-chip.stat-kev { border-color: rgba(239, 68, 68, 0.3); }
 .stat-chip.stat-kev .num { color: var(--danger); }
+.stat-chip.stat-vfy { border-color: rgba(16, 185, 129, 0.4); }
+.stat-chip.stat-vfy .num { color: var(--accent-hot); }
 
 .cta-row {
   display: flex; gap: 0.75rem;
@@ -635,6 +637,9 @@ code, pre { font-family: var(--mono); font-size: 0.93em; }
 .bento-card.bento-kev { border-color: rgba(239, 68, 68, 0.3); }
 .bento-card.bento-kev .bento-icon { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
 .bento-card.bento-kev:hover { border-color: var(--danger); box-shadow: 0 20px 60px -10px rgba(239, 68, 68, 0.2); }
+.bento-card.bento-vfy { border-color: rgba(16, 185, 129, 0.35); }
+.bento-card.bento-vfy .bento-icon { color: var(--accent-hot); background: rgba(16, 185, 129, 0.1); font-weight: 800; }
+.bento-card.bento-vfy:hover { border-color: var(--accent); box-shadow: 0 20px 60px -10px rgba(16, 185, 129, 0.25); }
 
 .bento-code {
   background: var(--bg-2);
