@@ -23,6 +23,11 @@ BIN     := skeletonkey
 CORE_SRCS := core/registry.c core/kernel_range.c core/offsets.c core/finisher.c core/host.c
 CORE_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CORE_SRCS))
 
+# Register-every-module helper. Lives in its own translation unit so
+# the kernel_range unit-test binary can link just CORE_OBJS without
+# pulling in every module symbol via registry_all.o.
+REGISTRY_ALL_OBJ := $(BUILD)/core/registry_all.o
+
 # Family: copy_fail_family
 # All DIRTYFAIL .c files contribute; skeletonkey_modules.c is the bridge.
 CFF_DIR  := modules/copy_fail_family
@@ -186,16 +191,26 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS)
 
-ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(MODULE_OBJS)
+ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 
-# Tests — `make test` builds and runs the detect() unit-test harness.
-# Links against the same module objects as the main binary minus the
-# top-level dispatcher (which provides main(); the test has its own).
+# Tests — `make test` builds and runs both unit-test binaries.
+#
+#   skeletonkey-test          — detect() integration tests against
+#                                synthetic host fingerprints. Links
+#                                the full module corpus.
+#   skeletonkey-test-kr       — pure unit tests for kernel_range +
+#                                host comparison helpers. Tiny binary
+#                                (core/ only); runs cross-platform.
 TEST_DIR  := tests
 TEST_SRCS := $(TEST_DIR)/test_detect.c
 TEST_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(TEST_SRCS))
 TEST_BIN  := skeletonkey-test
-TEST_ALL_OBJS := $(TEST_OBJS) $(CORE_OBJS) $(MODULE_OBJS)
+TEST_ALL_OBJS := $(TEST_OBJS) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
+
+TEST_KR_SRCS := $(TEST_DIR)/test_kernel_range.c
+TEST_KR_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(TEST_KR_SRCS))
+TEST_KR_BIN  := skeletonkey-test-kr
+TEST_KR_ALL_OBJS := $(TEST_KR_OBJS) $(CORE_OBJS)
 
 .PHONY: all clean debug static help test
 
@@ -207,8 +222,14 @@ $(BIN): $(ALL_OBJS)
 $(TEST_BIN): $(TEST_ALL_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
 
-test: $(TEST_BIN)
-	@echo "[*] running test suite ($(TEST_BIN))"
+$(TEST_KR_BIN): $(TEST_KR_ALL_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
+test: $(TEST_BIN) $(TEST_KR_BIN)
+	@echo "[*] running kernel_range unit tests ($(TEST_KR_BIN))"
+	./$(TEST_KR_BIN)
+	@echo
+	@echo "[*] running detect() integration tests ($(TEST_BIN))"
 	./$(TEST_BIN)
 
 # Generic compile: any .c → corresponding .o under build/
@@ -223,7 +244,7 @@ static: LDFLAGS += -static
 static: clean $(BIN)
 
 clean:
-	rm -rf $(BUILD) $(BIN) $(TEST_BIN)
+	rm -rf $(BUILD) $(BIN) $(TEST_BIN) $(TEST_KR_BIN)
 
 help:
 	@echo "Targets:"

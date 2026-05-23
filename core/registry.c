@@ -3,6 +3,11 @@
  *
  * Simple flat array. Resized in chunks of 16. We never expect more
  * than a few dozen modules, so this is fine.
+ *
+ * The canonical "register every family" enumeration lives in
+ * registry_all.c — kept separate so this file links into the
+ * standalone kernel_range unit-test binary without pulling in every
+ * module's symbol.
  */
 
 #include "registry.h"

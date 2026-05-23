@@ -1035,35 +1035,11 @@ static int cmd_one(const struct skeletonkey_module *m, const char *op,
 
 int main(int argc, char **argv)
 {
-    /* Bring up the module registry. As new families land, add their
-     * register_* call here. */
-    skeletonkey_register_copy_fail_family();
-    skeletonkey_register_dirty_pipe();
-    skeletonkey_register_entrybleed();
-    skeletonkey_register_pwnkit();
-    skeletonkey_register_nf_tables();
-    skeletonkey_register_overlayfs();
-    skeletonkey_register_cls_route4();
-    skeletonkey_register_dirty_cow();
-    skeletonkey_register_ptrace_traceme();
-    skeletonkey_register_netfilter_xtcompat();
-    skeletonkey_register_af_packet();
-    skeletonkey_register_fuse_legacy();
-    skeletonkey_register_stackrot();
-    skeletonkey_register_af_packet2();
-    skeletonkey_register_cgroup_release_agent();
-    skeletonkey_register_overlayfs_setuid();
-    skeletonkey_register_nft_set_uaf();
-    skeletonkey_register_af_unix_gc();
-    skeletonkey_register_nft_fwd_dup();
-    skeletonkey_register_nft_payload();
-    skeletonkey_register_sudo_samedit();
-    skeletonkey_register_sequoia();
-    skeletonkey_register_sudoedit_editor();
-    skeletonkey_register_vmwgfx();
-    skeletonkey_register_dirtydecrypt();
-    skeletonkey_register_fragnesia();
-    skeletonkey_register_pack2theroot();
+    /* Bring up the module registry. New module families register
+     * themselves via skeletonkey_register_all_modules() in
+     * core/registry.c — add the new register_*() call there so the
+     * test binary picks it up automatically. */
+    skeletonkey_register_all_modules();
 
     enum mode mode = MODE_SCAN;
     struct skeletonkey_ctx ctx = {0};

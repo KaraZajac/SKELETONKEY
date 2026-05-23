@@ -48,4 +48,11 @@ void skeletonkey_register_dirtydecrypt(void);
 void skeletonkey_register_fragnesia(void);
 void skeletonkey_register_pack2theroot(void);
 
+/* Call every skeletonkey_register_<family>() above in canonical order.
+ * Single source of truth so the main binary and the test binary stay
+ * in sync — adding a new module is one register_* declaration here
+ * and one call inside skeletonkey_register_all_modules() in
+ * core/registry.c (the test harness picks it up automatically). */
+void skeletonkey_register_all_modules(void);
+
 #endif /* SKELETONKEY_REGISTRY_H */

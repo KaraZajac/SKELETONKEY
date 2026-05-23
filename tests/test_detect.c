@@ -24,6 +24,7 @@
 
 #include "../core/module.h"
 #include "../core/host.h"
+#include "../core/registry.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,6 +63,23 @@ extern const struct skeletonkey_module pwnkit_module;
 static int g_pass = 0;
 static int g_fail = 0;
 
+/* Record which modules at least one test row touched, so the harness
+ * can print a "modules without direct coverage" warning at the end.
+ * Linear append + scan is fine; we have <50 modules. The list is
+ * static-sized at SKELETONKEY_MAX_TESTED_MODULES; bump if we ever
+ * exceed it. */
+#define SKELETONKEY_MAX_TESTED_MODULES 128
+static const char *g_tested_modules[SKELETONKEY_MAX_TESTED_MODULES];
+static size_t g_tested_count = 0;
+
+static void mark_tested(const char *name)
+{
+	for (size_t i = 0; i < g_tested_count; i++)
+		if (strcmp(g_tested_modules[i], name) == 0) return;
+	if (g_tested_count < SKELETONKEY_MAX_TESTED_MODULES)
+		g_tested_modules[g_tested_count++] = name;
+}
+
 static const char *result_str(skeletonkey_result_t r)
 {
 	switch (r) {
@@ -89,6 +107,7 @@ static void run_one(const char *test_name,
 	ctx.json = true;        /* silence per-module log lines */
 
 	skeletonkey_result_t got = m->detect(&ctx);
+	mark_tested(m->name);
 	if (got == want) {
 		printf("[+] PASS  %-40s  %s → %s\n",
 		       test_name, m->name, result_str(got));
@@ -101,6 +120,31 @@ static void run_one(const char *test_name,
 		g_fail++;
 	}
 }
+
+/* mk_host: derive a fingerprint from a base + a kernel override.
+ *
+ * The most common new-test shape is "I want fingerprint X but with a
+ * specific (major, minor, patch) — to nail a backport-boundary or
+ * predates-the-bug case". Doing this with a fresh struct literal each
+ * time obscures the *one* thing that's different. mk_host() does the
+ * copy + overlay, named release string included.
+ *
+ * Returns a struct VALUE so the caller stores it in a stack local and
+ * passes &h.  No heap. The release string is the caller's responsibility
+ * (we don't synthesize from numerics to avoid implying a real release
+ * naming convention). */
+#ifdef __linux__
+static struct skeletonkey_host
+mk_host(struct skeletonkey_host base, int major, int minor, int patch,
+        const char *release)
+{
+	base.kernel.major = major;
+	base.kernel.minor = minor;
+	base.kernel.patch = patch;
+	base.kernel.release = release;
+	return base;
+}
+#endif
 
 /* ── fingerprints ────────────────────────────────────────────────── */
 
@@ -486,6 +530,108 @@ static void run_all(void)
 	run_one("nft_payload: vuln kernel 5.14 + userns ok → VULNERABLE",
 		&nft_payload_module, &h_kernel_5_14_userns_ok,
 		SKELETONKEY_VULNERABLE);
+
+	/* ── drift-entry boundary coverage ────────────────────────────
+	 * These tests guard the kernel_patched_from entries added by the
+	 * tools/refresh-kernel-ranges.py drift batch (commit 8de46e2).
+	 * Each entry has a "just-below" + "exact" pair so a regression
+	 * that drops or off-by-ones the entry is caught immediately. */
+
+	/* af_unix_gc {6, 4, 13} — Debian forky stable backport. The bug is
+	 * reachable as a plain unprivileged user (AF_UNIX needs no caps and
+	 * no userns), so 6.4.12 returns VULNERABLE rather than
+	 * PRECOND_FAIL — the just-below-boundary verdict the table
+	 * decides. */
+	struct skeletonkey_host h_af_unix_6_4_12 =
+		mk_host(h_kernel_5_14_no_userns, 6, 4, 12, "6.4.12-test");
+	run_one("af_unix_gc: 6.4.12 (one below new entry) → VULNERABLE",
+		&af_unix_gc_module, &h_af_unix_6_4_12,
+		SKELETONKEY_VULNERABLE);
+
+	struct skeletonkey_host h_af_unix_6_4_13 =
+		mk_host(h_kernel_5_14_no_userns, 6, 4, 13, "6.4.13-test");
+	run_one("af_unix_gc: 6.4.13 (exact new entry) → OK via patch table",
+		&af_unix_gc_module, &h_af_unix_6_4_13,
+		SKELETONKEY_OK);
+
+	/* vmwgfx {5, 10, 127} — Debian bullseye stable backport. Below the
+	 * entry, detect proceeds past the version check and fails the
+	 * AF_VSOCK / /dev/dri probe in CI → PRECOND_FAIL. At the exact
+	 * entry, kernel_range_is_patched short-circuits → OK. */
+	struct skeletonkey_host h_vmwgfx_5_10_127 =
+		mk_host(h_kernel_5_14_no_userns, 5, 10, 127, "5.10.127-test");
+	run_one("vmwgfx: 5.10.127 (exact new entry) → OK via patch table",
+		&vmwgfx_module, &h_vmwgfx_5_10_127,
+		SKELETONKEY_OK);
+
+	/* nft_set_uaf {5, 10, 179} (harmonised from 5.10.180) — exact entry
+	 * patches via table. */
+	struct skeletonkey_host h_nft_set_5_10_179 =
+		mk_host(h_kernel_5_14_no_userns, 5, 10, 179, "5.10.179-test");
+	run_one("nft_set_uaf: 5.10.179 (harmonised entry) → OK via patch table",
+		&nft_set_uaf_module, &h_nft_set_5_10_179,
+		SKELETONKEY_OK);
+
+	/* nft_set_uaf {6, 1, 27} (harmonised from 6.1.28) — exact entry
+	 * patches via table. */
+	struct skeletonkey_host h_nft_set_6_1_27 =
+		mk_host(h_kernel_5_14_no_userns, 6, 1, 27, "6.1.27-test");
+	run_one("nft_set_uaf: 6.1.27 (harmonised entry) → OK via patch table",
+		&nft_set_uaf_module, &h_nft_set_6_1_27,
+		SKELETONKEY_OK);
+
+	/* nft_payload {5, 10, 162} (harmonised from 5.10.163) — exact entry. */
+	struct skeletonkey_host h_nft_payload_5_10_162 =
+		mk_host(h_kernel_5_14_no_userns, 5, 10, 162, "5.10.162-test");
+	run_one("nft_payload: 5.10.162 (harmonised entry) → OK via patch table",
+		&nft_payload_module, &h_nft_payload_5_10_162,
+		SKELETONKEY_OK);
+
+	/* nf_tables {5, 10, 209} (harmonised from 5.10.210) — exact entry. */
+	struct skeletonkey_host h_nf_tables_5_10_209 =
+		mk_host(h_kernel_5_14_no_userns, 5, 10, 209, "5.10.209-test");
+	run_one("nf_tables: 5.10.209 (harmonised entry) → OK via patch table",
+		&nf_tables_module, &h_nf_tables_5_10_209,
+		SKELETONKEY_OK);
+
+	/* ── coverage report ─────────────────────────────────────────
+	 * Iterate the runtime registry (populated by skeletonkey_register_*
+	 * calls in main()) and warn for any module that was not touched
+	 * by at least one run_one() row above. Doesn't fail CI — listing
+	 * is informational so we can grow coverage incrementally without
+	 * blocking the build. */
+	{
+		size_t n_reg = skeletonkey_module_count();
+		size_t missing = 0;
+		for (size_t i = 0; i < n_reg; i++) {
+			const struct skeletonkey_module *m =
+				skeletonkey_module_at(i);
+			if (!m) continue;
+			bool found = false;
+			for (size_t j = 0; j < g_tested_count; j++) {
+				if (strcmp(g_tested_modules[j], m->name) == 0) {
+					found = true; break;
+				}
+			}
+			if (!found) {
+				if (missing++ == 0) {
+					fprintf(stderr,
+					    "\n[i] coverage: module(s) without "
+					    "a direct detect() test row:\n");
+				}
+				fprintf(stderr, "       - %s\n", m->name);
+			}
+		}
+		if (missing) {
+			fprintf(stderr, "[i] coverage: total %zu module(s) "
+				"need test rows (registry has %zu, tests touched %zu)\n",
+				missing, n_reg, g_tested_count);
+		} else {
+			fprintf(stderr, "[i] coverage: every registered module "
+				"has at least one direct test row (%zu/%zu)\n",
+				g_tested_count, n_reg);
+		}
+	}
 #else
 	fprintf(stderr, "[i] non-Linux platform: detect() bodies are stubbed; "
 			"tests skipped (would tautologically pass).\n");
@@ -495,6 +641,12 @@ static void run_all(void)
 int main(void)
 {
 	fprintf(stderr, "=== SKELETONKEY detect() unit tests ===\n\n");
+
+	/* Populate the runtime registry so the post-run coverage report
+	 * can iterate every module the main binary would. Same call used
+	 * by skeletonkey.c main(). */
+	skeletonkey_register_all_modules();
+
 	run_all();
 	fprintf(stderr, "\n=== RESULTS: %d passed, %d failed ===\n",
 		g_pass, g_fail);
