@@ -32,7 +32,6 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 /* _GNU_SOURCE is passed via -D in the top-level Makefile; do not
  * redefine here (warning: redefined). */
@@ -42,6 +41,10 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"   /* used inside this block only */
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -406,6 +409,34 @@ static skeletonkey_result_t dirty_pipe_cleanup(const struct skeletonkey_ctx *ctx
     revert_passwd_page_cache();
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: splice() / F_GETPIPE_SZ / posix_fadvise() are
+ * Linux-only kernel surface; the Dirty Pipe primitive is structurally
+ * unreachable elsewhere. Stub out cleanly so the module still
+ * registers and `--list` / `--detect-rules` work on macOS/BSD dev
+ * boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] dirty_pipe: Linux-only module "
+                "(splice + PIPE_BUF_FLAG_CAN_MERGE) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t dirty_pipe_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] dirty_pipe: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t dirty_pipe_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 /* Embedded detection rules — keep the binary self-contained so
  * `skeletonkey --detect-rules --format=auditd` works without a separate

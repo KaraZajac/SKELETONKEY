@@ -43,15 +43,18 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
+#include <stdint.h>
+#include <stdatomic.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <pwd.h>
@@ -317,6 +320,34 @@ static skeletonkey_result_t dirty_cow_cleanup(const struct skeletonkey_ctx *ctx)
     revert_passwd_page_cache();
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: the Dirty COW primitive (writer thread via
+ * /proc/self/mem + madvise(MADV_DONTNEED)) is Linux-only kernel
+ * surface. Stub out cleanly so the module still registers and
+ * `--list` / `--detect-rules` work on macOS/BSD dev boxes — and so
+ * the top-level `make` actually completes there. */
+static skeletonkey_result_t dirty_cow_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] dirty_cow: Linux-only module "
+                "(/proc/self/mem + madvise race) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t dirty_cow_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] dirty_cow: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t dirty_cow_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 /* ---- Embedded detection rules ---- */
 

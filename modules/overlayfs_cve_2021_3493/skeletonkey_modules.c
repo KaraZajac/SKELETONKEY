@@ -37,13 +37,16 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mount.h>
@@ -445,6 +448,28 @@ fail_workdir:
     rmdir(workdir);
     return SKELETONKEY_EXPLOIT_FAIL;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: overlayfs / unshare(CLONE_NEWUSER|CLONE_NEWNS) /
+ * setxattr("security.capability") are all Linux-only. Stub out so the
+ * module still registers and the top-level `make` completes on
+ * macOS/BSD dev boxes. */
+static skeletonkey_result_t overlayfs_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] overlayfs: Linux-only module "
+                "(Ubuntu userns-overlayfs) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t overlayfs_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] overlayfs: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 /* ----- Embedded detection rules ----- */
 

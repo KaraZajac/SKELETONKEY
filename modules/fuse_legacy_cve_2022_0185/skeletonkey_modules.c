@@ -59,15 +59,20 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
-#include <unistd.h>
 #include <sched.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -378,7 +383,6 @@ struct fuse_arb_ctx {
     bool    trigger_armed;
 };
 
-#ifdef __linux__
 static int fuse_arb_write(uintptr_t kaddr, const void *buf, size_t len,
                           void *ctx_void)
 {
@@ -504,15 +508,6 @@ static int fuse_arb_write(uintptr_t kaddr, const void *buf, size_t len,
             (unsigned long)kaddr);
     return 0;
 }
-#else
-static int fuse_arb_write(uintptr_t kaddr, const void *buf, size_t len,
-                          void *ctx_void)
-{
-    (void)kaddr; (void)buf; (void)len; (void)ctx_void;
-    fprintf(stderr, "[-] fuse_arb_write: linux-only primitive\n");
-    return -1;
-}
-#endif /* __linux__ */
 
 /* ------------------------------------------------------------------ */
 /* exploit                                                             */
@@ -732,7 +727,6 @@ static skeletonkey_result_t fuse_legacy_exploit(const struct skeletonkey_ctx *ct
      * runs because the arb_write primitive re-fires the trigger and
      * needs the live spray.
      * --------------------------------------------------------------- */
-#ifdef __linux__
     if (ctx->full_chain) {
         if (!ctx->json) {
             fprintf(stderr, "[*] fuse_legacy: --full-chain requested — resolving "
@@ -792,7 +786,6 @@ static skeletonkey_result_t fuse_legacy_exploit(const struct skeletonkey_ctx *ct
         }
         return SKELETONKEY_EXPLOIT_FAIL;
     }
-#endif /* __linux__ */
 
     /* Clean up our IPC queues and mapping. The kernel slab state
      * after the overflow may be unstable; we exit cleanly on success
@@ -825,6 +818,28 @@ static skeletonkey_result_t fuse_legacy_exploit(const struct skeletonkey_ctx *ct
                     "not wired — see source for the missing offsets.\n");
     return SKELETONKEY_EXPLOIT_FAIL;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: fsopen/fsconfig + userns+mountns clone are
+ * Linux-only kernel surface. Stub out cleanly so the module still
+ * registers and `--list` / `--detect-rules` work on macOS/BSD dev
+ * boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t fuse_legacy_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] fuse_legacy: Linux-only module "
+                "(fsopen + fsconfig + userns mount) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t fuse_legacy_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] fuse_legacy: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 /* ------------------------------------------------------------------ */
 /* embedded detection rules                                            */

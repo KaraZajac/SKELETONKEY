@@ -40,14 +40,17 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
+#include <stdint.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
@@ -370,6 +373,32 @@ static skeletonkey_result_t overlayfs_setuid_cleanup(const struct skeletonkey_ct
     if (system("rm -rf /tmp/skeletonkey-ovlsu-* 2>/dev/null") != 0) { /* harmless */ }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: overlayfs copy-up / unshare(CLONE_NEWUSER|CLONE_NEWNS)
+ * / mount("overlay", ...) are Linux-only. Stub out so the module still
+ * registers and the top-level `make` completes on macOS/BSD dev boxes. */
+static skeletonkey_result_t overlayfs_setuid_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] overlayfs_setuid: Linux-only module "
+                "(overlayfs setuid copy-up) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t overlayfs_setuid_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] overlayfs_setuid: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t overlayfs_setuid_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 static const char overlayfs_setuid_auditd[] =
     "# overlayfs setuid copy-up (CVE-2023-0386) — auditd detection rules\n"

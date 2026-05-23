@@ -49,16 +49,20 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <sched.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -71,13 +75,10 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <arpa/inet.h>
-
-#ifdef __linux__
 #include <linux/netlink.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nf_tables.h>
-#endif
 
 /* ------------------------------------------------------------------
  * Kernel-range table
@@ -186,8 +187,6 @@ static skeletonkey_result_t nft_payload_detect(const struct skeletonkey_ctx *ctx
     }
     return SKELETONKEY_VULNERABLE;
 }
-
-#ifdef __linux__
 
 /* ------------------------------------------------------------------
  * userns + netns entry: become root in the new user_ns so subsequent
@@ -801,8 +800,6 @@ static int nft_payload_arb_write(uintptr_t kaddr, const void *buf, size_t len,
     return 0;
 }
 
-#endif /* __linux__ */
-
 /* ------------------------------------------------------------------
  * Exploit body.
  * ------------------------------------------------------------------ */
@@ -838,11 +835,6 @@ static skeletonkey_result_t nft_payload_exploit(const struct skeletonkey_ctx *ct
         }
     }
 
-#ifndef __linux__
-    (void)ctx;
-    fprintf(stderr, "[-] nft_payload: linux-only exploit; non-linux build\n");
-    return SKELETONKEY_PRECOND_FAIL;
-#else
     /* --- --full-chain path: resolve offsets in parent before doing
      * anything destructive. */
     if (ctx->full_chain) {
@@ -1074,7 +1066,6 @@ static skeletonkey_result_t nft_payload_exploit(const struct skeletonkey_ctx *ct
         fprintf(stderr, "[-] nft_payload: unexpected child rc=%d\n", rc);
     }
     return SKELETONKEY_EXPLOIT_FAIL;
-#endif /* __linux__ */
 }
 
 /* ------------------------------------------------------------------
@@ -1091,6 +1082,32 @@ static skeletonkey_result_t nft_payload_cleanup(const struct skeletonkey_ctx *ct
     }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: nf_tables / NETLINK_NETFILTER / SysV msg_msg
+ * groom — all Linux-only kernel surface. Stub out so the module still
+ * registers and the top-level `make` completes on macOS/BSD dev boxes. */
+static skeletonkey_result_t nft_payload_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] nft_payload: Linux-only module "
+                "(nf_tables regset OOB) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t nft_payload_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] nft_payload: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t nft_payload_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 /* ------------------------------------------------------------------
  * Detection rule corpus.

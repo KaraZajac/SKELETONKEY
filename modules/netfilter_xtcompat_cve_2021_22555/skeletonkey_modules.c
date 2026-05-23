@@ -58,16 +58,20 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
 #include "../../core/kernel_range.h"
 #include "../../core/offsets.h"
 #include "../../core/finisher.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sched.h>
@@ -76,8 +80,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
-#ifdef __linux__
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/syscall.h>
@@ -90,31 +92,6 @@
 #include <linux/netfilter_ipv4/ip_tables.h>
 #ifndef SOL_IP
 #define SOL_IP  0
-#endif
-#endif
-
-/* ---------- macOS / non-linux build stubs ---------------------------
- * SKELETONKEY modules are dev-built on macOS (clangd / syntax check) and
- * run-built on Linux. The Linux-only types and IPT_SO_SET_REPLACE
- * constants are absent on Darwin; stub them so the .c file compiles
- * cleanly under either toolchain. The actual exploit body is gated
- * by `#ifdef __linux__` at runtime entry. */
-#ifndef __linux__
-#define CLONE_NEWUSER       0x10000000
-#define CLONE_NEWNET        0x40000000
-#define IPPROTO_RAW         255
-#define SOL_IP              0
-#define IPT_SO_SET_REPLACE  64
-struct ipt_replace { char dummy; };
-__attribute__((unused)) static int    msgget(int a, int b)             { (void)a;(void)b; errno=ENOSYS; return -1; }
-__attribute__((unused)) static int    msgsnd(int a, const void *b, size_t c, int d) { (void)a;(void)b;(void)c;(void)d; errno=ENOSYS; return -1; }
-__attribute__((unused)) static ssize_t msgrcv(int a, void *b, size_t c, long d, int e) { (void)a;(void)b;(void)c;(void)d;(void)e; errno=ENOSYS; return -1; }
-__attribute__((unused)) static int    msgctl(int a, int b, void *c)    { (void)a;(void)b;(void)c; errno=ENOSYS; return -1; }
-#define IPC_PRIVATE   0
-#define IPC_CREAT     01000
-#define IPC_NOWAIT    04000
-#define IPC_RMID      0
-#define MSG_COPY      040000
 #endif
 
 /* ---- Kernel range ------------------------------------------------- */
@@ -201,8 +178,6 @@ static skeletonkey_result_t netfilter_xtcompat_detect(const struct skeletonkey_c
 }
 
 /* ---- Exploit: userns reach + trigger + groom ---------------------- */
-
-#ifdef __linux__
 
 /* Write uid_map and gid_map after unshare so we're root in userns.
  * This is the standard setgroups=deny pattern; without it the uid_map
@@ -471,8 +446,6 @@ static int xtcompat_fire_trigger(int *out_errno)
     return 0;
 }
 
-#endif /* __linux__ — close original primitive block */
-
 /* ---- Full-chain arb-write primitive --------------------------------
  *
  * Pattern (FALLBACK — see module top-comment): the xt_compat 4-byte OOB
@@ -508,8 +481,6 @@ static int xtcompat_fire_trigger(int *out_errno)
  * file check empirically tells us if the write actually took. On a
  * patched kernel the trigger returns EINVAL on step 2 and arb_write
  * returns -1 without ever queueing the follow-up. */
-
-#ifdef __linux__
 
 struct xtcompat_arb_ctx {
     /* Spray queues kept hot across multiple arb_write calls. The
@@ -636,8 +607,6 @@ static int xtcompat_arb_write(uintptr_t kaddr,
     return 0;
 }
 
-#endif /* __linux__ */
-
 /* ---- Exploit driver ---------------------------------------------- */
 
 static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_ctx *ctx)
@@ -661,11 +630,6 @@ static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_
         return SKELETONKEY_PRECOND_FAIL;
     }
 
-#ifndef __linux__
-    fprintf(stderr, "[-] netfilter_xtcompat: linux-only exploit; non-linux build\n");
-    (void)ctx;
-    return SKELETONKEY_PRECOND_FAIL;
-#else
     /* Full-chain pre-check: resolve offsets before forking. If
      * modprobe_path can't be resolved, refuse early with the manual-
      * workflow help — no point doing the userns + spray + trigger
@@ -944,7 +908,6 @@ static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_
         fprintf(stderr, "[-] netfilter_xtcompat: child exit %d unexpected\n", rc);
         return SKELETONKEY_EXPLOIT_FAIL;
     }
-#endif /* __linux__ */
 }
 
 /* ---- Cleanup ----------------------------------------------------- */
@@ -962,6 +925,33 @@ static skeletonkey_result_t netfilter_xtcompat_cleanup(const struct skeletonkey_
     }
     return SKELETONKEY_OK;
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: setsockopt(IPT_SO_SET_REPLACE) + nfnetlink +
+ * userns is Linux-only kernel surface. Stub out cleanly so the module
+ * still registers and `--list` / `--detect-rules` work on macOS/BSD
+ * dev boxes — and so the top-level `make` actually completes there. */
+static skeletonkey_result_t netfilter_xtcompat_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] netfilter_xtcompat: Linux-only module "
+                "(xt_compat_target_to_user via SET_REPLACE) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t netfilter_xtcompat_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] netfilter_xtcompat: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t netfilter_xtcompat_cleanup(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    return SKELETONKEY_OK;
+}
+
+#endif /* __linux__ */
 
 /* ---- Detection rules --------------------------------------------- */
 

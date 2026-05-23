@@ -60,17 +60,22 @@
 
 #include "skeletonkey_modules.h"
 #include "../../core/registry.h"
-#include "../../core/kernel_range.h"
-#include "../../core/offsets.h"
-#include "../../core/finisher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
+#include <unistd.h>
+
+#ifdef __linux__
+
+#include "../../core/kernel_range.h"
+#include "../../core/offsets.h"
+#include "../../core/finisher.h"
+
 #include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <sched.h>
 #include <sys/wait.h>
 #include <sys/socket.h>
@@ -857,6 +862,30 @@ static skeletonkey_result_t af_packet_exploit(const struct skeletonkey_ctx *ctx)
     }
 #endif
 }
+
+#else  /* !__linux__ */
+
+/* Non-Linux dev builds: AF_PACKET + unshare(CLONE_NEWUSER|CLONE_NEWNET)
+ * + TPACKET_V3 ring are Linux-only kernel surface; the TPACKET_V3
+ * integer-overflow primitive is structurally unreachable elsewhere.
+ * Stub out cleanly so the module still registers and `--list` /
+ * `--detect-rules` work on macOS/BSD dev boxes — and so the top-level
+ * `make` actually completes there. */
+static skeletonkey_result_t af_packet_detect(const struct skeletonkey_ctx *ctx)
+{
+    if (!ctx->json)
+        fprintf(stderr, "[i] af_packet: Linux-only module "
+                "(AF_PACKET TPACKET_V3 + user_ns) — not applicable here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+static skeletonkey_result_t af_packet_exploit(const struct skeletonkey_ctx *ctx)
+{
+    (void)ctx;
+    fprintf(stderr, "[-] af_packet: Linux-only module — cannot run here\n");
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* __linux__ */
 
 static const char af_packet_auditd[] =
     "# AF_PACKET TPACKET_V3 LPE (CVE-2017-7308) — auditd detection rules\n"
