@@ -373,6 +373,7 @@ const struct skeletonkey_module cgroup_release_agent_module = {
     .detect_sigma   = cgroup_ra_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS), mount cgroup v1 at /tmp/skeletonkey-cgroup-mnt, write payload path to release_agent file at cgroup root, echo 1 to notify_on_release in subdir, add PID to cgroup.procs and exit. Payload at /tmp/skeletonkey-cgroup-payload.sh runs as init-namespace root when cgroup empties, dropping setuid /tmp/skeletonkey-cgroup-sh. Audit-visible via unshare + mount(cgroup) + open/write of release_agent. Cleanup callback removes /tmp/skeletonkey-cgroup-* and umounts.",
 };
 
 void skeletonkey_register_cgroup_release_agent(void)

@@ -632,6 +632,7 @@ const struct skeletonkey_module sudoedit_editor_module = {
     .detect_sigma   = sudoedit_editor_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "Sets EDITOR='<helper> -- /etc/passwd' so sudoedit splits on the literal '--' and treats /etc/passwd as an additional editable file. Compiled helper appends 'skel::0:0:skeletonkey:/root:/bin/sh' to the post-'--' target; sudoedit runs the helper as root and copies back. Artifacts: /tmp/skeletonkey-sudoedit-XXXXXX (helper.c, helper binary, optional passwd.before backup); /etc/passwd gets the new 'skel' entry; drops root via 'su skel'. Audit-visible via execve(/usr/bin/sudoedit) with EDITOR/VISUAL/SUDO_EDITOR containing the literal '--' token. No network. Cleanup callback restores /etc/passwd from backup (if root) or removes the 'skel' line, and removes the /tmp dir.",
 };
 
 void skeletonkey_register_sudoedit_editor(void)

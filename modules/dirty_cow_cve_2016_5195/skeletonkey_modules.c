@@ -404,6 +404,7 @@ const struct skeletonkey_module dirty_cow_module = {
     .detect_sigma   = dirty_cow_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "Two-thread race: Thread A loops pwrite(/proc/self/mem) at the user's UID offset in /etc/passwd; Thread B loops madvise(MADV_DONTNEED) on a PRIVATE mmap of /etc/passwd. Overwrites the UID field with all-zeros, then execlp('su') to claim root. UID offset is parsed from the file, not hardcoded. Audit-visible via open(/proc/self/mem) + write + madvise(MADV_DONTNEED) bursts + /etc/passwd page-cache poisoning. Cleanup callback calls posix_fadvise(POSIX_FADV_DONTNEED) on /etc/passwd and writes 3 to /proc/sys/vm/drop_caches to evict.",
 };
 
 void skeletonkey_register_dirty_cow(void)

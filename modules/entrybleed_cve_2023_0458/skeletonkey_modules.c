@@ -288,6 +288,7 @@ const struct skeletonkey_module entrybleed_module = {
     .detect_sigma   = entrybleed_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "Pure timing side-channel: rdtsc + prefetchnta sweep across the kernel high-half (~16 MiB) to time which 2 MiB page is mapped (entry_SYSCALL_64) and subtract its known offset from kbase. No syscalls fired, no file artifacts, no network. Classic auditd cannot see it; perf-counter EDR can flag a process spending unusual time in tight prefetchnta loops but classic rules will not. No cleanup needed.",
 };
 
 void skeletonkey_register_entrybleed(void)

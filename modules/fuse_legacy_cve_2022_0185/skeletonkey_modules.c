@@ -885,6 +885,7 @@ const struct skeletonkey_module fuse_legacy_module = {
     .detect_sigma   = fuse_legacy_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) for CAP_SYS_ADMIN; fsopen('cgroup2') + multiple fsconfig(FSCONFIG_SET_STRING, 'source', ...) calls to overflow legacy_parse_param's buffer. OOB write lands in kmalloc-4k adjacent to a msg_msg groom. No persistent files (msg_msg lives in the IPC namespace which disappears with the child). Dmesg silent on success; KASAN would show slab corruption if enabled. Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + fsopen + fsconfig pattern in a single process. No cleanup callback - IPC queues auto-drain on namespace exit.",
 };
 
 void skeletonkey_register_fuse_legacy(void)

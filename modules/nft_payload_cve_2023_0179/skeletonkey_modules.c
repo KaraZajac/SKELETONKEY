@@ -1153,6 +1153,7 @@ const struct skeletonkey_module nft_payload_module = {
     .detect_sigma   = nft_payload_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE + NEWCHAIN/LOCAL_OUT + NEWSET with oversized NFTA_SET_DESC + NEWSETELEM whose NFTA_PAYLOAD_SREG = attacker verdict code). On packet eval, regs->verdict.code is used unchecked as index into regs->data[] -> OOB. Dual-slab groom (kmalloc-1k + kmalloc-cg-96). Trigger via sendto(AF_INET, 127.0.0.1:31337). Writes /tmp/skeletonkey-nft_payload.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + msgsnd + socket(AF_INET)/sendto. Cleanup callback unlinks log.",
 };
 
 void skeletonkey_register_nft_payload(void)

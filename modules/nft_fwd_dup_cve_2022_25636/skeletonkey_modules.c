@@ -1042,6 +1042,7 @@ const struct skeletonkey_module nft_fwd_dup_module = {
     .detect_sigma   = nft_fwd_dup_sigma,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE netdev + NEWCHAIN HW_OFFLOAD + NEWRULE with 16 immediate(NF_ACCEPT) + 1 fwd). Offload hook walks the rule advertising num_actions+=16 but allocates only the original-actions size -> OOB write at entries[16] into adjacent kmalloc-512. msg_msg groom tagged 'SKELETONKEY_FWD'. Writes /tmp/skeletonkey-nft_fwd_dup.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + ioctl(SIOCGIFFLAGS/SIOCSIFFLAGS loopback) + msgsnd. Dmesg: KASAN or silent. Cleanup callback drains IPC queues and unlinks log.",
 };
 
 void skeletonkey_register_nft_fwd_dup(void)

@@ -974,6 +974,7 @@ const struct skeletonkey_module netfilter_xtcompat_module = {
     .detect_sigma   = NULL,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + setsockopt(SOL_IP, IPT_SO_SET_REPLACE) with a malformed xt_entry_target to trigger xt_compat_target_to_user 4-byte OOB into kmalloc-2k. msg_msg + sk_buff cross-cache groom. Writes /tmp/skeletonkey-xtcompat.log (breadcrumb). Audit-visible via unshare + setsockopt(IPT_SO_SET_REPLACE) + msgsnd/msgrcv + sendmmsg(sk_buff spray). Dmesg silent on success; KASAN oops if the groom misses. Cleanup callback unlinks the log; IPC auto-drains on namespace exit.",
 };
 
 void skeletonkey_register_netfilter_xtcompat(void)

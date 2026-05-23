@@ -247,6 +247,7 @@ const struct skeletonkey_module copy_fail_module = {
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = copy_fail_family_yara,
     .detect_falco   = copy_fail_family_falco,
+    .opsec_notes    = "Family-shared infrastructure (copy_fail, copy_fail_gcm, dirty_frag_esp/esp6, dirty_frag_rxrpc): all exploit a page-cache write primitive against /etc/passwd (UID flip to all-zeros) or install a persistent backdoor. Audit-visible via socket(AF_ALG) (a0=38), setsockopt(XFRM), AF_UNIX setup. Detection rules watch /etc/passwd, /etc/shadow, /etc/sudoers, /usr/bin/su for non-root writes. Family mitigation blacklists algif_aead/esp4/esp6/rxrpc and sets apparmor_restrict_unprivileged_userns=1. Cleanup evicts /etc/passwd from page cache and reverts mitigation conf.",
 };
 
 /* ----- copy_fail_gcm (variant, no CVE) ----- */
@@ -279,6 +280,7 @@ const struct skeletonkey_module copy_fail_gcm_module = {
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = copy_fail_family_yara,
     .detect_falco   = copy_fail_family_falco,
+    .opsec_notes    = "Family-shared infrastructure (copy_fail, copy_fail_gcm, dirty_frag_esp/esp6, dirty_frag_rxrpc): all exploit a page-cache write primitive against /etc/passwd (UID flip to all-zeros) or install a persistent backdoor. Audit-visible via socket(AF_ALG) (a0=38), setsockopt(XFRM), AF_UNIX setup. Detection rules watch /etc/passwd, /etc/shadow, /etc/sudoers, /usr/bin/su for non-root writes. Family mitigation blacklists algif_aead/esp4/esp6/rxrpc and sets apparmor_restrict_unprivileged_userns=1. Cleanup evicts /etc/passwd from page cache and reverts mitigation conf.",
 };
 
 /* ----- dirty_frag_esp (CVE-2026-43284 v4) ----- */
@@ -311,6 +313,7 @@ const struct skeletonkey_module dirty_frag_esp_module = {
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = copy_fail_family_yara,
     .detect_falco   = copy_fail_family_falco,
+    .opsec_notes    = "Family-shared infrastructure (copy_fail, copy_fail_gcm, dirty_frag_esp/esp6, dirty_frag_rxrpc): all exploit a page-cache write primitive against /etc/passwd (UID flip to all-zeros) or install a persistent backdoor. Audit-visible via socket(AF_ALG) (a0=38), setsockopt(XFRM), AF_UNIX setup. Detection rules watch /etc/passwd, /etc/shadow, /etc/sudoers, /usr/bin/su for non-root writes. Family mitigation blacklists algif_aead/esp4/esp6/rxrpc and sets apparmor_restrict_unprivileged_userns=1. Cleanup evicts /etc/passwd from page cache and reverts mitigation conf.",
 };
 
 /* ----- dirty_frag_esp6 (CVE-2026-43284 v6) ----- */
@@ -343,6 +346,7 @@ const struct skeletonkey_module dirty_frag_esp6_module = {
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = copy_fail_family_yara,
     .detect_falco   = copy_fail_family_falco,
+    .opsec_notes    = "Family-shared infrastructure (copy_fail, copy_fail_gcm, dirty_frag_esp/esp6, dirty_frag_rxrpc): all exploit a page-cache write primitive against /etc/passwd (UID flip to all-zeros) or install a persistent backdoor. Audit-visible via socket(AF_ALG) (a0=38), setsockopt(XFRM), AF_UNIX setup. Detection rules watch /etc/passwd, /etc/shadow, /etc/sudoers, /usr/bin/su for non-root writes. Family mitigation blacklists algif_aead/esp4/esp6/rxrpc and sets apparmor_restrict_unprivileged_userns=1. Cleanup evicts /etc/passwd from page cache and reverts mitigation conf.",
 };
 
 /* ----- dirty_frag_rxrpc (CVE-2026-43500) ----- */
@@ -375,6 +379,7 @@ const struct skeletonkey_module dirty_frag_rxrpc_module = {
     .detect_sigma   = copy_fail_family_sigma,
     .detect_yara    = copy_fail_family_yara,
     .detect_falco   = copy_fail_family_falco,
+    .opsec_notes    = "Family-shared infrastructure (copy_fail, copy_fail_gcm, dirty_frag_esp/esp6, dirty_frag_rxrpc): all exploit a page-cache write primitive against /etc/passwd (UID flip to all-zeros) or install a persistent backdoor. Audit-visible via socket(AF_ALG) (a0=38), setsockopt(XFRM), AF_UNIX setup. Detection rules watch /etc/passwd, /etc/shadow, /etc/sudoers, /usr/bin/su for non-root writes. Family mitigation blacklists algif_aead/esp4/esp6/rxrpc and sets apparmor_restrict_unprivileged_userns=1. Cleanup evicts /etc/passwd from page cache and reverts mitigation conf.",
 };
 
 /* ----- Family registration ----- */

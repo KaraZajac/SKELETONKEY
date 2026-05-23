@@ -331,6 +331,7 @@ const struct skeletonkey_module ptrace_traceme_module = {
     .detect_sigma   = NULL,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "Parent and child cooperate: child calls ptrace(PTRACE_TRACEME) (recording the parent's current credentials), then sleeps; parent execve's a setuid binary (pkexec or su) and elevates. The stale ptrace_link in the child still holds the old (non-root) credentials, so PTRACE_ATTACH succeeds against the now-root parent; the child injects shellcode at the parent's RIP via PTRACE_POKETEXT and detaches. Audit-visible via ptrace with a0=0 (PTRACE_TRACEME) closely followed by execve of a setuid binary in the parent process. No file artifacts; no persistent changes. No cleanup callback - the exploit execs /bin/sh and does not return.",
 };
 
 void skeletonkey_register_ptrace_traceme(void)

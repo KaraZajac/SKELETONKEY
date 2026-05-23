@@ -1005,6 +1005,7 @@ const struct skeletonkey_module dirtydecrypt_module = {
 	.detect_sigma   = dd_sigma,
 	.detect_yara    = dd_yara,
 	.detect_falco   = dd_falco,
+    .opsec_notes    = "Forked child runs unshare(CLONE_NEWUSER|CLONE_NEWNET); creates AF_RXRPC socket; builds an rxgk XDR token via add_key(SYS_add_key, 'rxrpc'); sets up loopback UDP server + rxrpc client; forges rxrpc DATA packets and fires 10000+ splice-based writes in a sliding window to overwrite a target setuid binary's page cache with a 120-byte ET_DYN ELF (setuid(0) + execve('/bin/sh')). Payload is never written to disk. Audit-visible via socket(AF_RXRPC) (a0=33) + add_key('rxrpc') + splice() bursts. Records target path to /tmp/skeletonkey-dirtydecrypt.target. Cleanup callback evicts candidate targets (/usr/bin/su et al) via drop_caches.",
 };
 
 void skeletonkey_register_dirtydecrypt(void)

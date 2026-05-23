@@ -847,6 +847,7 @@ const struct skeletonkey_module af_unix_gc_module = {
     .detect_sigma   = NULL,
     .detect_yara    = NULL,
     .detect_falco   = NULL,
+    .opsec_notes    = "Two-threaded race: Thread A creates socketpair(AF_UNIX) with SCM_RIGHTS cycle then close; Thread B drives independent SCM_RIGHTS traffic on a held pair. ~5s budget (30s with --full-chain). msg_msg kmalloc-512 spray tagged 'SKELETONKEYU'. Writes /tmp/skeletonkey-af_unix_gc.log with empirical stats. Audit-visible via socketpair(AF_UNIX) + sendmsg(SCM_RIGHTS) + msgsnd triple. Dmesg may show UAF KASAN if kernel vulnerable. Cleanup callback unlinks the log.",
 };
 
 void skeletonkey_register_af_unix_gc(void)
