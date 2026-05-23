@@ -37,7 +37,7 @@ for every CVE in the bundle — same project for red and blue teams.
 | Audience | What you get |
 |---|---|
 | **Red team / pentesters** | One tested binary. `--auto` ranks vulnerable modules by safety and runs the safest. Honest scope reporting — never claims root it didn't actually get. |
-| **Sysadmins** | `skeletonkey --scan` (no sudo needed) tells you which boxes still need patching. Fleet-scan tool included. JSON output for CI gates. |
+| **Sysadmins** | `skeletonkey --scan` (no sudo needed) tells you which boxes still need patching. Fleet-scan tool included. JSON output for CI gates ([schema](docs/JSON_SCHEMA.md)). |
 | **Blue team / SOC** | Auditd + sigma + yara + falco rules for every CVE. `--detect-rules --format=auditd \| sudo tee …` ships SIEM coverage in one command. |
 | **CTF / training** | Reproducible LPE environment with public CVEs across a 10-year timeline. Each module documents the bug, the trigger, and the fix. |
 
