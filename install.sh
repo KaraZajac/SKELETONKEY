@@ -19,7 +19,12 @@
 #   0 — installed successfully
 #   1 — error (unsupported arch, download failure, permission denied)
 
-set -euo pipefail
+# POSIX-friendly: -eu is universal, pipefail only on shells that
+# support it (bash, ksh, dash >= 0.5.12). Without pipefail the
+# installer still exits on the first hard error since every curl/
+# tar/install step is checked explicitly.
+set -eu
+(set -o pipefail) 2>/dev/null && set -o pipefail || true
 
 REPO="${SKELETONKEY_REPO:-KaraZajac/SKELETONKEY}"
 VERSION="${SKELETONKEY_VERSION:-latest}"
