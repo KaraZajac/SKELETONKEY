@@ -39,7 +39,7 @@
     Curated Linux LPE corpus.
   </text>
   <text x="80" y="278" font-family="'Inter',sans-serif" font-size="30" fill="#c5c5d3" font-weight="500">
-    Every year 2016 → 2026. 22 of 34 verified.
+    Every year 2016 → 2026. 27 of 34 verified.
   </text>
 
   <!-- stat chips -->
@@ -49,9 +49,9 @@
     <text x="28" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">39</text>
     <text x="64" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">modules</text>
 
-    <!-- 22 VM-verified -->
+    <!-- 27 VM-verified -->
     <rect x="206" y="0" width="240" height="58" rx="29" fill="#161628" stroke="#10b981" stroke-opacity="0.5"/>
-    <text x="234" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#34d399">22</text>
+    <text x="234" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#34d399">27</text>
     <text x="270" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">✓ VM-verified</text>
 
     <!-- 11 KEV -->

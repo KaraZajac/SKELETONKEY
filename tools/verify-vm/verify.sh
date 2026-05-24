@@ -139,19 +139,6 @@ if ! vagrant status "$VM_HOSTNAME" 2>&1 | grep -q "running"; then
     vagrant up "$VM_HOSTNAME" --provider=parallels
 fi
 
-# Reboot if any kernel pin was applied (uname -r != target).
-if [[ -n "$KERNEL_PKG" || -n "$MAINLINE" ]]; then
-    current_kver=$(vagrant ssh "$VM_HOSTNAME" -c "uname -r" 2>/dev/null | tr -d '\r')
-    target_match="$KERNEL_VER"
-    [[ -n "$MAINLINE" ]] && target_match="$MAINLINE"
-    if [[ "$current_kver" != *"$target_match"* ]]; then
-        echo "[*] current kernel $current_kver != target $target_match; rebooting..."
-        vagrant reload "$VM_HOSTNAME"
-        sleep 5
-    fi
-fi
-
-# Run the explain probe.
 LOG="$LOG_DIR/verify-${MODULE}-$(date +%Y%m%d-%H%M%S).log"
 
 # Force rsync the source tree in. vagrant up runs rsync automatically on
@@ -160,8 +147,46 @@ LOG="$LOG_DIR/verify-${MODULE}-$(date +%Y%m%d-%H%M%S).log"
 echo "[*] syncing source into VM..."
 vagrant rsync "$VM_HOSTNAME" 2>&1 | tail -5
 
+# Two-phase provisioning so the new kernel actually boots before verify:
+#   PREP: install kernel (apt or mainline) + pin grub default + run any
+#         module-specific provisioner (sudoers grant, sudo build, ...).
+#   ── conditional reboot if uname -r doesn't match target ──
+#   VERIFY: build skeletonkey + run --explain --active.
+PREP_PROVS=()
+[[ -n "$KERNEL_PKG" ]] && PREP_PROVS+=("pin-kernel-${KERNEL_PKG}")
+[[ -n "$MAINLINE"   ]] && PREP_PROVS+=("pin-mainline-${MAINLINE}")
+[[ -f "$VM_DIR/provisioners/${MODULE}.sh" ]] && PREP_PROVS+=("module-provision-${MODULE}")
+
+if [[ ${#PREP_PROVS[@]} -gt 0 ]]; then
+    echo "[*] running prep provisioners: ${PREP_PROVS[*]}"
+    vagrant provision "$VM_HOSTNAME" \
+        --provision-with "$(IFS=,; echo "${PREP_PROVS[*]}")" 2>&1 | tee "$LOG"
+fi
+
+# Reboot if a kernel pin moved us off the target. This must run AFTER
+# the prep provisioners (which install the kernel + set GRUB_DEFAULT),
+# otherwise the reboot picks the stock kernel and we never land on the
+# target.
+if [[ -n "$KERNEL_PKG" || -n "$MAINLINE" ]]; then
+    current_kver=$(vagrant ssh "$VM_HOSTNAME" -c "uname -r" 2>/dev/null | tr -d '\r')
+    target_match="$KERNEL_VER"
+    [[ -n "$MAINLINE" ]] && target_match="$MAINLINE"
+    if [[ "$current_kver" != *"$target_match"* ]]; then
+        echo "[*] current kernel $current_kver != target $target_match; rebooting..."
+        vagrant reload "$VM_HOSTNAME" 2>&1 | tee -a "$LOG"
+        sleep 5
+        post_kver=$(vagrant ssh "$VM_HOSTNAME" -c "uname -r" 2>/dev/null | tr -d '\r')
+        echo "[*] post-reboot kernel: $post_kver" | tee -a "$LOG"
+        if [[ "$post_kver" != *"$target_match"* ]]; then
+            echo "[!] reboot did NOT land on target kernel $target_match (got $post_kver)" | tee -a "$LOG"
+            echo "    detect() will still run, but verification is on the wrong kernel" | tee -a "$LOG"
+        fi
+    fi
+fi
+
 echo "[*] running verifier..."
-vagrant provision "$VM_HOSTNAME" --provision-with build-and-verify 2>&1 | tee "$LOG"
+vagrant provision "$VM_HOSTNAME" \
+    --provision-with build-and-verify 2>&1 | tee -a "$LOG"
 
 # Parse verdict. Vagrant prefixes provisioner output with the VM name
 # (e.g. "    skk-pwnkit: VERDICT: VULNERABLE"), so anchor on the VERDICT

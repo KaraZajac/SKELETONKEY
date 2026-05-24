@@ -1,3 +1,54 @@
+## SKELETONKEY v0.9.1 — VM verification sweep (22 → 27)
+
+Five more CVEs empirically confirmed end-to-end against real Linux VMs
+via `tools/verify-vm/`:
+
+| CVE | Module | Target environment |
+|---|---|---|
+| CVE-2019-14287 | `sudo_runas_neg1` | Ubuntu 18.04 (sudo 1.8.21p2 + `(ALL,!root)` grant via provisioner) |
+| CVE-2020-29661 | `tioscpgrp`      | Ubuntu 20.04 pinned to `5.4.0-26` (genuinely below the 5.4.85 backport) |
+| CVE-2024-26581 | `nft_pipapo`     | Ubuntu 22.04 + mainline `5.15.5` (below the 5.15.149 fix) |
+| CVE-2025-32463 | `sudo_chwoot`    | Ubuntu 22.04 + sudo `1.9.16p1` built from upstream into `/usr/local/bin` |
+| CVE-2025-6019  | `udisks_libblockdev` | Debian 12 + `udisks2` 2.9.4 + polkit allow rule for the verifier user |
+
+Footer goes from `22 empirically verified` → `27 empirically verified`.
+
+### Verifier infrastructure (the why)
+
+These verifications required real plumbing work that didn't exist before:
+
+- **Per-module provisioner hook** (`tools/verify-vm/provisioners/<module>.sh`)
+  — per-target setup that doesn't belong in the Vagrantfile (build sudo
+  from source, install udisks2 + polkit rule, drop a sudoers grant) now
+  lives in checked-in scripts that re-run idempotently on every verify.
+- **Two-phase provisioning** in `verify.sh` — prep provisioners run
+  first (install kernel, set grub default, drop polkit rule), then a
+  conditional reboot if `uname -r` doesn't match the target, then the
+  verifier proper. Fixes the silent-fail where the new kernel was
+  installed but the VM never actually rebooted into it.
+- **GRUB_DEFAULT pin in both `pin-kernel` and `pin-mainline` blocks** —
+  without this, grub's debian-version-compare picks the highest-sorting
+  vmlinuz as default; for downgrades (stock 4.15 → mainline 4.14.70, or
+  stock 5.4.0-169 → pinned 5.4.0-26) the wrong kernel won boot.
+- **Old-mainline URL fallback** — kernel.ubuntu.com puts ≤ 4.15 mainline
+  debs at `/v${KVER}/` not `/v${KVER}/amd64/`. Fallback handles both.
+
+### Honest residuals — 7 of 34 still unverified
+
+| Module | Why not verified |
+|---|---|
+| `vmwgfx` | needs a VMware guest; we're on Parallels |
+| `dirty_cow` | needs ≤ 4.4 kernel — older than any supported Vagrant box |
+| `mutagen_astronomy` | mainline 4.14.70 kernel-panics on Ubuntu 18.04 rootfs (`Failed to execute /init (error -8)` — kernel config mismatch). Genuinely needs CentOS 6 / Debian 7. |
+| `pintheft` | needs RDS kernel module loaded (Arch only autoloads it) |
+| `vsock_uaf` | needs `vsock_loopback` loaded — not autoloaded on common Vagrant boxes |
+| `dirtydecrypt`, `fragnesia` | need Linux 7.0 — not yet shipping as any distro kernel |
+
+All seven are flagged in `tools/verify-vm/targets.yaml` with `manual: true`
+and a rationale.
+
+---
+
 ## SKELETONKEY v0.9.0 — every year 2016 → 2026 now covered
 
 Five gap-filling modules. Closes the 2018 hole entirely and thickens

@@ -2,11 +2,11 @@
 
 [![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Modules](https://img.shields.io/badge/CVEs-22%20VM--verified%20%2F%2034-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
+[![Modules](https://img.shields.io/badge/CVEs-27%20VM--verified%20%2F%2034-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
 > **One curated binary. 39 Linux LPE modules covering 34 CVEs from 2016 → 2026.
-> Every year 2016 → 2026 covered. 22 confirmed end-to-end against real Linux
+> Every year 2016 → 2026 covered. 27 confirmed end-to-end against real Linux
 > VMs via `tools/verify-vm/`. Detection rules in the box. One command picks
 > the safest one and runs it.**
 
@@ -44,10 +44,11 @@ for every CVE in the bundle — same project for red and blue teams.
 
 ## Corpus at a glance
 
-**31 modules covering 26 distinct CVEs** across the 2016 → 2026 LPE
-timeline. **22 of the 26 CVEs have been empirically verified** in real
-Linux VMs via `tools/verify-vm/`; the 4 still-pending entries are
-blocked by their target environment, not by missing code.
+**39 modules covering 34 distinct CVEs** across the 2016 → 2026 LPE
+timeline. **27 of the 34 CVEs have been empirically verified** in real
+Linux VMs via `tools/verify-vm/`; the 7 still-pending entries are
+blocked by their target environment (legacy hypervisor, EOL kernel, or
+not-yet-shipped Linux 7.0), not by missing code.
 
 | Tier | Count | What it means |
 |---|---|---|
@@ -65,25 +66,27 @@ af_packet · af_packet2 · af_unix_gc · cls_route4 · fuse_legacy ·
 nf_tables · nft_set_uaf · nft_fwd_dup · nft_payload ·
 netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
-### Empirical verification (22 of 26 CVEs)
+### Empirical verification (27 of 34 CVEs)
 
 Records in [`docs/VERIFICATIONS.jsonl`](docs/VERIFICATIONS.jsonl) prove
 each verdict against a known-target VM. Coverage:
 
 | Distro / kernel | Modules verified |
 |---|---|
-| Ubuntu 18.04 (4.15.0) | af_packet · ptrace_traceme · sudo_samedit |
-| Ubuntu 20.04 (5.4 stock + 5.15 HWE) | af_packet2 · cls_route4 · nft_payload · overlayfs · pwnkit · sequoia |
-| Ubuntu 22.04 (5.15 stock + mainline 5.15.5 / 6.1.10) | af_unix_gc · dirty_pipe · entrybleed · nf_tables · nft_set_uaf · overlayfs_setuid · stackrot · sudoedit_editor |
+| Ubuntu 18.04 (4.15.0, sudo 1.8.21p2) | af_packet · ptrace_traceme · sudo_samedit · sudo_runas_neg1 |
+| Ubuntu 20.04 (5.4.0-26 pinned + 5.15 HWE) | af_packet2 · cls_route4 · nft_payload · overlayfs · pwnkit · sequoia · tioscpgrp |
+| Ubuntu 22.04 (5.15 stock + mainline 5.15.5 / 6.1.10) | af_unix_gc · dirty_pipe · entrybleed · nf_tables · nft_set_uaf · nft_pipapo · overlayfs_setuid · stackrot · sudoedit_editor · sudo_chwoot |
 | Debian 11 (5.10 stock) | cgroup_release_agent · fuse_legacy · netfilter_xtcompat · nft_fwd_dup |
-| Debian 12 (6.1 stock) | pack2theroot |
+| Debian 12 (6.1 stock + udisks2 / polkit allow rule) | pack2theroot · udisks_libblockdev |
 
-**Not yet verified (4):** `vmwgfx` (VMware-guest-only — no public
-Vagrant box), `dirty_cow` (needs ≤ 4.4 kernel — older than every
-supported box), `dirtydecrypt` & `fragnesia` (need Linux 7.0 — not
-shipping as any distro kernel yet). All four are flagged in
-[`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml) with
-rationale.
+**Not yet verified (7):** `vmwgfx` (VMware-guest-only — no public Vagrant
+box), `dirty_cow` (needs ≤ 4.4 kernel — older than every supported box),
+`mutagen_astronomy` (mainline 4.14.70 kernel-panics on Ubuntu 18.04
+rootfs — needs CentOS 6 / Debian 7), `pintheft` & `vsock_uaf` (kernel
+modules not loaded on common Vagrant boxes), `dirtydecrypt` & `fragnesia`
+(need Linux 7.0 — not shipping as any distro kernel yet). All seven are
+flagged in [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml)
+with rationale.
 
 See [`CVES.md`](CVES.md) for per-module CVE, kernel range, and
 detection status. Run `skeletonkey --module-info <name>` for the
@@ -205,7 +208,7 @@ year 2016 → 2026 now covered**. v0.9.0 adds 5 gap-fillers:
 (CVE-2024-50264 — Pwnie 2025 winner), `nft_pipapo` (CVE-2024-26581 —
 Notselwyn II). v0.8.0 added 3 (`sudo_chwoot`/CVE-2025-32463,
 `udisks_libblockdev`/CVE-2025-6019, `pintheft`/CVE-2026-43494).
-**22 empirically verified** against real Linux VMs (Ubuntu 18.04 /
+**27 empirically verified** against real Linux VMs (Ubuntu 18.04 /
 20.04 / 22.04 + Debian 11 / 12 + mainline kernels 5.15.5 / 6.1.10
 from kernel.ubuntu.com). 88-test unit harness + ASan/UBSan +
 clang-tidy on every push. 4 prebuilt binaries (x86_64 + arm64, each
@@ -221,7 +224,7 @@ Reliability + accuracy work in v0.7.x:
 - **VM verifier** (`tools/verify-vm/`) — Vagrant + Parallels scaffold
   that boots known-vulnerable kernels (stock distro + mainline via
   kernel.ubuntu.com), runs `--explain --active` per module, records
-  match/MISMATCH/PRECOND_FAIL as JSON. 22 modules confirmed end-to-end.
+  match/MISMATCH/PRECOND_FAIL as JSON. 27 modules confirmed end-to-end.
 - **`--explain <module>`** — single-page operator briefing: CVE / CWE
   / MITRE ATT&CK / CISA KEV status, host fingerprint, live detect()
   trace, OPSEC footprint, detection-rule coverage, verified-on

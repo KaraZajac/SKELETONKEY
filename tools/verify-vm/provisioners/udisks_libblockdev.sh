@@ -9,7 +9,7 @@
 set -e
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get install -y -qq udisks2 libblockdev-utils3 >/dev/null
+apt-get install -y -qq udisks2 libblockdev-utils2 >/dev/null
 
 mkdir -p /etc/polkit-1/rules.d
 cat >/etc/polkit-1/rules.d/49-skk-verify.rules <<'EOF'
@@ -31,4 +31,4 @@ sleep 2
 echo "[+] udisks2 status:"
 systemctl is-active udisks2.service
 echo "[+] udisks2 version: $(dpkg-query -W -f='${Version}' udisks2)"
-echo "[+] libblockdev version: $(dpkg-query -W -f='${Version}' libblockdev-utils3 2>/dev/null || dpkg-query -W -f='${Version}' libblockdev-utils2)"
+echo "[+] libblockdev version: $(dpkg-query -W -f='${Version}' libblockdev-utils2)"

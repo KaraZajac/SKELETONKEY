@@ -73,7 +73,19 @@ Vagrant.configure("2") do |c|
             echo "[+] installing #{pkg} (kernel target #{kver})"
             export DEBIAN_FRONTEND=noninteractive
             apt-get install -y -qq #{pkg}
-            echo "[i] kernel #{pkg} installed; reboot via 'vagrant reload'"
+            echo "[i] kernel #{pkg} installed"
+        fi
+        # Pin grub default to this specific kernel. Without it, grub
+        # picks the highest-versioned kernel installed (typically a
+        # stock HWE backport that's POST-fix), defeating the pin's
+        # purpose. Find the kver string by stripping linux-image-
+        # prefix from the pkg name.
+        PINNED_KVER="$(echo '#{pkg}' | sed 's/^linux-image-//')"
+        if [ -f "/boot/vmlinuz-${PINNED_KVER}" ]; then
+            GRUB_ENTRY="Advanced options for Ubuntu>Ubuntu, with Linux ${PINNED_KVER}"
+            sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\\"${GRUB_ENTRY}\\"|" /etc/default/grub
+            echo "[+] GRUB_DEFAULT pinned to: ${GRUB_ENTRY}"
+            update-grub 2>&1 | tail -3
         fi
       SHELL
     end
@@ -90,16 +102,24 @@ Vagrant.configure("2") do |c|
       m.vm.provision "shell", name: "pin-mainline-#{mainline}", inline: <<-SHELL
         set -e
         KVER="#{mainline}"
-        # already booted into it?
+        # already booted into it? Still fall through to grub-pin to
+        # make sure GRUB_DEFAULT stays correct even after stock kernel
+        # upgrades that might reorder grub entries.
+        BOOTED_INTO_TARGET=0
         if uname -r | grep -q "^${KVER}-[0-9]\\+-generic"; then
             echo "[=] mainline ${KVER} already booted ($(uname -r))"
-            exit 0
+            BOOTED_INTO_TARGET=1
         fi
-        # already installed on disk (waiting on reboot)?
+
+        # already installed on disk? Skip the download/install but
+        # still run the grub-pin block at the end.
+        SKIP_INSTALL=0
         if ls /boot/vmlinuz-${KVER}-* >/dev/null 2>&1; then
-            echo "[=] mainline ${KVER} already installed; needs reboot"
-            exit 0
+            echo "[=] mainline ${KVER} already installed on disk"
+            SKIP_INSTALL=1
         fi
+
+        if [ "$SKIP_INSTALL" -eq 0 ]; then
         echo "[+] fetching kernel.ubuntu.com mainline v${KVER}"
         # Newer mainline kernels live under /v${KVER}/amd64/; older ones
         # (≤ ~4.15) put debs at /v${KVER}/ directly. Try /amd64/ first;
@@ -131,6 +151,22 @@ Vagrant.configure("2") do |c|
         done
         export DEBIAN_FRONTEND=noninteractive
         dpkg -i *.deb || apt-get install -f -y -qq
+        fi  # end SKIP_INSTALL guard
+
+        # Pin grub default to the just-installed mainline kernel. Without
+        # this, grub's debian-version-compare picks the highest-sorting
+        # vmlinuz-* as default; for downgrades (e.g. stock 4.15 → mainline
+        # 4.14.70), the OLD kernel wins because 4.15 > 4.14 numerically.
+        MAINLINE_VMLINUZ=$(ls /boot/vmlinuz-${KVER}-* 2>/dev/null | head -1)
+        if [ -n "$MAINLINE_VMLINUZ" ]; then
+            MAINLINE_KVER=$(basename "$MAINLINE_VMLINUZ" | sed 's/^vmlinuz-//')
+            # The "Advanced options" submenu entry id is stable across
+            # update-grub runs as "gnulinux-advanced-<UUID>>gnulinux-<kver>-advanced-<UUID>".
+            # Easier: use the human menuentry path.
+            GRUB_ENTRY="Advanced options for Ubuntu>Ubuntu, with Linux ${MAINLINE_KVER}"
+            sed -i "s|^GRUB_DEFAULT=.*|GRUB_DEFAULT=\\"${GRUB_ENTRY}\\"|" /etc/default/grub
+            echo "[+] GRUB_DEFAULT pinned to: ${GRUB_ENTRY}"
+        fi
         update-grub 2>&1 | tail -3
         echo "[i] mainline ${KVER} installed; reboot via 'vagrant reload'"
       SHELL

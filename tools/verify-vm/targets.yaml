@@ -248,12 +248,12 @@ pintheft:
 # ── v0.9.0 additions (gap fillers 2018 / 2019 / 2020 / 2024) ──────
 
 mutagen_astronomy:
-  box: ubuntu1804             # stock 4.15.0-213 is post-fix; mainline 4.14.70 is one below the .71 fix
+  box: ""
   kernel_pkg: ""
-  mainline_version: "4.14.70"
-  kernel_version: "4.14.70"
-  expect_detect: VULNERABLE
-  notes: "CVE-2018-14634; Qualys Mutagen Astronomy. Mainline 4.14.70 sits one stable below the 4.14.71 backport. Old mainline kernels live at /v${KVER}/ directly (no /amd64/ subdir); Vagrantfile's pin-mainline provisioner falls back to the bare path."
+  kernel_version: ""
+  expect_detect: ""
+  manual: true
+  notes: "CVE-2018-14634; Qualys Mutagen Astronomy. No good Vagrant verification environment: stock Ubuntu 18.04 (4.15.0-213) returns detect()=VULNERABLE because the module's kernel_range table has no entry for the 4.15.x series (Ubuntu's HWE backports are not modeled), but the kernel IS actually patched — false-positive of the conservative module logic. Mainline 4.14.70 (target VULNERABLE kernel) panics on Ubuntu 18.04's rootfs with 'Failed to execute /init (error -8)' — kernel config mismatch (binfmt_elf as module rather than baked-in). Genuinely vulnerable verification needs a contemporary CentOS 6 / Debian 7 image with original-vintage kernel; deferred to custom-box workflow."
 
 sudo_runas_neg1:
   box: ubuntu1804             # ships sudo 1.8.21p2 (vulnerable; pre-1.8.28 fix)
@@ -279,7 +279,8 @@ vsock_uaf:
 
 nft_pipapo:
   box: ubuntu2204             # 5.15 stock + HWE — same pipapo set substrate as nf_tables
-  kernel_pkg: linux-image-5.15.0-43-generic
-  kernel_version: "5.15.0-43"
+  kernel_pkg: ""
+  mainline_version: "5.15.5"
+  kernel_version: "5.15.5"
   expect_detect: VULNERABLE
-  notes: "CVE-2024-26581; nft_pipapo destroy-race (Notselwyn II). Same Vagrant target as nf_tables works here — stock 5.15.0-43 is below the 5.15.149 backport. Userns gate must be open (sysctl kernel.unprivileged_userns_clone=1)."
+  notes: "CVE-2024-26581; nft_pipapo destroy-race (Notselwyn II). Same mainline 5.15.5 target as nf_tables works here — 5.15.5 is below the 5.15.149 backport. (Switched from apt-pinned 5.15.0-43 after that package was removed from Ubuntu repos.) Userns gate must be open (sysctl kernel.unprivileged_userns_clone=1)."
