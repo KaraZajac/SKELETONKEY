@@ -59,37 +59,21 @@ jobs:
             skeletonkey-${{ matrix.target }}
             skeletonkey-${{ matrix.target }}.sha256
 
-  # Portable static-musl builds. Run in Alpine (native musl +
+  # Portable static-musl x86_64 build. Runs in Alpine (native musl +
   # linux-headers) so the resulting binary works on every libc —
   # glibc 2.x of any version, musl, etc. This is what install.sh
-  # fetches by default (the dynamic binary above hits a glibc-
-  # version ceiling on older distros like Debian 12 / RHEL 8).
-  #
-  # x86_64-static runs on the regular x86_64 runner pool.
-  # arm64-static runs on GitHub's native ARM Linux runners
-  # (free for public repos as of 2024). Both produce statically-
-  # linked binaries that just need an executable Linux kernel of
-  # the right ABI.
-  build-static:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-static
-            runner: ubuntu-latest
-          - target: arm64-static
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    name: build (${{ matrix.target }} / musl)
+  # fetches by default for x86_64 hosts (the dynamic binary above
+  # hits a glibc-version ceiling on older distros like Debian 12 /
+  # RHEL 8).
+  build-static-x86_64:
+    runs-on: ubuntu-latest
+    name: build (x86_64-static / musl)
     container:
       image: alpine:latest
     steps:
       - uses: actions/checkout@v4
-
       - name: install build deps
-        run: |
-          apk add --no-cache build-base linux-headers tar
-
+        run: apk add --no-cache build-base linux-headers tar
       - name: build static (musl)
         run: |
           # MSG_COPY is a Linux-only SysV msg flag that glibc defines
@@ -99,21 +83,58 @@ jobs:
           make CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000" LDFLAGS=-static
           file skeletonkey
           ls -la skeletonkey
-
       - name: rename + checksum
         run: |
-          mv skeletonkey skeletonkey-${{ matrix.target }}
-          sha256sum skeletonkey-${{ matrix.target }} > skeletonkey-${{ matrix.target }}.sha256
-
+          mv skeletonkey skeletonkey-x86_64-static
+          sha256sum skeletonkey-x86_64-static > skeletonkey-x86_64-static.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: skeletonkey-${{ matrix.target }}
+          name: skeletonkey-x86_64-static
           path: |
-            skeletonkey-${{ matrix.target }}
-            skeletonkey-${{ matrix.target }}.sha256
+            skeletonkey-x86_64-static
+            skeletonkey-x86_64-static.sha256
+
+  # Portable static-musl arm64 build. Runs natively on GitHub's
+  # ubuntu-24.04-arm runner (free for public repos). Can't use the
+  # Alpine container trick here because "JavaScript Actions in Alpine
+  # containers are only supported on x64 Linux runners" — actions/
+  # checkout would fail. Instead we use musl-tools (Ubuntu's
+  # apt-installed musl-gcc wrapper) on the glibc-based runner; the
+  # produced binary is still statically linked against musl, just
+  # built outside an Alpine container.
+  build-static-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: build (arm64-static / musl)
+    steps:
+      - uses: actions/checkout@v4
+      - name: install musl + build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              musl-tools musl-dev linux-libc-dev build-essential
+      - name: build static (musl-gcc)
+        run: |
+          # musl-gcc wraps gcc with musl's libc + headers. -static is
+          # the whole point — same MSG_COPY define as the x86_64
+          # build since musl lacks the SysV msg flag.
+          make CC=musl-gcc \
+               CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000" \
+               LDFLAGS=-static
+          file skeletonkey
+          ls -la skeletonkey
+      - name: rename + checksum
+        run: |
+          mv skeletonkey skeletonkey-arm64-static
+          sha256sum skeletonkey-arm64-static > skeletonkey-arm64-static.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skeletonkey-arm64-static
+          path: |
+            skeletonkey-arm64-static
+            skeletonkey-arm64-static.sha256
 
   release:
-    needs: [build, build-static]
+    needs: [build, build-static-x86_64, build-static-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
