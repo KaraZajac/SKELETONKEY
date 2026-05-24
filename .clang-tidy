@@ -1,0 +1,24 @@
+# clang-tidy configuration for SKELETONKEY core/.
+#
+# Defaults are mostly fine. Two checks intentionally disabled:
+#
+#   clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling
+#     This check flags snprintf, fprintf, memset, strncpy, etc. as
+#     "insecure" and recommends the C11 Annex K _s variants
+#     (snprintf_s, memset_s, ...). Annex K is fundamentally not
+#     portable — glibc, musl, and MSVC all either don't implement
+#     it or implement it incompletely. snprintf is already bounds-
+#     checked; this is noise rather than signal in real C code.
+#     The Linux kernel uses these functions everywhere; so does
+#     every C project. Disabling.
+#
+#   bugprone-easily-swappable-parameters
+#     Flags every function taking 2+ same-typed parameters. False-
+#     positive heavy on small utility functions like
+#     skeletonkey_host_kernel_at_least(host, major, minor, patch)
+#     where the parameter order is documented and obvious. Not
+#     worth the noise.
+
+Checks: >
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -bugprone-easily-swappable-parameters
