@@ -77,6 +77,16 @@ const struct verification_record verifications[] = {
         .status        = "match",
     },
     {
+        .module        = "dirtydecrypt",
+        .verified_at   = "2026-05-24",
+        .host_kernel   = "6.19.7-061907-generic",
+        .host_distro   = "Ubuntu 22.04.3 LTS",
+        .vm_box        = "generic/ubuntu2204",
+        .expect_detect = "OK",
+        .actual_detect = "OK",
+        .status        = "match",
+    },
+    {
         .module        = "entrybleed",
         .verified_at   = "2026-05-23",
         .host_kernel   = "5.15.0-91-generic",

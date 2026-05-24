@@ -83,12 +83,12 @@ dirty_pipe:
   notes: "CVE-2022-0847; introduced 5.8, fixed 5.16.11 / 5.15.25. Ubuntu 22.04 ships 5.15.0-91-generic, where uname reports '5.15.0' (below the 5.15.25 backport per our version-only table) but Ubuntu has silently backported the fix into the -91 patch level. Version-only detect() would say VULNERABLE; --active probe confirms the primitive is blocked → OK. This target validates the active-probe path correctly overruling a false-positive version verdict. (Originally pointed at Ubuntu 20.04 + pinned 5.13.0-19, but that HWE kernel is no longer in 20.04's apt archive.)"
 
 dirtydecrypt:
-  box: debian12
-  kernel_pkg: ""              # only Linux 7.0+ has the bug — needs custom kernel
-  kernel_version: "7.0.0"
+  box: ubuntu2204
+  kernel_pkg: ""
+  mainline_version: "6.19.7"   # below the 7.0 introduction point → 'predates the bug' OK path
+  kernel_version: "6.19.7"
   expect_detect: OK
-  notes: "CVE-2026-31635; bug introduced in 7.0 rxgk path. NO mainline 7.0 distro shipping yet — Debian 12 will report OK (predates the bug). Verifying exploit() needs a hand-built 7.0-rc kernel."
-  manual_for_exploit_verify: true
+  notes: "CVE-2026-31635; rxgk RESPONSE-handling bug. Module's range table says fix lands at 7.0.0 mainline (commit a2567217) — meaning the bug only existed in 7.0-rcN pre-release. No shipping stable kernel is VULNERABLE. We verify the 'kernel predates rxgk code added in 7.0' OK path via mainline 6.19.7. To test VULNERABLE would require building from a 7.0-rcN tag pre-a2567217, deferred."
 
 entrybleed:
   box: ubuntu2204
@@ -98,12 +98,12 @@ entrybleed:
   notes: "CVE-2023-0458; side-channel applies to any KPTI-on Intel x86_64 host. Stock Ubuntu 22.04 will report VULNERABLE if meltdown sysfs shows 'Mitigation: PTI'."
 
 fragnesia:
-  box: debian12
+  box: ""
   kernel_pkg: ""
-  kernel_version: "7.0.0"
-  expect_detect: OK
-  notes: "CVE-2026-46300; XFRM ESP-in-TCP bug. Needs 7.0-rc; Debian 12 reports OK."
-  manual_for_exploit_verify: true
+  kernel_version: ""
+  expect_detect: ""
+  manual: true
+  notes: "CVE-2026-46300; XFRM ESP-in-TCP bug. Fix lands at 7.0.9. Verifying VULNERABLE needs a pre-fix 7.0.x kernel. Mainline 7.0.5 was tried via Ubuntu 22.04 + kernel.ubuntu.com — fails because the 7.0.5 kernel .debs depend on the t64-transition libs (libssl3t64, libelf1t64) which only exist on Ubuntu 24.04+ / Debian 13+. No Vagrant box with Parallels provider has those libs yet. dpkg --force-depends leaves the kernel image in iHR (broken) state with no /boot/vmlinuz deposited. Resolution: wait for a Parallels-supported ubuntu2404 / debian13 box, or build one locally."
 
 fuse_legacy:
   box: debian11

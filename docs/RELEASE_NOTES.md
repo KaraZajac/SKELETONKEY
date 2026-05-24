@@ -1,3 +1,20 @@
+## SKELETONKEY v0.9.2 — dirtydecrypt verified on mainline 6.19.7
+
+One more empirical verification: **CVE-2026-31635 dirtydecrypt** confirmed
+end-to-end on Ubuntu 22.04 + mainline 6.19.7. detect() correctly returns
+OK ("kernel predates the rxgk RESPONSE-handling code added in 7.0"). Footer
+goes 27 → 28.
+
+Attempted but deferred: **CVE-2026-46300 fragnesia**. Mainline 7.0.5 kernel
+.debs depend on `libssl3t64` / `libelf1t64` (the t64-transition libs
+introduced in Ubuntu 24.04 / Debian 13). No Vagrant box with a Parallels
+provider has those libs yet — `dpkg --force-depends` leaves the kernel
+package in `iHR` (broken) state with no `/boot/vmlinuz` deposited. Marked
+`manual: true` with rationale in `targets.yaml`. Resolvable when a
+Parallels-supported ubuntu2404 / debian13 box becomes available.
+
+---
+
 ## SKELETONKEY v0.9.1 — VM verification sweep (22 → 27)
 
 Five more CVEs empirically confirmed end-to-end against real Linux VMs

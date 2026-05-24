@@ -33,3 +33,4 @@
 {"module":"nft_pipapo","verified_at":"2026-05-24T03:27:10Z","host_kernel":"5.15.5-051505-generic","host_distro":"Ubuntu 22.04.3 LTS","vm_box":"generic/ubuntu2204","expect_detect":"VULNERABLE","actual_detect":"VULNERABLE","status":"match"}
 {"module":"sudo_runas_neg1","verified_at":"2026-05-24T03:29:18Z","host_kernel":"4.15.0-213-generic","host_distro":"Ubuntu 18.04.6 LTS","vm_box":"generic/ubuntu1804","expect_detect":"VULNERABLE","actual_detect":"VULNERABLE","status":"match"}
 {"module":"tioscpgrp","verified_at":"2026-05-24T03:31:08Z","host_kernel":"5.4.0-26-generic","host_distro":"Ubuntu 20.04.6 LTS","vm_box":"generic/ubuntu2004","expect_detect":"VULNERABLE","actual_detect":"VULNERABLE","status":"match"}
+{"module":"dirtydecrypt","verified_at":"2026-05-24T03:55:18Z","host_kernel":"6.19.7-061907-generic","host_distro":"Ubuntu 22.04.3 LTS","vm_box":"generic/ubuntu2204","expect_detect":"OK","actual_detect":"OK","status":"match"}

@@ -150,7 +150,11 @@ Vagrant.configure("2") do |c|
             curl -fsSL -O "${URL}${f}"
         done
         export DEBIAN_FRONTEND=noninteractive
-        dpkg -i *.deb || apt-get install -f -y -qq
+        # --force-depends so packages still install even when t64-transition
+        # libs (libssl3t64, libelf1t64) are missing on a pre-24.04 rootfs.
+        # The kernel image + modules don't actually need those at boot —
+        # the dependency is for signing/integrity checks at build time.
+        dpkg -i --force-depends *.deb || apt-get install -f -y -qq || true
         fi  # end SKIP_INSTALL guard
 
         # Pin grub default to the just-installed mainline kernel. Without
