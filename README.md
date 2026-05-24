@@ -133,7 +133,7 @@ uid=1000(kara) gid=1000(kara) groups=1000(kara)
 $ skeletonkey --auto --i-know
 [*] auto: host=demo distro=ubuntu/24.04 kernel=5.15.0-56-generic arch=x86_64
 [*] auto: active probes enabled — brief /tmp file touches and fork-isolated namespace probes
-[*] auto: scanning 31 modules for vulnerabilities...
+[*] auto: scanning 39 modules for vulnerabilities...
 [+] auto: dirty_pipe             VULNERABLE (safety rank 90)
 [+] auto: cgroup_release_agent   VULNERABLE (safety rank 98)
 [+] auto: pwnkit                 VULNERABLE (safety rank 100)
@@ -202,18 +202,19 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.0 cut 2026-05-24.** 39 modules across 34 CVEs — **every
-year 2016 → 2026 now covered**. v0.9.0 adds 5 gap-fillers:
-`mutagen_astronomy` (CVE-2018-14634 — closes 2018), `sudo_runas_neg1`
-(CVE-2019-14287), `tioscpgrp` (CVE-2020-29661), `vsock_uaf`
-(CVE-2024-50264 — Pwnie 2025 winner), `nft_pipapo` (CVE-2024-26581 —
-Notselwyn II). v0.8.0 added 3 (`sudo_chwoot`/CVE-2025-32463,
-`udisks_libblockdev`/CVE-2025-6019, `pintheft`/CVE-2026-43494).
+**v0.9.2 cut 2026-05-24.** 39 modules across 34 CVEs — **every
+year 2016 → 2026 now covered**. v0.9.0 added 5 gap-fillers
+(`mutagen_astronomy` / `sudo_runas_neg1` / `tioscpgrp` / `vsock_uaf` /
+`nft_pipapo`); v0.8.0 added 3 (`sudo_chwoot` / `udisks_libblockdev` /
+`pintheft`). v0.9.1 and v0.9.2 are verification-only sweeps that took
+the verified count from 22 → 28 by booting real vulnerable kernels
+(Ubuntu mainline 5.4.0-26, 5.15.5, 6.19.7 + provisioner-built sudo
+1.9.16p1 + Debian 12 + polkit allow rule for udisks).
 **28 empirically verified** against real Linux VMs (Ubuntu 18.04 /
-20.04 / 22.04 + Debian 11 / 12 + mainline kernels 5.15.5 / 6.1.10
-from kernel.ubuntu.com). 88-test unit harness + ASan/UBSan +
-clang-tidy on every push. 4 prebuilt binaries (x86_64 + arm64, each
-in dynamic + static-musl flavors).
+20.04 / 22.04 + Debian 11 / 12 + mainline kernels from
+kernel.ubuntu.com). 88-test unit harness + ASan/UBSan + clang-tidy on
+every push. 4 prebuilt binaries (x86_64 + arm64, each in dynamic +
+static-musl flavors).
 
 Reliability + accuracy work in v0.7.x:
 - Shared **host fingerprint** (`core/host.{h,c}`) populated once at
@@ -231,15 +232,19 @@ Reliability + accuracy work in v0.7.x:
   trace, OPSEC footprint, detection-rule coverage, verified-on
   records. Paste-into-ticket ready.
 - **CVE metadata pipeline** (`tools/refresh-cve-metadata.py`) — fetches
-  CISA KEV catalog + NVD CWE; 10 of 26 modules cover KEV-listed CVEs.
-- **119 detection rules** across auditd / sigma / yara / falco; one
+  CISA KEV catalog + NVD CWE; 10 of 34 modules cover KEV-listed CVEs.
+- **151 detection rules** across auditd / sigma / yara / falco; one
   command exports the corpus to your SIEM.
 - `--auto` upgrades: per-detect 15s timeout, fork-isolated detect +
   exploit, structured verdict table, scan summary, `--dry-run`.
 
-Not yet verified (4 of 26 CVEs): `vmwgfx` (VMware-guest only),
-`dirty_cow` (needs ≤ 4.4 kernel), `dirtydecrypt` + `fragnesia` (need
-Linux 7.0 — not shipping yet). Rationale in
+Not yet verified (6 of 34 CVEs): `vmwgfx` (VMware-guest only),
+`dirty_cow` (needs ≤ 4.4 kernel), `mutagen_astronomy` (mainline
+4.14.70 panics on Ubuntu 18.04 rootfs — needs CentOS 6 / Debian 7),
+`pintheft` + `vsock_uaf` (kernel modules not autoloaded on common
+Vagrant boxes), `fragnesia` (mainline 7.0.5 .debs need t64-transition
+libs from Ubuntu 24.04+ / Debian 13+; no Parallels-supported box has
+those yet). Rationale in
 [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml).
 
 See [`ROADMAP.md`](ROADMAP.md) for the next planned modules and

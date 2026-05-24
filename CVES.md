@@ -23,16 +23,17 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts:** 31 modules total — 28 verified (🟢 14 · 🟡 14) plus 3
-ported-but-unverified (`dirtydecrypt`, `fragnesia`, `pack2theroot` —
-see note below). 🔵 0 · ⚪ 0 planned-with-stub · 🔴 0. (One ⚪ row
-below — CVE-2026-31402 — is a *candidate* with no module, not counted
-as a module.)
+**Counts:** 39 modules total covering 34 CVEs; **28 of 34 CVEs
+verified end-to-end in real VMs** via `tools/verify-vm/`. 🔵 0 · ⚪ 0
+planned-with-stub · 🔴 0. (One ⚪ row below — CVE-2026-31402 — is a
+*candidate* with no module, not counted as a module.)
 
-> **Note on `dirtydecrypt` / `fragnesia` / `pack2theroot`:** all three
-> are ported from public PoCs. The **exploit bodies** are not yet
-> VM-verified end-to-end, so they're listed 🟡 but excluded from the
-> 28-module verified corpus.
+> **Note on unverified rows:** `vmwgfx` / `dirty_cow` /
+> `mutagen_astronomy` / `pintheft` / `vsock_uaf` / `fragnesia` are
+> blocked by their target environment (VMware-only, kernel < 4.4,
+> mainline panic, kmod not autoloaded, or t64-transition libs),
+> not by missing code. See
+> [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml).
 >
 > All three now have **pinned fix commits and version-based
 > `detect()`**:
