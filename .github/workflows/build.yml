@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly drift check against CISA KEV + Debian security tracker.
+    # Runs Monday 06:00 UTC; reports any new backports / KEV additions
+    # that haven't propagated into the corpus yet.
+    - cron: '0 6 * * 1'
 
 jobs:
   build:
@@ -66,6 +71,91 @@ jobs:
           sudo useradd -m -s /bin/bash skeletonkeyci 2>/dev/null || true
           sudo chown -R skeletonkeyci .
           sudo -u skeletonkeyci make test
+
+  # ASan + UBSan run. clang-only; catches memory bugs and undefined
+  # behaviour the regular test suite can't see. Runs on the same 88
+  # tests as the main matrix; failures here are real bugs even if
+  # the assertions all pass.
+  sanitizers:
+    runs-on: ubuntu-latest
+    name: sanitizers (ASan + UBSan)
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang make linux-libc-dev \
+            libglib2.0-dev pkg-config sudo
+      - name: build + test under sanitizers
+        env:
+          CC: clang
+          # AddressSanitizer + UndefinedBehaviorSanitizer. -O1 keeps
+          # backtraces meaningful while still exercising optimizer paths;
+          # -fno-omit-frame-pointer for ASan stack traces; halt-on-error
+          # so the first finding fails CI loudly rather than scrolling
+          # past silently.
+          CFLAGS: "-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64"
+          LDFLAGS: "-fsanitize=address,undefined"
+        run: |
+          sudo useradd -m -s /bin/bash skeletonkeyci 2>/dev/null || true
+          sudo chown -R skeletonkeyci .
+          sudo -u skeletonkeyci -E make test
+
+  # clang-tidy lint. Runs against core/ + skeletonkey.c (the files we
+  # control most tightly). Non-blocking for now — sets a baseline we
+  # can tighten incrementally. Module sources are excluded; many
+  # bundle published PoC code that we keep close to upstream style.
+  clang-tidy:
+    runs-on: ubuntu-latest
+    name: clang-tidy
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: install deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang clang-tidy linux-libc-dev libglib2.0-dev pkg-config
+      - name: lint core + dispatcher
+        run: |
+          clang-tidy core/*.c skeletonkey.c \
+            --warnings-as-errors='' \
+            -- -Icore -Imodules/copy_fail_family/src \
+               -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
+
+  # Drift check — runs the two refresh scripts in --check / drift mode
+  # against authoritative federal sources. Catches:
+  #   - New CISA KEV additions touching CVEs in our corpus
+  #   - New Debian security-tracker backport-version updates that move
+  #     the kernel_patched_from table thresholds
+  # Network-required (fetches kev.csv + Debian tracker JSON). Runs on
+  # the weekly cron + on-demand via workflow_dispatch. NOT gated on
+  # PRs because random PRs shouldn't fail on upstream feed drift.
+  drift-check:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: drift-check (CISA KEV + Debian tracker)
+    steps:
+      - uses: actions/checkout@v4
+      - name: cve_metadata drift
+        run: |
+          # Exits 1 if the federal data has drifted from our committed
+          # JSON. Open a PR with `tools/refresh-cve-metadata.py` output
+          # if this fires.
+          python3 tools/refresh-cve-metadata.py --check || {
+            echo "::warning::cve_metadata drift detected — run tools/refresh-cve-metadata.py and commit the result"
+            exit 1
+          }
+      - name: kernel_range drift
+        run: |
+          # Exits 1 if any module's kernel_patched_from table is
+          # MISSING or TOO_TIGHT versus Debian's tracker. INFO-only
+          # findings are fine.
+          python3 tools/refresh-kernel-ranges.py || {
+            echo "::warning::kernel_range drift detected — see tools/refresh-kernel-ranges.py output"
+            exit 1
+          }
 
   # Static build job: ensures the project links cleanly when -static is
   # requested. Useful for deployment to minimal containers / fleet scans
