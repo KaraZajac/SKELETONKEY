@@ -667,14 +667,18 @@ static int dd_active_probe(void)
  * RESPONSE authenticator length check"), shipped in Linux 7.0.
  *
  * The detect logic therefore is:
- *   - kernel < 7.0  → SKELETONKEY_OK (predates the bug)
- *   - kernel ≥ 7.0  → consult kernel_range; 7.0+ has the fix
- *   - --active     → empirical override (catches pre-fix 7.0-rc kernels
- *                    or weird distro rebuilds the version check missed)
+ *   - kernel < 6.16.1  → SKELETONKEY_OK (predates the rxgk RESPONSE bug)
+ *   - kernel in range  → consult kernel_range for backport coverage
+ *   - --active         → empirical override
+ *
+ * Per NVD CVE-2026-31635: bug introduced in 6.16.1 stable; vulnerable
+ * range is 6.16.1–6.18.22 + 6.19.0–6.19.12 + 7.0-rc1..rc7. Fixed at
+ * 6.18.23 backport, 6.19.13 backport, 7.0 stable.
  */
 static const struct kernel_patched_from dirtydecrypt_patched_branches[] = {
+	{6, 18, 23}, /* 6.18.x stable backport */
 	{6, 19, 13}, /* 6.19.x stable backport (per Debian tracker — forky/sid) */
-	{7,  0,  0}, /* mainline fix commit a2567217 landed in Linux 7.0 */
+	{7,  0,  0}, /* mainline fix landed before 7.0 stable */
 };
 static const struct kernel_range dirtydecrypt_range = {
 	.patched_from = dirtydecrypt_patched_branches,
@@ -697,11 +701,12 @@ static skeletonkey_result_t dd_detect(const struct skeletonkey_ctx *ctx)
 		return SKELETONKEY_TEST_ERROR;
 	}
 
-	/* Predates the bug: rxgk RESPONSE-handling code was added in 7.0. */
-	if (!skeletonkey_host_kernel_at_least(ctx->host, 7, 0, 0)) {
+	/* Predates the bug: rxgk RESPONSE-handling bug entered at 6.16.1
+	 * stable per NVD. Earlier 6.x kernels don't have the buggy code. */
+	if (!skeletonkey_host_kernel_at_least(ctx->host, 6, 16, 1)) {
 		if (!ctx->json)
 			fprintf(stderr, "[i] dirtydecrypt: kernel %s predates the rxgk "
-				"RESPONSE-handling code added in 7.0 — not applicable\n",
+				"RESPONSE bug introduced in 6.16.1 — not applicable\n",
 				v->release);
 		return SKELETONKEY_OK;
 	}

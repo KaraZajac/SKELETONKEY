@@ -1,3 +1,33 @@
+## SKELETONKEY v0.9.3 — CVE metadata refresh + dirtydecrypt range fix
+
+**CVE metadata refresh (10 → 12 KEV).** Populated the 8 missing
+entries in `core/cve_metadata.c` for v0.8.0 + v0.9.0 module additions.
+Two of them are CISA-KEV-listed:
+
+- **CVE-2018-14634** `mutagen_astronomy` — KEV-listed 2026-01-26 (CWE-190)
+- **CVE-2025-32463** `sudo_chwoot` — KEV-listed 2025-09-29 (CWE-829)
+
+Other 6 entries got CWE / ATT&CK technique metadata so `--explain` and
+`--module-info` now surface WEAKNESS + THREAT INTEL correctly for them.
+(`tools/refresh-cve-metadata.py` hangs on CISA's HTTP/2 endpoint via
+Python urlopen — populated directly via curl + max-time as a workaround.)
+
+**dirtydecrypt module bug fix.** Auditing dirtydecrypt's range table
+against NVD's authoritative CPE match for CVE-2026-31635 surfaced that
+`dd_detect()` was wrongly gating "predates the bug" on kernel < 7.0.
+Per NVD, the rxgk RESPONSE bug entered at 6.16.1 stable; vulnerable
+ranges are 6.16.1–6.18.22, 6.19.0–6.19.12, and 7.0-rc1..rc7. The fix:
+
+- `dd_detect()` predates-gate now uses 6.16.1 (not 7.0)
+- `patched_branches[]` table adds `{6, 18, 23}` for the 6.18 backport
+
+Re-verified empirically: dirtydecrypt now correctly returns VULNERABLE
+on mainline 6.19.7 (genuinely below the 6.19.13 backport). Previously
+it returned OK there — a false negative that would have lied to anyone
+running scan on a real vulnerable kernel.
+
+---
+
 ## SKELETONKEY v0.9.2 — dirtydecrypt verified on mainline 6.19.7
 
 One more empirical verification: **CVE-2026-31635 dirtydecrypt** confirmed

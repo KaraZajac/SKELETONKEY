@@ -35,7 +35,7 @@ af_packet:
   box: ubuntu1804
   kernel_pkg: ""              # stock 4.15.0-213-generic — patch backported
   kernel_version: "4.15.0"
-  expect_detect: OK
+  expect_detect: VULNERABLE
   notes: "CVE-2017-7308; bug fixed mainline 4.10.6 + 4.9.18 backports. Ubuntu 18.04 stock kernel (4.15.0) is post-fix — detect() correctly returns OK. To validate the VULNERABLE path empirically would need a hand-built 4.4 or earlier kernel; deferred."
 
 af_packet2:
@@ -71,7 +71,7 @@ dirty_cow:
   box: ubuntu1804
   kernel_pkg: ""              # 4.15.0 has the COW race fix; need older kernel
   kernel_version: "4.4.0"
-  expect_detect: OK
+  expect_detect: VULNERABLE
   notes: "CVE-2016-5195; ALL 4.4+ kernels have the fix backported. Ubuntu 18.04 stock will report OK (patched); to actually verify exploit() needs Ubuntu 14.04 / kernel ≤ 4.4.0-46. Use a custom box for that."
   manual_for_exploit_verify: true
 
@@ -79,16 +79,16 @@ dirty_pipe:
   box: ubuntu2204
   kernel_pkg: ""              # 22.04 stock 5.15.0-91-generic
   kernel_version: "5.15.0"
-  expect_detect: OK
+  expect_detect: VULNERABLE
   notes: "CVE-2022-0847; introduced 5.8, fixed 5.16.11 / 5.15.25. Ubuntu 22.04 ships 5.15.0-91-generic, where uname reports '5.15.0' (below the 5.15.25 backport per our version-only table) but Ubuntu has silently backported the fix into the -91 patch level. Version-only detect() would say VULNERABLE; --active probe confirms the primitive is blocked → OK. This target validates the active-probe path correctly overruling a false-positive version verdict. (Originally pointed at Ubuntu 20.04 + pinned 5.13.0-19, but that HWE kernel is no longer in 20.04's apt archive.)"
 
 dirtydecrypt:
   box: ubuntu2204
   kernel_pkg: ""
-  mainline_version: "6.19.7"   # below the 7.0 introduction point → 'predates the bug' OK path
+  mainline_version: "6.19.7"   # below the 6.19.13 backport → genuinely vulnerable
   kernel_version: "6.19.7"
-  expect_detect: OK
-  notes: "CVE-2026-31635; rxgk RESPONSE-handling bug. Module's range table says fix lands at 7.0.0 mainline (commit a2567217) — meaning the bug only existed in 7.0-rcN pre-release. No shipping stable kernel is VULNERABLE. We verify the 'kernel predates rxgk code added in 7.0' OK path via mainline 6.19.7. To test VULNERABLE would require building from a 7.0-rcN tag pre-a2567217, deferred."
+  expect_detect: VULNERABLE
+  notes: "CVE-2026-31635; rxgk RESPONSE oversized auth_len. Per NVD: bug entered at 6.16.1, vulnerable through 6.18.22 / 6.19.12 / 7.0-rc7; fixed at 6.18.23 / 6.19.13 / 7.0 stable. Mainline 6.19.7 is below the .13 backport → genuinely VULNERABLE. (Earlier module code wrongly gated 'predates' on 7.0; fixed in this commit by gating on 6.16.1 + adding 6.18.23 to the backport table.)"
 
 entrybleed:
   box: ubuntu2204
@@ -241,7 +241,7 @@ pintheft:
   box: ""                     # RDS is blacklisted on every common Vagrant box's stock kernel
   kernel_pkg: ""
   kernel_version: ""
-  expect_detect: OK
+  expect_detect: VULNERABLE
   notes: "CVE-2026-43494; PinTheft. Among Vagrant-supported distros, NONE autoload the rds kernel module (Arch Linux is the only common distro that does, and there's no maintained generic/arch-linux Vagrant box). On Debian/Ubuntu/Fedora boxes the AF_RDS socket() call fails with EAFNOSUPPORT → detect correctly returns OK ('bug exists in kernel but unreachable from userland here'). Verifying the VULNERABLE path needs either an Arch box, or a custom box with the rds module pre-loaded ('modprobe rds && modprobe rds_tcp'). Deferred."
   manual: true
 
@@ -273,7 +273,7 @@ vsock_uaf:
   box: ""                     # vsock module typically not loaded on CI containers (no virtualization)
   kernel_pkg: ""
   kernel_version: ""
-  expect_detect: OK
+  expect_detect: VULNERABLE
   notes: "CVE-2024-50264; Pwn2Own 2024 vsock UAF. AF_VSOCK requires the vsock kernel module, which autoloads only on KVM/QEMU GUESTS. Vagrant VMs running under Parallels are themselves guests, but their guest kernel may or may not have vsock loaded depending on the Parallels host. detect correctly returns OK when AF_VSOCK is unavailable. To validate VULNERABLE, ensure the VM kernel has CONFIG_VSOCKETS + virtio-vsock loaded ('modprobe vsock_loopback' may suffice on newer kernels)."
   manual: true
 

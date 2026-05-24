@@ -318,12 +318,13 @@ static const struct skeletonkey_host h_kernel_5_14_no_userns = {
 static void run_all(void)
 {
 #ifdef __linux__
-	/* dirtydecrypt: kernel.major < 7 → predates the bug → OK */
-	run_one("dirtydecrypt: kernel 6.12 predates 7.0 → OK",
+	/* dirtydecrypt: rxgk RESPONSE bug entered at 6.16.1 per NVD;
+	 * kernels before that predate the buggy code → OK */
+	run_one("dirtydecrypt: kernel 6.12 predates 6.16.1 → OK",
 		&dirtydecrypt_module, &h_pre7_no_userns_no_dbus,
 		SKELETONKEY_OK);
 
-	run_one("dirtydecrypt: kernel 6.14 (fedora) still predates → OK",
+	run_one("dirtydecrypt: kernel 6.14 (fedora) still predates 6.16.1 → OK",
 		&dirtydecrypt_module, &h_fedora_no_debian,
 		SKELETONKEY_OK);
 

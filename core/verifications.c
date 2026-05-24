@@ -82,8 +82,8 @@ const struct verification_record verifications[] = {
         .host_kernel   = "6.19.7-061907-generic",
         .host_distro   = "Ubuntu 22.04.3 LTS",
         .vm_box        = "generic/ubuntu2204",
-        .expect_detect = "OK",
-        .actual_detect = "OK",
+        .expect_detect = "VULNERABLE",
+        .actual_detect = "VULNERABLE",
         .status        = "match",
     },
     {

@@ -220,6 +220,73 @@ const struct cve_metadata cve_metadata_table[] = {
         .in_kev              = false,
         .kev_date_added      = "",
     },
+    /* v0.8.0 / v0.9.0 module additions — populated via direct CISA KEV
+     * + NVD curl on 2026-05-24 when refresh-cve-metadata.py's urlopen
+     * hung on CISA's HTTP/2 endpoint. Same data, different transport. */
+    {
+        .cve                 = "CVE-2018-14634",
+        .cwe                 = "CWE-190",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = true,
+        .kev_date_added      = "2026-01-26",
+    },
+    {
+        .cve                 = "CVE-2019-14287",
+        .cwe                 = "CWE-755",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
+        .cve                 = "CVE-2020-29661",
+        .cwe                 = "CWE-416",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
+        .cve                 = "CVE-2024-26581",
+        .cwe                 = NULL,  /* NVD: no CWE assigned */
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
+        .cve                 = "CVE-2024-50264",
+        .cwe                 = "CWE-416",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
+        .cve                 = "CVE-2025-32463",
+        .cwe                 = "CWE-829",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = true,
+        .kev_date_added      = "2025-09-29",
+    },
+    {
+        .cve                 = "CVE-2025-6019",
+        .cwe                 = "CWE-250",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
+        .cve                 = "CVE-2026-43494",
+        .cwe                 = NULL,  /* NVD: no CWE assigned */
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
 };
 
 const size_t cve_metadata_table_len =

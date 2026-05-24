@@ -54,9 +54,9 @@
     <text x="234" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#34d399">28</text>
     <text x="270" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">✓ VM-verified</text>
 
-    <!-- 10 KEV -->
+    <!-- 12 KEV -->
     <rect x="482" y="0" width="218" height="58" rx="29" fill="#161628" stroke="#ef4444" stroke-opacity="0.4"/>
-    <text x="510" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ef4444">10</text>
+    <text x="510" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ef4444">12</text>
     <text x="546" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">★ in CISA KEV</text>
 
     <!-- 151 rules -->
