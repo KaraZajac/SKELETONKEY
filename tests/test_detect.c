@@ -662,11 +662,13 @@ static void run_all(void)
 		SKELETONKEY_OK);
 
 	/* udisks_libblockdev: detect gates on udisksd binary + dbus
-	 * socket presence + active polkit session. On CI / test containers
-	 * udisksd is rarely installed → PRECOND_FAIL. */
-	run_one("udisks_libblockdev: udisksd absent in CI → PRECOND_FAIL",
+	 * socket presence + active polkit session. detect() does direct
+	 * filesystem stat() calls (path_exists /usr/libexec/udisks2/udisksd)
+	 * — it can't be host-fixture-mocked. GHA ubuntu-24.04 runners ship
+	 * udisks2 by default, so detect returns VULNERABLE there. */
+	run_one("udisks_libblockdev: udisksd present on CI runner → VULNERABLE",
 		&udisks_libblockdev_module, &h_kernel_6_12,
-		SKELETONKEY_PRECOND_FAIL);
+		SKELETONKEY_VULNERABLE);
 
 	/* pintheft: AF_RDS socket() in CI/container is almost never
 	 * reachable (RDS module blacklisted on every common distro except
@@ -689,12 +691,12 @@ static void run_all(void)
 		SKELETONKEY_OK);
 
 	/* sudo_runas_neg1: vuln sudo 1.8.31 (in range), but no (ALL,!root)
-	 * grant for this test user → PRECOND_FAIL. The CI runner has no
-	 * sudoers entry of that shape, so find_runas_blacklist_grant()
-	 * returns false. */
-	run_one("sudo_runas_neg1: vuln sudo, no (ALL,!root) grant → PRECOND_FAIL",
+	 * grant for this test user → OK. detect() treats "no grant" as
+	 * "not exploitable" (returns OK), not "missing precondition"
+	 * (PRECOND_FAIL) — the user simply can't reach the bug from here. */
+	run_one("sudo_runas_neg1: vuln sudo, no (ALL,!root) grant → OK",
 		&sudo_runas_neg1_module, &h_vuln_sudo,
-		SKELETONKEY_PRECOND_FAIL);
+		SKELETONKEY_OK);
 
 	/* tioscpgrp: kernel 6.12 above the 5.10 mainline fix → OK */
 	run_one("tioscpgrp: kernel 6.12 above 5.10 fix → OK",
