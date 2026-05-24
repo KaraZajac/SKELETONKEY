@@ -60,6 +60,14 @@ extern const struct skeletonkey_module dirty_frag_rxrpc_module;
 extern const struct skeletonkey_module sudo_samedit_module;
 extern const struct skeletonkey_module sudoedit_editor_module;
 extern const struct skeletonkey_module pwnkit_module;
+extern const struct skeletonkey_module sudo_chwoot_module;
+extern const struct skeletonkey_module udisks_libblockdev_module;
+extern const struct skeletonkey_module pintheft_module;
+extern const struct skeletonkey_module mutagen_astronomy_module;
+extern const struct skeletonkey_module sudo_runas_neg1_module;
+extern const struct skeletonkey_module tioscpgrp_module;
+extern const struct skeletonkey_module vsock_uaf_module;
+extern const struct skeletonkey_module nft_pipapo_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -629,6 +637,84 @@ static void run_all(void)
 		&entrybleed_module, &h_kernel_6_12,
 		SKELETONKEY_PRECOND_FAIL);
 #endif
+
+	/* ── new v0.8.0 modules ──────────────────────────────────────── */
+
+	/* sudo_chwoot: vulnerable sudo version range [1.9.14, 1.9.17p0].
+	 * Vulnerability is independent of kernel — pure version gate.
+	 * Test fingerprints below the range, in the range, and above. */
+	struct skeletonkey_host h_sudo_chwoot_vuln = h_kernel_6_12;
+	strcpy(h_sudo_chwoot_vuln.sudo_version, "1.9.16");
+	run_one("sudo_chwoot: sudo 1.9.16 (in range) → VULNERABLE",
+		&sudo_chwoot_module, &h_sudo_chwoot_vuln,
+		SKELETONKEY_VULNERABLE);
+
+	struct skeletonkey_host h_sudo_chwoot_fixed = h_kernel_6_12;
+	strcpy(h_sudo_chwoot_fixed.sudo_version, "1.9.17p1");
+	run_one("sudo_chwoot: sudo 1.9.17p1 (fixed) → OK",
+		&sudo_chwoot_module, &h_sudo_chwoot_fixed,
+		SKELETONKEY_OK);
+
+	struct skeletonkey_host h_sudo_chwoot_old = h_kernel_6_12;
+	strcpy(h_sudo_chwoot_old.sudo_version, "1.9.13p1");
+	run_one("sudo_chwoot: sudo 1.9.13p1 (pre-chroot feature) → OK",
+		&sudo_chwoot_module, &h_sudo_chwoot_old,
+		SKELETONKEY_OK);
+
+	/* udisks_libblockdev: detect gates on udisksd binary + dbus
+	 * socket presence + active polkit session. On CI / test containers
+	 * udisksd is rarely installed → PRECOND_FAIL. */
+	run_one("udisks_libblockdev: udisksd absent in CI → PRECOND_FAIL",
+		&udisks_libblockdev_module, &h_kernel_6_12,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* pintheft: AF_RDS socket() in CI/container is almost never
+	 * reachable (RDS module blacklisted on every common distro except
+	 * Arch) → detect returns OK ("bug exists in kernel but unreachable
+	 * from userland here"). */
+	run_one("pintheft: AF_RDS unreachable on CI runner → OK",
+		&pintheft_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* ── v0.9.0 modules ────────────────────────────────────────── */
+
+	/* mutagen_astronomy: kernel 6.12 is above the 4.18.8 fix → OK */
+	run_one("mutagen_astronomy: kernel 6.12 above 4.18.8 fix → OK",
+		&mutagen_astronomy_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* sudo_runas_neg1: fixed sudo (1.9.13p1) → OK */
+	run_one("sudo_runas_neg1: sudo 1.9.13p1 above 1.8.28 fix → OK",
+		&sudo_runas_neg1_module, &h_fixed_sudo,
+		SKELETONKEY_OK);
+
+	/* sudo_runas_neg1: vuln sudo 1.8.31 (in range), but no (ALL,!root)
+	 * grant for this test user → PRECOND_FAIL. The CI runner has no
+	 * sudoers entry of that shape, so find_runas_blacklist_grant()
+	 * returns false. */
+	run_one("sudo_runas_neg1: vuln sudo, no (ALL,!root) grant → PRECOND_FAIL",
+		&sudo_runas_neg1_module, &h_vuln_sudo,
+		SKELETONKEY_PRECOND_FAIL);
+
+	/* tioscpgrp: kernel 6.12 above the 5.10 mainline fix → OK */
+	run_one("tioscpgrp: kernel 6.12 above 5.10 fix → OK",
+		&tioscpgrp_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* vsock_uaf: kernel 6.12 above 6.11 mainline fix → OK */
+	run_one("vsock_uaf: kernel 6.12 above 6.11 fix → OK",
+		&vsock_uaf_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* nft_pipapo: kernel 6.12 above 6.8 mainline fix → OK */
+	run_one("nft_pipapo: kernel 6.12 above 6.8 fix → OK",
+		&nft_pipapo_module, &h_kernel_6_12,
+		SKELETONKEY_OK);
+
+	/* nft_pipapo: kernel 5.4 predates the pipapo set type (5.6+) → OK */
+	run_one("nft_pipapo: kernel 4.4 predates pipapo (5.6+) → OK",
+		&nft_pipapo_module, &h_kernel_4_4,
+		SKELETONKEY_OK);
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

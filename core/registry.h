@@ -47,6 +47,14 @@ void skeletonkey_register_vmwgfx(void);
 void skeletonkey_register_dirtydecrypt(void);
 void skeletonkey_register_fragnesia(void);
 void skeletonkey_register_pack2theroot(void);
+void skeletonkey_register_sudo_chwoot(void);
+void skeletonkey_register_udisks_libblockdev(void);
+void skeletonkey_register_pintheft(void);
+void skeletonkey_register_mutagen_astronomy(void);
+void skeletonkey_register_sudo_runas_neg1(void);
+void skeletonkey_register_tioscpgrp(void);
+void skeletonkey_register_vsock_uaf(void);
+void skeletonkey_register_nft_pipapo(void);
 
 /* Call every skeletonkey_register_<family>() above in canonical order.
  * Single source of truth so the main binary and the test binary stay

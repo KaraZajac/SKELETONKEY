@@ -180,6 +180,48 @@ endif
 # paths). Target-specific vars are scoped to this object's recipe.
 $(P2TR_OBJS): CFLAGS += $(P2TR_CFLAGS)
 
+# Family: sudo_chwoot (CVE-2025-32463) — sudo --chroot NSS injection
+SCHW_DIR  := modules/sudo_chwoot_cve_2025_32463
+SCHW_SRCS := $(SCHW_DIR)/skeletonkey_modules.c
+SCHW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SCHW_SRCS))
+
+# Family: udisks_libblockdev (CVE-2025-6019) — SUID-on-mount via polkit allow_active
+UDB_DIR  := modules/udisks_libblockdev_cve_2025_6019
+UDB_SRCS := $(UDB_DIR)/skeletonkey_modules.c
+UDB_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(UDB_SRCS))
+
+# Family: pintheft (CVE-2026-43494) — RDS zerocopy double-free (V12 Security)
+PTH_DIR  := modules/pintheft_cve_2026_43494
+PTH_SRCS := $(PTH_DIR)/skeletonkey_modules.c
+PTH_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PTH_SRCS))
+
+# ── v0.9.0 gap-fillers ─────────────────────────────────────────────
+
+# CVE-2018-14634 Mutagen Astronomy — create_elf_tables() int wrap
+MUT_DIR  := modules/mutagen_astronomy_cve_2018_14634
+MUT_SRCS := $(MUT_DIR)/skeletonkey_modules.c
+MUT_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(MUT_SRCS))
+
+# CVE-2019-14287 sudo Runas -u#-1 underflow
+SRN_DIR  := modules/sudo_runas_neg1_cve_2019_14287
+SRN_SRCS := $(SRN_DIR)/skeletonkey_modules.c
+SRN_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SRN_SRCS))
+
+# CVE-2020-29661 TIOCSPGRP UAF race
+TIO_DIR  := modules/tioscpgrp_cve_2020_29661
+TIO_SRCS := $(TIO_DIR)/skeletonkey_modules.c
+TIO_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(TIO_SRCS))
+
+# CVE-2024-50264 AF_VSOCK connect-race UAF (Pwn2Own 2024)
+VSK_DIR  := modules/vsock_uaf_cve_2024_50264
+VSK_SRCS := $(VSK_DIR)/skeletonkey_modules.c
+VSK_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(VSK_SRCS))
+
+# CVE-2024-26581 nft_pipapo destroy-race (Notselwyn II)
+PIP_DIR  := modules/nft_pipapo_cve_2024_26581
+PIP_SRCS := $(PIP_DIR)/skeletonkey_modules.c
+PIP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PIP_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -190,7 +232,9 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(AFP_OBJS) $(FUL_OBJS) $(STR_OBJS) $(AFP2_OBJS) $(CRA_OBJS) \
                $(OSU_OBJS) $(NSU_OBJS) $(AUG_OBJS) $(NFD_OBJS) $(NPL_OBJS) \
                $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) \
-               $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS)
+               $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
+               $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
+               $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

@@ -1,3 +1,151 @@
+## SKELETONKEY v0.9.0 — every year 2016 → 2026 now covered
+
+Five gap-filling modules. Closes the 2018 hole entirely and thickens
+2019 / 2020 / 2024.
+
+### CVE-2018-14634 — `mutagen_astronomy` (Qualys)
+
+Closes the 2018 gap. `create_elf_tables()` int-wrap → on x86_64, a
+multi-GiB argv blob makes the kernel under-allocate the SUID
+carrier's stack and corrupt adjacent allocations. CISA-KEV-listed
+Jan 2026 despite the bug's age — legacy RHEL 7 / CentOS 7 / Debian
+8 fleets still affected. 🟡 PRIMITIVE (trigger documented;
+Qualys' full chain not bundled per verified-vs-claimed).
+`arch_support: x86_64+unverified-arm64`.
+
+### CVE-2019-14287 — `sudo_runas_neg1` (Joe Vennix)
+
+`sudo -u#-1 <cmd>` → uid_t underflows to 0xFFFFFFFF → sudo treats it
+as uid 0 → runs `<cmd>` as root even when sudoers explicitly says
+"ALL except root". Pure userspace logic bug; the famous Apple
+Information Security finding. detect() looks for a `(ALL,!root)`
+grant in `sudo -ln` output. `arch_support: any`. Sudo < 1.8.28.
+
+### CVE-2020-29661 — `tioscpgrp` (Jann Horn / Project Zero)
+
+TTY `TIOCSPGRP` ioctl race on PTY pairs → `struct pid` UAF in
+kmalloc-256. Affects everything through Linux 5.9.13. 🟡 PRIMITIVE
+(race-driver + msg_msg groom). Public PoCs from grsecurity/spender
++ Maxime Peterlin. `arch_support: x86_64+unverified-arm64`.
+
+### CVE-2024-50264 — `vsock_uaf` (a13xp0p0v / Pwnie 2025 winner)
+
+AF_VSOCK `connect()` races a POSIX signal that tears down the
+virtio_vsock_sock → UAF in kmalloc-96. **Pwn2Own 2024 + Pwnie Award
+2025 winner.** Reachable as plain unprivileged user (no userns
+required — unusual). Two public exploit paths: @v4bel + @qwerty
+kernelCTF chain (BPF JIT spray + SLUBStick) and Alexander Popov's
+msg_msg path (PT SWARM Sep 2025). 🟡 PRIMITIVE.
+`arch_support: x86_64+unverified-arm64`.
+
+### CVE-2024-26581 — `nft_pipapo` (Notselwyn II, "Flipping Pages")
+
+`nft_set_pipapo` destroy-race UAF. Sibling to our `nf_tables` module
+(CVE-2024-1086) — same Notselwyn "Flipping Pages" research paper,
+different specific bug in the pipapo set substrate. Same family
+detect signature. 🟡 PRIMITIVE.
+`arch_support: x86_64+unverified-arm64`.
+
+### Year-by-year coverage matrix
+
+```
+2016: ▓ 1     2021: ▓▓▓▓▓ 5     2025: ▓▓ 2
+2017: ▓ 1     2022: ▓▓▓▓▓ 5     2026: ▓▓▓▓ 4
+2018: ▓ 1 ←   2023: ▓▓▓▓▓▓▓▓ 8
+2019: ▓▓ 2 ←  2024: ▓▓▓ 3 ←
+2020: ▓▓ 2 ←
+```
+
+Every year 2016 → 2026 is now ≥1.
+
+### Corpus growth
+
+| | v0.8.0 | v0.9.0 |
+|---|---|---|
+| Modules registered | 34 | 39 |
+| Distinct CVEs | 29 | 34 |
+| Years with ≥1 CVE | 10 of 11 (missing 2018) | **11 of 11** |
+| Detection rules embedded | 131 | 151 |
+| Arch-independent (`any`) | 6 | 7 |
+| VM-verified | 22 | 22 |
+
+### Other changes
+
+- All 5 new modules ship complete detection-rule corpus
+  (auditd + sigma + yara + falco) — corpus stays at 4-format
+  parity with the rest of the modules.
+- `tools/refresh-cve-metadata.py` runs against 34 CVEs (was 29);
+  takes ~4 minutes due to NVD anonymous rate limit.
+
+---
+
+## SKELETONKEY v0.8.0 — 3 new 2025/2026 CVEs
+
+Closes the 2025 coverage gap. Three new modules from CVEs disclosed
+2025–2026, all with public PoC code we ported into proper
+SKELETONKEY modules:
+
+### CVE-2025-32463 — `sudo_chwoot` (Stratascale)
+
+Critical (CVSS 9.3) sudo logic bug: `sudo --chroot=<DIR>` chroots
+into a user-controlled directory before completing authorization +
+resolves user/group via NSS inside the chroot. Plant a malicious
+`libnss_*.so` + an `nsswitch.conf` that points to it; sudo dlopens
+the .so as root, ctor fires, root shell. Affects sudo 1.9.14 to
+1.9.17p0; fixed in 1.9.17p1 (which deprecated --chroot entirely).
+`arch_support: any` (pure userspace).
+
+### CVE-2025-6019 — `udisks_libblockdev` (Qualys)
+
+udisks2 + libblockdev SUID-on-mount chain. libblockdev's internal
+filesystem-resize/repair mount path omits `MS_NOSUID` and
+`MS_NODEV`. udisks2 gates the operation on polkit's
+`org.freedesktop.UDisks2.modify-device` action, which is
+`allow_active=yes` by default → any active console session user can
+trigger it without a password. Build an ext4 image with a SUID-root
+shell inside, get udisks to mount it, execute the SUID shell.
+Affects libblockdev < 3.3.1, udisks2 < 2.10.2. `arch_support: any`.
+
+### CVE-2026-43494 — `pintheft` (V12 Security)
+
+Linux kernel RDS zerocopy double-free. `rds_message_zcopy_from_user()`
+pins user pages one at a time; if a later page faults, the error
+unwind drops the already-pinned pages, but the msg's scatterlist
+cleanup drops them AGAIN. Each failed `sendmsg(MSG_ZEROCOPY)` leaks
+one pin refcount. Chain via io_uring fixed buffers to overwrite the
+page cache of a readable SUID binary → execve → root. Mainline fix
+commit `0cebaccef3ac` (posted to netdev 2026-05-05). Among common
+distros only **Arch Linux** autoloads the rds module — Ubuntu /
+Debian / Fedora / RHEL / Alma / Rocky / Oracle Linux either don't
+build it or blacklist autoload. `detect()` correctly returns OK
+on non-Arch hosts (RDS unreachable from userland). 🟡 PRIMITIVE
+status: primitive fires; full cred-overwrite via the shared
+modprobe_path finisher requires `--full-chain` on x86_64.
+
+### Corpus growth
+
+| | v0.7.1 | v0.8.0 |
+|---|---|---|
+| Modules registered | 31 | 34 |
+| Distinct CVEs | 26 | 29 |
+| 2025-CVE coverage | 0 | 2 |
+| Detection rules embedded | 119 | 131 |
+| Arch-independent (`any`) | 4 | 6 |
+| CISA KEV-listed | 10 | 10 (new ones not yet KEV'd) |
+| VM-verified | 22 | 22 |
+
+### Other changes
+
+- `tools/refresh-cve-metadata.py` — added curl fallback for the
+  CISA KEV CSV fetch (Python's urlopen was hitting timeouts against
+  CISA's HTTP/2 endpoint).
+- `tools/verify-vm/targets.yaml` — entries for the 3 new modules
+  with honest "no Vagrant box covers this yet" notes for
+  pintheft (needs Arch) and udisks_libblockdev (needs active
+  console session + udisks2 installed).
+
+---
+
 ## SKELETONKEY v0.7.1 — arm64-static binary + per-module arch_support
 
 Point release on top of v0.7.0. Two additions:

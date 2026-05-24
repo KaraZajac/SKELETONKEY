@@ -2,12 +2,13 @@
 
 [![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Modules](https://img.shields.io/badge/CVEs-22%20VM--verified%20%2F%2026-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
+[![Modules](https://img.shields.io/badge/CVEs-22%20VM--verified%20%2F%2034-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
-> **One curated binary. 31 Linux LPE modules covering 26 CVEs from 2016 → 2026.
-> 22 confirmed end-to-end against real Linux VMs via `tools/verify-vm/`.
-> Detection rules in the box. One command picks the safest one and runs it.**
+> **One curated binary. 39 Linux LPE modules covering 34 CVEs from 2016 → 2026.
+> Every year 2016 → 2026 covered. 22 confirmed end-to-end against real Linux
+> VMs via `tools/verify-vm/`. Detection rules in the box. One command picks
+> the safest one and runs it.**
 
 ```bash
 curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
@@ -197,12 +198,18 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.7.1 cut 2026-05-23.** 31 modules across 26 CVEs, **22 empirically
-verified** against real Linux VMs (Ubuntu 18.04 / 20.04 / 22.04 +
-Debian 11 / 12 + mainline kernels 5.15.5 / 6.1.10 from
-kernel.ubuntu.com). 88-test unit harness + ASan/UBSan + clang-tidy
-on every push. 4 prebuilt binaries (x86_64 + arm64, each in dynamic
-+ static-musl flavors).
+**v0.9.0 cut 2026-05-24.** 39 modules across 34 CVEs — **every
+year 2016 → 2026 now covered**. v0.9.0 adds 5 gap-fillers:
+`mutagen_astronomy` (CVE-2018-14634 — closes 2018), `sudo_runas_neg1`
+(CVE-2019-14287), `tioscpgrp` (CVE-2020-29661), `vsock_uaf`
+(CVE-2024-50264 — Pwnie 2025 winner), `nft_pipapo` (CVE-2024-26581 —
+Notselwyn II). v0.8.0 added 3 (`sudo_chwoot`/CVE-2025-32463,
+`udisks_libblockdev`/CVE-2025-6019, `pintheft`/CVE-2026-43494).
+**22 empirically verified** against real Linux VMs (Ubuntu 18.04 /
+20.04 / 22.04 + Debian 11 / 12 + mainline kernels 5.15.5 / 6.1.10
+from kernel.ubuntu.com). 88-test unit harness + ASan/UBSan +
+clang-tidy on every push. 4 prebuilt binaries (x86_64 + arm64, each
+in dynamic + static-musl flavors).
 
 Reliability + accuracy work in v0.7.x:
 - Shared **host fingerprint** (`core/host.{h,c}`) populated once at

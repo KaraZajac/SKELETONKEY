@@ -35,18 +35,18 @@
   </text>
 
   <!-- tagline -->
-  <text x="80" y="240" font-family="'Inter',sans-serif" font-size="32" fill="#c5c5d3" font-weight="500">
+  <text x="80" y="240" font-family="'Inter',sans-serif" font-size="30" fill="#c5c5d3" font-weight="500">
     Curated Linux LPE corpus.
   </text>
-  <text x="80" y="282" font-family="'Inter',sans-serif" font-size="32" fill="#c5c5d3" font-weight="500">
-    22 of 26 CVEs verified in real Linux VMs.
+  <text x="80" y="278" font-family="'Inter',sans-serif" font-size="30" fill="#c5c5d3" font-weight="500">
+    Every year 2016 → 2026. 22 of 34 verified.
   </text>
 
   <!-- stat chips -->
   <g transform="translate(80,360)">
-    <!-- 31 modules -->
+    <!-- 39 modules -->
     <rect x="0" y="0" width="190" height="58" rx="29" fill="#161628" stroke="#25253c"/>
-    <text x="28" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">31</text>
+    <text x="28" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">39</text>
     <text x="64" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">modules</text>
 
     <!-- 22 VM-verified -->
@@ -54,14 +54,14 @@
     <text x="234" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#34d399">22</text>
     <text x="270" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">✓ VM-verified</text>
 
-    <!-- 10 KEV -->
+    <!-- 11 KEV -->
     <rect x="482" y="0" width="218" height="58" rx="29" fill="#161628" stroke="#ef4444" stroke-opacity="0.4"/>
-    <text x="510" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ef4444">10</text>
+    <text x="510" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ef4444">11</text>
     <text x="546" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">★ in CISA KEV</text>
 
-    <!-- 119 rules -->
+    <!-- 151 rules -->
     <rect x="736" y="0" width="232" height="58" rx="29" fill="#161628" stroke="#25253c"/>
-    <text x="764" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">119</text>
+    <text x="764" y="38" font-family="'JetBrains Mono',monospace" font-weight="700" font-size="22" fill="#ecedf7">151</text>
     <text x="810" y="37" font-family="'Inter',sans-serif" font-size="16" fill="#8a8a9d">detection rules</text>
   </g>
 

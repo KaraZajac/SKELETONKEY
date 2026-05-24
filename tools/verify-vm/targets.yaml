@@ -220,3 +220,65 @@ vmwgfx:
   expect_detect: PRECOND_FAIL
   notes: "CVE-2023-2008; vmwgfx DRM only reachable on VMware guests. No Vagrant box; verify manually inside a VMware VM with a vulnerable kernel (e.g. Debian 11 / 5.10.0)."
   manual: true
+
+# ── v0.8.0 additions ──────────────────────────────────────────────
+
+sudo_chwoot:
+  box: ubuntu2204             # 22.04 ships sudo 1.9.9 (pre-feature) — need a 1.9.14+ install
+  kernel_pkg: ""              # this bug is sudo-version-gated, not kernel
+  kernel_version: "5.15.0"
+  expect_detect: OK
+  notes: "CVE-2025-32463; sudo --chroot NSS shim. Vulnerable range is sudo [1.9.14, 1.9.17p0]. Ubuntu 22.04 ships sudo 1.9.9 which PREDATES the vulnerable --chroot code path — so detect correctly returns OK. To validate VULNERABLE empirically, provision a vulnerable sudo build into the VM (e.g. apt install -t backports sudo=1.9.16-1 or build from source). Deferred."
+
+udisks_libblockdev:
+  box: debian12               # 12 ships udisks2 2.10.x + libblockdev 3.0.x — vulnerable
+  kernel_pkg: ""
+  kernel_version: "6.1.0"
+  expect_detect: PRECOND_FAIL
+  notes: "CVE-2025-6019; udisks/libblockdev SUID-on-mount. Debian 12's cloud image is server-oriented — udisksd is NOT installed by default. detect correctly returns PRECOND_FAIL ('udisksd not installed; bug unreachable here'). To validate VULNERABLE empirically, install udisks2 + log in as an active-session user (Vagrant SSH session is NOT active per polkit — needs a real console session). Both gates are real and the detect honestly surfaces them; deferred."
+
+pintheft:
+  box: ""                     # RDS is blacklisted on every common Vagrant box's stock kernel
+  kernel_pkg: ""
+  kernel_version: ""
+  expect_detect: OK
+  notes: "CVE-2026-43494; PinTheft. Among Vagrant-supported distros, NONE autoload the rds kernel module (Arch Linux is the only common distro that does, and there's no maintained generic/arch-linux Vagrant box). On Debian/Ubuntu/Fedora boxes the AF_RDS socket() call fails with EAFNOSUPPORT → detect correctly returns OK ('bug exists in kernel but unreachable from userland here'). Verifying the VULNERABLE path needs either an Arch box, or a custom box with the rds module pre-loaded ('modprobe rds && modprobe rds_tcp'). Deferred."
+  manual: true
+
+# ── v0.9.0 additions (gap fillers 2018 / 2019 / 2020 / 2024) ──────
+
+mutagen_astronomy:
+  box: ubuntu1804             # 4.15.0-213 stock — already > 4.14.71 backport → OK
+  kernel_pkg: ""
+  kernel_version: "4.15.0"
+  expect_detect: OK
+  notes: "CVE-2018-14634; Qualys Mutagen Astronomy. Ubuntu 18.04 ships 4.15.0-213 which is post-fix. detect correctly returns OK. Verifying the VULNERABLE path empirically needs a 2.6.x / 3.10.x EOL kernel (e.g. RHEL 6 / CentOS 6 / Debian 7); deferred to a custom-box workflow."
+
+sudo_runas_neg1:
+  box: ubuntu1804             # ships sudo 1.8.21p2 (vulnerable; pre-1.8.28 fix)
+  kernel_pkg: ""
+  kernel_version: "4.15.0"
+  expect_detect: PRECOND_FAIL
+  notes: "CVE-2019-14287; sudo Runas -u#-1. Ubuntu 18.04 ships sudo 1.8.21p2 which IS in the vulnerable range — but the default vagrant user has no (ALL,!root) sudoers grant for find_runas_blacklist_grant() to abuse, so detect correctly returns PRECOND_FAIL. To validate VULNERABLE empirically, provision a sudoers entry of the form 'vagrant ALL=(ALL,!root) /bin/vi' before verifying."
+
+tioscpgrp:
+  box: ubuntu2004             # 5.4 stock kernels (5.4.0-26) are below the 5.4.85 backport
+  kernel_pkg: linux-image-5.4.0-26-generic
+  kernel_version: "5.4.0-26"
+  expect_detect: VULNERABLE
+  notes: "CVE-2020-29661; TTY TIOCSPGRP UAF race. Stock Ubuntu 20.04 5.4.0-26 is below the 5.4.85 LTS backport. /dev/ptmx is universally writable in CI containers. Should validate VULNERABLE."
+
+vsock_uaf:
+  box: ""                     # vsock module typically not loaded on CI containers (no virtualization)
+  kernel_pkg: ""
+  kernel_version: ""
+  expect_detect: OK
+  notes: "CVE-2024-50264; Pwn2Own 2024 vsock UAF. AF_VSOCK requires the vsock kernel module, which autoloads only on KVM/QEMU GUESTS. Vagrant VMs running under Parallels are themselves guests, but their guest kernel may or may not have vsock loaded depending on the Parallels host. detect correctly returns OK when AF_VSOCK is unavailable. To validate VULNERABLE, ensure the VM kernel has CONFIG_VSOCKETS + virtio-vsock loaded ('modprobe vsock_loopback' may suffice on newer kernels)."
+  manual: true
+
+nft_pipapo:
+  box: ubuntu2204             # 5.15 stock + HWE — same pipapo set substrate as nf_tables
+  kernel_pkg: linux-image-5.15.0-43-generic
+  kernel_version: "5.15.0-43"
+  expect_detect: VULNERABLE
+  notes: "CVE-2024-26581; nft_pipapo destroy-race (Notselwyn II). Same Vagrant target as nf_tables works here — stock 5.15.0-43 is below the 5.15.149 backport. Userns gate must be open (sysctl kernel.unprivileged_userns_clone=1)."

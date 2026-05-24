@@ -43,4 +43,12 @@ void skeletonkey_register_all_modules(void)
     skeletonkey_register_dirtydecrypt();
     skeletonkey_register_fragnesia();
     skeletonkey_register_pack2theroot();
+    skeletonkey_register_sudo_chwoot();
+    skeletonkey_register_udisks_libblockdev();
+    skeletonkey_register_pintheft();
+    skeletonkey_register_mutagen_astronomy();
+    skeletonkey_register_sudo_runas_neg1();
+    skeletonkey_register_tioscpgrp();
+    skeletonkey_register_vsock_uaf();
+    skeletonkey_register_nft_pipapo();
 }
