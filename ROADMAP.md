@@ -272,6 +272,83 @@ The 2 ported-but-unverified modules (`dirtydecrypt`, `fragnesia`) are
 and pinned fix commits first (tracked under Phase 7+ above) before any
 full-chain work is meaningful.
 
+## Phase 9 — Empirical verification + operator briefing (DONE 2026-05-23, v0.7.1)
+
+The largest single jump in trust signal: every claim in the corpus is
+now backed by either a unit test (88-test harness) or a real-VM
+verification record (22 of 26 CVEs), and the binary surfaces both.
+
+- [x] **`tools/verify-vm/`** — Vagrant + Parallels scaffold. Boots
+      known-vulnerable kernels (stock distro + mainline via
+      `kernel.ubuntu.com/mainline/`), runs `--explain --active` per
+      module, emits JSONL verification records.
+- [x] **Mainline kernel fetch** — `targets.yaml` `mainline_version`
+      field downloads vanilla mainline .debs from
+      `kernel.ubuntu.com/mainline/v<X.Y.Z>/amd64/`, dpkg-installs,
+      `update-grub`s, reboots. Unblocks pin-not-in-apt targets.
+- [x] **22 of 26 CVEs verified** across Ubuntu 18.04 / 20.04 / 22.04 +
+      Debian 11 / 12 + mainline 5.15.5 / 6.1.10. Records in
+      `docs/VERIFICATIONS.jsonl`, baked into `core/verifications.{c,h}`,
+      surfaced in `--list` (VFY column), `--module-info`, `--explain`,
+      `--scan --json`.
+- [x] **`--explain MODULE`** — one-page operator briefing. CVE / CWE /
+      MITRE ATT&CK / CISA KEV header, host fingerprint, live `detect()`
+      trace with verdict + interpretation, OPSEC footprint, detection-
+      rule coverage, verified-on records. Paste-into-ticket ready.
+- [x] **Per-module `opsec_notes`** — every module struct ships a
+      runtime-footprint paragraph (file artifacts, dmesg, syscall
+      observables, network, persistence, cleanup). The inverse of the
+      detection rules.
+- [x] **CVE metadata pipeline** — `tools/refresh-cve-metadata.py`
+      fetches CISA KEV + NVD CWE; 10 of 26 modules cover KEV-listed
+      CVEs. Hand-curated ATT&CK mapping (T1068 / T1611 / T1082).
+      Surfaced everywhere (`★` markers, `triage` JSON sub-object).
+- [x] **119 detection rules across all 4 SIEM formats** — auditd
+      30/31, sigma 31/31, yara 28/31, falco 30/31. Documented
+      intentional skips for the 3 modules without applicable rules
+      in each format (entrybleed: pure timing side-channel;
+      ptrace_traceme + sudo_samedit: pure-memory races, no on-disk
+      artifacts).
+- [x] **88-test unit harness** — 33 kernel_range / host-fingerprint
+      boundary tests + 55 detect() integration tests. ASan + UBSan
+      + clang-tidy on every push; weekly cron checks for CISA KEV
+      + Debian security-tracker drift.
+- [x] **arm64-static binary** — `skeletonkey-arm64-static` published
+      alongside x86_64-static. Built via `dockcross/linux-arm64-musl`
+      cross toolchain. `install.sh` auto-picks on aarch64 hosts.
+- [x] **`arch_support` field** per module: `any` (4 — userspace
+      bugs), `x86_64` (1 — entrybleed by physics),
+      `x86_64+unverified-arm64` (26 — kernel modules whose arm64
+      exploit hasn't been empirically confirmed). Honest labels until
+      an arm64 verification sweep promotes them.
+- [x] **Marketing-grade landing page** — animated hero with
+      `--explain` showcase, bento-grid features, KEV / verification
+      stat chips, open-graph card. karazajac.github.io/SKELETONKEY.
+
+**Open follow-ups from v0.7.x (not yet started):**
+
+- [ ] arm64 verification sweep — Vagrant arm64 box (e.g.
+      `generic/debian12-arm64` on M-series Mac via Parallels) → run
+      `verify.sh` against the 26 `x86_64+unverified-arm64` modules,
+      promote each to `any` where it works.
+- [ ] SIEM query templates — full Splunk SPL / Elastic KQL / Sentinel
+      KQL queries per top-10 KEV-listed modules, embedded in
+      `docs/DETECTION_PLAYBOOK.md`.
+- [ ] `install.sh` CI smoke test — boot fresh Ubuntu / Debian /
+      Alpine containers, run `curl ... | sh`, assert `--version`.
+- [ ] PackageKit provisioner for pack2theroot VULNERABLE-path
+      verification on Debian 12.
+- [ ] Custom ≤ 4.4 kernel image for dirty_cow VM verification.
+- [ ] 9 deferred TOO_TIGHT kernel-range drift findings — per-commit
+      verification against git.kernel.org/linus.
+
+**Wait-for-upstream blockers (out of our control):**
+
+- vmwgfx verification — requires a VMware-Fusion-or-Workstation
+  guest exposing `/dev/dri/card*` from the vmwgfx driver.
+- dirtydecrypt + fragnesia verification — both target Linux 7.0+,
+  which isn't shipping as any distro kernel yet.
+
 ## Non-goals
 
 - **No 0-day shipment.** Everything in SKELETONKEY is post-patch.

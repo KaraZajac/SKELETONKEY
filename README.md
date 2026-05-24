@@ -197,12 +197,14 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.6.0 cut 2026-05-23.** 31 modules across 26 CVEs, **22 empirically
+**v0.7.1 cut 2026-05-23.** 31 modules across 26 CVEs, **22 empirically
 verified** against real Linux VMs (Ubuntu 18.04 / 20.04 / 22.04 +
 Debian 11 / 12 + mainline kernels 5.15.5 / 6.1.10 from
-kernel.ubuntu.com). 88-test unit harness on every push.
+kernel.ubuntu.com). 88-test unit harness + ASan/UBSan + clang-tidy
+on every push. 4 prebuilt binaries (x86_64 + arm64, each in dynamic
++ static-musl flavors).
 
-Reliability + accuracy work in v0.6.0:
+Reliability + accuracy work in v0.7.x:
 - Shared **host fingerprint** (`core/host.{h,c}`) populated once at
   startup — kernel/distro/userns gates/sudo+polkit versions — exposed
   to every module via `ctx->host`.
