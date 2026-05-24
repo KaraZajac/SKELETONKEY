@@ -94,36 +94,36 @@ jobs:
             skeletonkey-x86_64-static
             skeletonkey-x86_64-static.sha256
 
-  # Portable static-musl arm64 build. Runs natively on GitHub's
-  # ubuntu-24.04-arm runner (free for public repos). Can't use the
-  # Alpine container trick here because "JavaScript Actions in Alpine
-  # containers are only supported on x64 Linux runners" — actions/
-  # checkout would fail. Instead we use musl-tools (Ubuntu's
-  # apt-installed musl-gcc wrapper) on the glibc-based runner; the
-  # produced binary is still statically linked against musl, just
-  # built outside an Alpine container.
+  # Portable static-musl arm64 build. Cross-compile from the x86_64
+  # runner using dockcross/linux-arm64-musl — a Debian-based cross
+  # toolchain image that ships aarch64-linux-musl-gcc with a clean
+  # musl sysroot + Linux uapi headers. Avoids the two prior failure
+  # modes:
+  #   (1) Alpine on arm64: actions/checkout JS bundle requires glibc-
+  #       compatible Node, which GitHub doesn't inject on arm64.
+  #   (2) musl-tools on ubuntu-24.04-arm: musl-gcc + Ubuntu's
+  #       /usr/include collide (glibc stdio.h vs musl stdio.h →
+  #       __gnuc_va_list / __time64_t conflicts).
+  # dockcross runs glibc Debian (so checkout works), invokes a
+  # bundled aarch64-linux-musl-gcc whose sysroot has its own
+  # consistent musl + linux-uapi tree.
   build-static-arm64:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     name: build (arm64-static / musl)
     steps:
       - uses: actions/checkout@v4
-      - name: install musl + build deps
+      - name: run dockcross arm64-musl build
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-              musl-tools musl-dev linux-libc-dev build-essential
-      - name: build static (musl-gcc)
-        run: |
-          # musl-gcc wraps gcc with musl's libc + headers. We still
-          # need Linux kernel uapi headers (linux/capability.h,
-          # linux/netfilter/*.h, etc.) which musl doesn't ship —
-          # pull them from the glibc-side linux-libc-dev package
-          # via -isystem so they don't clash with libc decls.
-          # -static is the whole point; MSG_COPY define mirrors the
-          # x86_64 build (musl lacks the SysV msg flag).
-          make CC=musl-gcc \
-               CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000 -isystem /usr/include -isystem /usr/include/aarch64-linux-gnu" \
-               LDFLAGS=-static
+          # Fetch the dockcross wrapper script (handles UID/GID,
+          # volume mounts, env passing). Image already has
+          # aarch64-linux-musl-gcc on PATH.
+          docker run --rm dockcross/linux-arm64-musl > ./dockcross
+          chmod +x ./dockcross
+          ./dockcross bash -c '
+            make CC=aarch64-linux-musl-gcc \
+                 CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000" \
+                 LDFLAGS=-static
+          '
           file skeletonkey
           ls -la skeletonkey
       - name: rename + checksum
