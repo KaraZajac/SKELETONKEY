@@ -101,17 +101,28 @@ Vagrant.configure("2") do |c|
             exit 0
         fi
         echo "[+] fetching kernel.ubuntu.com mainline v${KVER}"
-        URL="https://kernel.ubuntu.com/mainline/v${KVER}/amd64/"
+        # Newer mainline kernels live under /v${KVER}/amd64/; older ones
+        # (≤ ~4.15) put debs at /v${KVER}/ directly. Try /amd64/ first;
+        # fall back to bare. linux-image-unsigned was renamed from
+        # linux-image- around 4.18 — old kernels use the plain name.
+        BASE="https://kernel.ubuntu.com/mainline/v${KVER}"
+        for URL in "${BASE}/amd64/" "${BASE}/"; do
+            INDEX=$(curl -sL "$URL")
+            if echo "$INDEX" | grep -q '\\.deb"'; then
+                break
+            fi
+        done
         TMP=$(mktemp -d)
         cd "$TMP"
         # Pick the 4 canonical generic-kernel .debs by pattern match against
-        # the directory index. Skip lowlatency variants.
-        DEBS=$(curl -sL "$URL" | \\
+        # the directory index. Skip lowlatency variants. Accept both
+        # 'linux-image-unsigned-' (newer) and 'linux-image-' (older).
+        DEBS=$(echo "$INDEX" | \\
             grep -oE 'href="[^"]+\\.deb"' | sed 's/href="//; s/"$//' | \\
-            grep -E '(linux-image-unsigned|linux-modules|linux-headers)-[0-9.]+-[0-9]+-generic_|linux-headers-[0-9.]+-[0-9]+_[^_]+_all\\.deb' | \\
+            grep -E '(linux-image(-unsigned)?|linux-modules|linux-headers)-[0-9.]+-[0-9]+-generic_|linux-headers-[0-9.]+-[0-9]+_[^_]+_all\\.deb' | \\
             grep -v lowlatency)
         if [ -z "$DEBS" ]; then
-            echo "[-] no .debs found at $URL — does the version exist on kernel.ubuntu.com?" >&2
+            echo "[-] no .debs found at ${BASE}/ (tried /amd64/ and bare)" >&2
             exit 2
         fi
         for f in $DEBS; do
@@ -123,6 +134,20 @@ Vagrant.configure("2") do |c|
         update-grub 2>&1 | tail -3
         echo "[i] mainline ${KVER} installed; reboot via 'vagrant reload'"
       SHELL
+    end
+
+    # 2c. Optional per-module provisioner. If
+    # tools/verify-vm/provisioners/<module>.sh exists, run it as root
+    # before build-and-verify. Used for things only meaningful per-module:
+    # build sudo 1.9.16 from source (sudo_chwoot), drop a polkit allow
+    # rule (udisks_libblockdev), add a sudoers grant (sudo_runas_neg1).
+    skk_mod = ENV["SKK_MODULE"] || ""
+    if !skk_mod.empty?
+      prov_path = File.join(__dir__, "provisioners", "#{skk_mod}.sh")
+      if File.exist?(prov_path)
+        m.vm.provision "shell", name: "module-provision-#{skk_mod}",
+          path: prov_path
+      end
     end
 
     # 3. Build SKELETONKEY in-VM and run --explain --active for the target
