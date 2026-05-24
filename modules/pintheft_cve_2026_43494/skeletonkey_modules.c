@@ -70,6 +70,7 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/mman.h>   /* mmap, mprotect, munmap, PROT_*, MAP_* */
 
 #ifdef __linux__
 #include <sys/syscall.h>
