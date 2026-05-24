@@ -114,11 +114,15 @@ jobs:
               musl-tools musl-dev linux-libc-dev build-essential
       - name: build static (musl-gcc)
         run: |
-          # musl-gcc wraps gcc with musl's libc + headers. -static is
-          # the whole point — same MSG_COPY define as the x86_64
-          # build since musl lacks the SysV msg flag.
+          # musl-gcc wraps gcc with musl's libc + headers. We still
+          # need Linux kernel uapi headers (linux/capability.h,
+          # linux/netfilter/*.h, etc.) which musl doesn't ship —
+          # pull them from the glibc-side linux-libc-dev package
+          # via -isystem so they don't clash with libc decls.
+          # -static is the whole point; MSG_COPY define mirrors the
+          # x86_64 build (musl lacks the SysV msg flag).
           make CC=musl-gcc \
-               CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000" \
+               CFLAGS="-O2 -Wall -Wextra -Wno-unused-parameter -Wno-pointer-arith -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -DMSG_COPY=040000 -isystem /usr/include -isystem /usr/include/aarch64-linux-gnu" \
                LDFLAGS=-static
           file skeletonkey
           ls -la skeletonkey
