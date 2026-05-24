@@ -1,4 +1,43 @@
-## SKELETONKEY v0.7.0 — empirical verification + operator briefing
+## SKELETONKEY v0.7.1 — arm64-static binary + per-module arch_support
+
+Point release on top of v0.7.0. Two additions:
+
+1. **`skeletonkey-arm64-static`** is now published alongside the
+   existing x86_64-static binary. Built native-arm64 in Alpine via
+   GitHub's `ubuntu-24.04-arm` runner pool. Works on Raspberry Pi 4+,
+   Apple Silicon Linux VMs, AWS Graviton, Oracle Ampere, Hetzner ARM,
+   and any other aarch64 Linux. `install.sh` auto-picks it.
+
+2. **`arch_support` per module** — a new field on
+   `struct skeletonkey_module` that honestly labels which architectures
+   the `exploit()` body has been verified on. Three categories:
+
+   - **`any`** (4 modules): pwnkit, sudo_samedit, sudoedit_editor,
+     pack2theroot. Purely userspace; arch-independent.
+   - **`x86_64`** (1 module): entrybleed. KPTI prefetchnta side-channel;
+     x86-only by physics (ARM uses TTBR_EL0/EL1 split, not CR3).
+     Already gated in source — returns PRECOND_FAIL on non-x86_64.
+   - **`x86_64+unverified-arm64`** (26 modules): kernel-exploitation
+     code that hasn't been verified on arm64 yet. `detect()` works
+     everywhere (it just reads `ctx->host`); the `exploit()` body uses
+     primitives (msg_msg sprays, ROP-style finishers, specific struct
+     offsets) that are likely portable to aarch64 but unproven.
+
+   `--list` adds an ARCH column; `--module-info` adds an `arch support:`
+   line; `--scan --json` adds an `arch_support` field per module.
+
+**What an arm64 user gets today:** the full detection/triage workflow
+works as well as on x86_64 (`--scan`, `--explain`, `--module-info`,
+`--detect-rules`, `--auto --dry-run`). Four exploit modules
+(`pwnkit`, `sudo_samedit`, `sudoedit_editor`, `pack2theroot`) will fire
+end-to-end. The remaining 26 modules currently mark themselves as
+"x86_64 verified; arm64 untested" — the bug class is generic but the
+exploitation hasn't been confirmed. Future arm64-Vagrant verification
+sweeps will promote modules to `any` as they're confirmed.
+
+---
+
+### From v0.7.0 — empirical verification + operator briefing
 
 The headline change since v0.6.0: **22 of 26 CVEs are now empirically
 confirmed against real Linux kernels in VMs**, with verification records

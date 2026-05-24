@@ -889,6 +889,7 @@ const struct skeletonkey_module cls_route4_module = {
     .detect_yara    = cls_route4_yara,
     .detect_falco   = cls_route4_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET); ip link/addr/route to make a dummy interface, htb qdisc + class + route4 filter with handle 0, delete filter (leaves dangling tcf_proto pointer), msg_msg spray kmalloc-1k tagged 'SKELETONKEY4', UDP sendto to trigger classify(). Writes /tmp/skeletonkey-cls_route4.log. Audit-visible via unshare + sendto(AF_INET) + msgsnd. Cleanup callback removes /tmp log + dummy interface.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_cls_route4(void)

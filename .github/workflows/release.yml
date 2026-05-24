@@ -59,14 +59,28 @@ jobs:
             skeletonkey-${{ matrix.target }}
             skeletonkey-${{ matrix.target }}.sha256
 
-  # Portable static-musl build for x86_64. Runs in Alpine (native
-  # musl + linux-headers) so the resulting binary works on every
-  # libc — glibc 2.x of any version, musl, etc. This is what
-  # install.sh fetches by default (the dynamic binary above hits a
-  # glibc-version ceiling on older distros like Debian 12 / RHEL 8).
-  build-static-x86_64:
-    runs-on: ubuntu-latest
-    name: build (x86_64-static / musl)
+  # Portable static-musl builds. Run in Alpine (native musl +
+  # linux-headers) so the resulting binary works on every libc —
+  # glibc 2.x of any version, musl, etc. This is what install.sh
+  # fetches by default (the dynamic binary above hits a glibc-
+  # version ceiling on older distros like Debian 12 / RHEL 8).
+  #
+  # x86_64-static runs on the regular x86_64 runner pool.
+  # arm64-static runs on GitHub's native ARM Linux runners
+  # (free for public repos as of 2024). Both produce statically-
+  # linked binaries that just need an executable Linux kernel of
+  # the right ABI.
+  build-static:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-static
+            runner: ubuntu-latest
+          - target: arm64-static
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    name: build (${{ matrix.target }} / musl)
     container:
       image: alpine:latest
     steps:
@@ -88,18 +102,18 @@ jobs:
 
       - name: rename + checksum
         run: |
-          mv skeletonkey skeletonkey-x86_64-static
-          sha256sum skeletonkey-x86_64-static > skeletonkey-x86_64-static.sha256
+          mv skeletonkey skeletonkey-${{ matrix.target }}
+          sha256sum skeletonkey-${{ matrix.target }} > skeletonkey-${{ matrix.target }}.sha256
 
       - uses: actions/upload-artifact@v4
         with:
-          name: skeletonkey-x86_64-static
+          name: skeletonkey-${{ matrix.target }}
           path: |
-            skeletonkey-x86_64-static
-            skeletonkey-x86_64-static.sha256
+            skeletonkey-${{ matrix.target }}
+            skeletonkey-${{ matrix.target }}.sha256
 
   release:
-    needs: [build, build-static-x86_64]
+    needs: [build, build-static]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,5 +168,7 @@ jobs:
             skeletonkey-x86_64-static.sha256
             skeletonkey-arm64
             skeletonkey-arm64.sha256
+            skeletonkey-arm64-static
+            skeletonkey-arm64-static.sha256
             install.sh
           fail_on_unmatched_files: false   # install.sh may not exist at first tag

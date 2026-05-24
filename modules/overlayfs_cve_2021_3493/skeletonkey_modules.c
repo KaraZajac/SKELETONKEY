@@ -556,6 +556,7 @@ const struct skeletonkey_module overlayfs_module = {
     .detect_yara    = overlayfs_yara,
     .detect_falco   = overlayfs_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) for CAP_SYS_ADMIN; mount('overlay', merged, ...); compile + copy payload into the merged dir (writes upper on host fs); setxattr(upper_payload, 'security.capability', cap_setuid+ep) - the bug is that this xattr persists on the HOST fs despite being set inside userns. Parent then execve's the now-CAP_SETUID payload, calls setuid(0), execs /bin/sh. Artifacts: /tmp/skeletonkey-ovl-XXXXXX/ workdir; cleaned on exit/failure (on success the exec replaces the process so cleanup does not run). Audit-visible via unshare + mount(overlay) + setxattr(security.capability) + execve of attacker-controlled binary. Dmesg silent.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_overlayfs(void)

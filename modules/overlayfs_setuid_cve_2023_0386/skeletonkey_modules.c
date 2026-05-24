@@ -472,6 +472,7 @@ const struct skeletonkey_module overlayfs_setuid_module = {
     .detect_yara    = overlayfs_setuid_yara,
     .detect_falco   = overlayfs_setuid_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) + overlayfs mount with a setuid-root binary in lower (e.g. /usr/bin/su); chown on the merged view triggers copy-up that preserves the setuid bit in upper - but upper is owned by the unprivileged user. Overwrites upper-layer contents with attacker payload and execve's for root. Artifacts: /tmp/skeletonkey-ovlsu-XXXXXX/ (workdir with payload.c, binary, overlay mounts); cleanup callback removes these. Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount(overlay) + chown on the merged view. No network. Dmesg silent on success.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_overlayfs_setuid(void)

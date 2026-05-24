@@ -34,15 +34,15 @@ log()   { printf '[\033[1;36m*\033[0m] %s\n' "$*" >&2; }
 ok()    { printf '[\033[1;32m+\033[0m] %s\n' "$*" >&2; }
 fail()  { printf '[\033[1;31m-\033[0m] %s\n' "$*" >&2; exit 1; }
 
-# Detect architecture
+# Detect architecture. Default to the musl-static binary on both
+# x86_64 and arm64 — works on every libc (glibc 2.x of any version,
+# musl, uclibc); costs ~800 KB extra vs dynamic but eliminates the
+# GLIBC_2.NN portability ceiling that bites on Debian-stable, older
+# RHEL hosts, and Alpine. Set SKELETONKEY_DYNAMIC=1 to fetch the
+# smaller dynamic build (needs glibc >= 2.38 for x86_64 — Ubuntu
+# 24.04 / Debian 13 / RHEL 10).
 arch=$(uname -m)
 case "$arch" in
-    # x86_64 default: the musl-static binary works on every libc
-    # (glibc 2.x of any version, musl, uclibc) — costs ~800 KB extra
-    # vs the dynamic build but eliminates the GLIBC_2.NN portability
-    # ceiling that bit users on Debian-stable / older RHEL hosts.
-    # Set SKELETONKEY_DYNAMIC=1 to fetch the smaller dynamic build
-    # (needs glibc >= 2.38, i.e. Ubuntu 24.04 / Debian 13 / RHEL 10).
     x86_64|amd64)
         if [ "${SKELETONKEY_DYNAMIC:-0}" = "1" ]; then
             target=x86_64
@@ -50,7 +50,13 @@ case "$arch" in
             target=x86_64-static
         fi
         ;;
-    aarch64|arm64)       target=arm64  ;;
+    aarch64|arm64)
+        if [ "${SKELETONKEY_DYNAMIC:-0}" = "1" ]; then
+            target=arm64
+        else
+            target=arm64-static
+        fi
+        ;;
     *) fail "Unsupported architecture: $arch (only x86_64 and arm64 currently)" ;;
 esac
 log "detected arch: $target"

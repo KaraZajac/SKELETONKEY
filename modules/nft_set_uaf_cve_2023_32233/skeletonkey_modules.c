@@ -1068,6 +1068,7 @@ const struct skeletonkey_module nft_set_uaf_module = {
     .detect_yara    = nft_set_uaf_yara,
     .detect_falco   = nft_set_uaf_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + single nfnetlink transaction: NEWTABLE + NEWCHAIN + NEWSET (anonymous, ANONYMOUS|CONSTANT|EVAL) + NEWRULE with nft_lookup referencing the anon set + DELSET + DELRULE. Vulnerable kernels do not deactivate the lookup's set ref on commit -> UAF when set frees. msg_msg cg-512 spray (32 queues x 16 msgs, tag 'SKELETONKEY_SET'). --full-chain re-fires with forged headers (data ptr = kaddr) and NEWSETELEM payload. Writes /tmp/skeletonkey-nft_set_uaf.log. Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg + msgsnd. Dmesg: KASAN oops on UAF. Cleanup unlinks log.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_nft_set_uaf(void)

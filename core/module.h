@@ -119,6 +119,31 @@ struct skeletonkey_module {
      * core/cve_metadata.{h,c} — looked up by CVE id, refreshed via
      * tools/refresh-cve-metadata.py. */
     const char *opsec_notes;
+
+    /* Architecture support for the exploit() body. detect() works on
+     * any Linux arch (it just consults ctx->host); the question this
+     * field answers is: if this module says VULNERABLE, will the
+     * --exploit path actually fire on aarch64 / arm64? Values:
+     *
+     *   "any"            — userspace bug or arch-agnostic kernel
+     *                      primitive (pwnkit, sudo*, pack2theroot,
+     *                      dirty_pipe, dirty_cow, most netfilter/fs
+     *                      bugs that use msg_msg sprays + structural
+     *                      escapes).
+     *   "x86_64"         — strictly x86-only (entrybleed needs
+     *                      prefetchnta + KPTI, which doesn't apply
+     *                      to ARM's TTBR_EL0/EL1 model).
+     *   "x86_64+unverified-arm64" — exploit body likely works on
+     *                      arm64 but hasn't been verified on a real
+     *                      arm64 host yet (e.g. copy_fail_family
+     *                      assumes some x86_64 struct offsets;
+     *                      --full-chain finisher uses x86_64-style
+     *                      kernel ROP gadgets).
+     *
+     * NULL = unmapped (treat as "x86_64+unverified-arm64" by default;
+     * a future arm64-on-Vagrant sweep will fill these in). Surfaced
+     * in --list (ARCH column) and --module-info. */
+    const char *arch_support;
 };
 
 #endif /* SKELETONKEY_MODULE_H */

@@ -732,6 +732,7 @@ const struct skeletonkey_module af_packet2_module = {
     .detect_yara    = af_packet2_yara,
     .detect_falco   = af_packet2_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + TPACKET_V2 ring on AF_PACKET; crafts nested-VLAN ETH_P_8021AD frames with 0x88A8/0x8100 TPIDs to trigger tpacket_rcv underflow; fires 256 frames + 64 sendmmsg via AF_UNIX socketpair spray. Tag 'skeletonkey-afp-fc-' visible in KASAN splats. Audit-visible via socket(AF_PACKET) + sendmsg/sendto from userns. No persistent artifacts; kernel cleans up on child exit.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_af_packet2(void)

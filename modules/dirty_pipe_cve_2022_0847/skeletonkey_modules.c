@@ -523,6 +523,7 @@ const struct skeletonkey_module dirty_pipe_module = {
     .detect_yara    = dirty_pipe_yara,
     .detect_falco   = dirty_pipe_falco,
     .opsec_notes    = "Creates a pipe, fills+drains to leave PIPE_BUF_FLAG_CAN_MERGE on every slot; finds the UID offset in /etc/passwd by parsing the file; splice(1 byte) from (target_offset-1) to inherit the stale flag, then write(pipe) with the all-zero payload - kernel merges into the file's page cache. Offset must be non-page-aligned and the write must fit in a single page. Audit-visible via splice(fd=/etc/passwd) + write from a non-root process. --active mode writes/reads /tmp/skeletonkey-dirty-pipe-probe-XXXXXX to verify. Cleanup callback evicts /etc/passwd via posix_fadvise + drop_caches.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_dirty_pipe(void)

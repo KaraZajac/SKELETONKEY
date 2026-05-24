@@ -1014,6 +1014,7 @@ const struct skeletonkey_module stackrot_module = {
     .detect_yara    = stackrot_yara,
     .detect_falco   = stackrot_falco,
     .opsec_notes    = "Child forks, enters userns, builds a race region with MAP_GROWSDOWN + anchor VMAs, sprays kmalloc-192 with msg_msg payloads, then spawns Thread A (mremap/munmap of region boundary to rotate maple-tree nodes) + Thread B (fork+fault the growsdown region to deref freed node). UAF in __vma_adjust fires if a sprayed msg_msg reclaims the freed node. Writes /tmp/skeletonkey-stackrot.log (iteration counts + slab delta). Audit-visible via unshare + mremap/munmap bursts on stack regions + msgsnd spray. No network. Cleanup callback unlinks /tmp log.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_stackrot(void)

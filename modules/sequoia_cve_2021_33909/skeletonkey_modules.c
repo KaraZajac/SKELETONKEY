@@ -752,6 +752,7 @@ const struct skeletonkey_module sequoia_module = {
     .detect_yara    = sequoia_yara,
     .detect_falco   = sequoia_falco,
     .opsec_notes    = "Builds ~5000 nested directories under /tmp/skeletonkey-sequoia (each name 200 'A' chars); enters userns for CAP_SYS_ADMIN; bind-mounts the leaf over itself to amplify the rendered mountinfo string length; reads /proc/self/mountinfo to trigger the int-vs-size_t overflow in seq_buf_alloc(), producing an OOB write of mountinfo bytes off the stack buffer. Artifacts: /tmp/skeletonkey-sequoia/ (deep tree + bind mounts) and /tmp/skeletonkey-sequoia.log (byte count + dmesg sample). Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount() + burst of ~5000 mkdir/mkdirat. No network. Cleanup callback walks back down the tree, unmounts, removes dirs, unlinks the .log.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_sequoia(void)

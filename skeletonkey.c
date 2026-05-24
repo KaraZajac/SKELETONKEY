@@ -35,7 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.7.0"
+#define SKELETONKEY_VERSION "0.7.1"
 
 static const char BANNER[] =
 "\n"
@@ -216,6 +216,13 @@ static void emit_module_json(const struct skeletonkey_module *m, bool include_ru
         free(op);
     }
 
+    /* Architecture support for the exploit body. */
+    if (m->arch_support) {
+        char *a = json_escape(m->arch_support);
+        fprintf(stdout, ",\"arch_support\":\"%s\"", a ? a : "");
+        free(a);
+    }
+
     /* Empirical verification records: (distro, kernel, date) tuples
      * where the module's detect() was confirmed against a real target. */
     size_t nv = 0;
@@ -272,27 +279,43 @@ static int cmd_list(const struct skeletonkey_ctx *ctx)
         fprintf(stdout, "]}\n");
         return 0;
     }
-    fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
-            "NAME", "CVE", "KEV", "VFY", "FAMILY", "SUMMARY");
-    fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
-            "----", "---", "---", "---", "------", "-------");
-    size_t n_kev = 0, n_vfy = 0;
+    /* The ARCH column shows where exploit() is known/expected to work:
+     *   "any"  → userspace or arch-agnostic kernel primitive
+     *   "x64"  → x86_64 only (entrybleed)
+     *   "x64?" → x86_64 verified, arm64 untested (the honest default
+     *           for kernel modules that haven't been arm64-confirmed) */
+    fprintf(stdout, "%-20s %-18s %-3s %-3s %-5s %-25s %s\n",
+            "NAME", "CVE", "KEV", "VFY", "ARCH", "FAMILY", "SUMMARY");
+    fprintf(stdout, "%-20s %-18s %-3s %-3s %-5s %-25s %s\n",
+            "----", "---", "---", "---", "----", "------", "-------");
+    size_t n_kev = 0, n_vfy = 0, n_any = 0;
     for (size_t i = 0; i < n; i++) {
         const struct skeletonkey_module *m = skeletonkey_module_at(i);
         const struct cve_metadata *md = cve_metadata_lookup(m->cve);
         bool in_kev = md && md->in_kev;
         bool verified = verifications_module_has_match(m->name);
+        const char *arch_abbr = "?";
+        if (m->arch_support) {
+            if      (strcmp(m->arch_support, "any") == 0)    { arch_abbr = "any"; n_any++; }
+            else if (strcmp(m->arch_support, "x86_64") == 0) { arch_abbr = "x64"; }
+            else                                              { arch_abbr = "x64?"; }
+        }
         if (in_kev)   n_kev++;
         if (verified) n_vfy++;
-        fprintf(stdout, "%-20s %-18s %-3s %-3s %-25s %s\n",
+        fprintf(stdout, "%-20s %-18s %-3s %-3s %-5s %-25s %s\n",
                 m->name, m->cve,
                 in_kev   ? "★" : "",
                 verified ? "✓" : "",
+                arch_abbr,
                 m->family, m->summary);
     }
     fprintf(stdout, "\n%zu modules registered · %zu in CISA KEV (★) · "
-                    "%zu empirically verified in real VMs (✓)\n",
-            n, n_kev, n_vfy);
+                    "%zu empirically verified in real VMs (✓) · "
+                    "%zu arch-independent (any)\n",
+            n, n_kev, n_vfy, n_any);
+    fprintf(stdout, "ARCH key: 'any' = userspace or arch-agnostic; "
+                    "'x64' = x86_64 only; 'x64?' = x86_64 verified, "
+                    "arm64 untested\n");
     return 0;
 }
 
@@ -666,6 +689,8 @@ static int cmd_module_info(const char *name, const struct skeletonkey_ctx *ctx)
         m->exploit  ? "exploit "  : "",
         m->mitigate ? "mitigate " : "",
         m->cleanup  ? "cleanup "  : "");
+    if (m->arch_support)
+        fprintf(stdout, "arch support:  %s\n", m->arch_support);
     fprintf(stdout, "detect rules:  %s%s%s%s\n",
         m->detect_auditd ? "auditd " : "",
         m->detect_sigma  ? "sigma "  : "",

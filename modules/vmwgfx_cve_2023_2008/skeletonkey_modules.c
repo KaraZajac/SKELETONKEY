@@ -771,6 +771,7 @@ const struct skeletonkey_module vmwgfx_module = {
     .detect_yara    = vmwgfx_yara,
     .detect_falco   = vmwgfx_falco,
     .opsec_notes    = "Opens /dev/dri/card* (vmwgfx DRM - only reachable on VMware guests); DRM_IOCTL_VMW_CREATE_DMABUF with size=4096+16 lands in the kmalloc-512 page-count bucket but the byte-length overruns during kunmap_atomic copy in ttm_bo_kmap; mmap + write recognizable pattern across page boundary; UNREF commits the OOB into adjacent kmalloc-512. msg_msg spray tagged 'SKVMWGFX'. Writes /tmp/skeletonkey-vmwgfx.log (slab counts pre/post, trigger success). Audit-visible via openat(/dev/dri/card*), ioctl(0xc010644a CREATE / 0x4004644b UNREF), msgsnd spray. No network. Cleanup callback unlinks /tmp log; --full-chain re-seeds spray with kaddr-tagged payloads and the modprobe_path finisher arbitrates via 3s sentinel.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_vmwgfx(void)

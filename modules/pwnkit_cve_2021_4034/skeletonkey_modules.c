@@ -473,6 +473,7 @@ const struct skeletonkey_module pwnkit_module = {
     .detect_yara    = pwnkit_yara,
     .detect_falco   = pwnkit_falco,
     .opsec_notes    = "Invokes pkexec with argc==0 so the first envp slot is misread as argv[0]; pkexec's iconv-during-decoding loads attacker .so via dlopen by way of crafted GCONV_PATH + CHARSET env vars. Builds a gconv payload .so and gconv-modules cache in /tmp/skeletonkey-pwnkit-XXXXXX (compiles via fork/execl of gcc). Audit-visible via execve(/usr/bin/pkexec) with GCONV_PATH and CHARSET set. No network. Cleanup callback removes /tmp/skeletonkey-pwnkit-* (on failure path; on success the exec replaces the process).",
+    .arch_support   = "any",
 };
 
 void skeletonkey_register_pwnkit(void)

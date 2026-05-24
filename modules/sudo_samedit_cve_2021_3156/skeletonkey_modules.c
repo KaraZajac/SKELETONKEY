@@ -506,6 +506,7 @@ const struct skeletonkey_module sudo_samedit_module = {
     .detect_yara    = NULL,
     .detect_falco   = sudo_samedit_falco,
     .opsec_notes    = "Invokes sudoedit with argv = { 'sudoedit', '-s', trailing-backslash, then ~60 padding args each ending in backslash }; the parser's unescape loop in set_cmnd() walks past the end of the argv string for the trailing-backslash argument, copying adjacent stack/env into an undersized heap buffer. Audit-visible via execve(/usr/bin/sudoedit) with -s and a trailing-backslash argv. No persistent file artifacts (only best-effort removal of /tmp/.sudo_edit_*). No network. Dmesg silent unless sudo crashes (SIGSEGV). Per-distro heap layout determines landing; verifies geteuid()==0 afterward.",
+    .arch_support   = "any",
 };
 
 void skeletonkey_register_sudo_samedit(void) { skeletonkey_register(&sudo_samedit_module); }

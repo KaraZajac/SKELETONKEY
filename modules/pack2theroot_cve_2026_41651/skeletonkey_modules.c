@@ -791,6 +791,7 @@ const struct skeletonkey_module pack2theroot_module = {
 	.detect_yara    = p2tr_yara,
 	.detect_falco   = p2tr_falco,
     .opsec_notes    = "TOCTOU race in PackageKit's polkit-auth + D-Bus InstallFiles dispatcher: sends back-to-back async calls (first with SIMULATE to bypass polkit, second with the malicious .deb) so the cached flags are overwritten before the idle callback fires. Builds a minimal .deb ar archive in pure C with a postinst that installs a setuid bash. Writes /tmp/.pk-dummy-<pid>.deb, /tmp/.pk-payload-<pid>.deb, and /tmp/skeletonkey-pack2theroot.state; via the polkit-bypassed postinst plants /tmp/.suid_bash setuid root. Audit-visible via dpkg execve from packagekitd for a non-root caller, chmod(2) on /tmp/.suid_bash, creat/openat on the .deb files. Cleanup callback unlinks the .debs and best-effort removes /tmp/.suid_bash (which is owned by root).",
+    .arch_support   = "any",
 };
 
 void skeletonkey_register_pack2theroot(void)

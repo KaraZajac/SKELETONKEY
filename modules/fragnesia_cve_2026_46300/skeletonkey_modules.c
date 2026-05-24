@@ -1211,6 +1211,7 @@ const struct skeletonkey_module fragnesia_module = {
 	.detect_yara    = fg_yara,
 	.detect_falco   = fg_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + socket(AF_ALG, SOCK_SEQPACKET) for an AES-GCM keystream table; NETLINK_XFRM setsockopt to install ESP-in-TCP state; TCP_ULP setsockopt on a loopback connection; splice() from a carrier setuid binary (/usr/bin/su or /bin/su) into the TCP socket. Artifacts: /tmp/skeletonkey-fragnesia-probe-XXXXXX (mkstemp, unlinked after probe) and /tmp/skeletonkey-fragnesia.target. Audit-visible via socket(AF_ALG) (38), NETLINK_XFRM (6) writes, TCP_ULP setsockopt, splice() of setuid binary. No external network (loopback). Cleanup callback unlinks /tmp files and evicts the carrier from page cache.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_fragnesia(void)

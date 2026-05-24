@@ -1168,6 +1168,7 @@ const struct skeletonkey_module nf_tables_module = {
     .detect_yara    = nf_tables_yara,
     .detect_falco   = nf_tables_falco,
     .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNET) + nfnetlink batch (NEWTABLE + NEWCHAIN/LOCAL_OUT + NEWSET verdict-key + NEWSETELEM malformed NFT_GOTO) committed twice to trigger the nft_verdict_init double-free. msg_msg cg-96 groom with forged pipapo_elem headers; --full-chain sprays kaddr-tagged forged elems and re-fires. Writes /tmp/skeletonkey-nft_set_uaf.log (conditional). Audit-visible via unshare + socket(NETLINK_NETFILTER) + sendmsg batches + msgget/msgsnd. Dmesg: KASAN double-free panic on vulnerable kernels; silent otherwise. Cleanup is finisher-gated; no persistent files on success.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_nf_tables(void)

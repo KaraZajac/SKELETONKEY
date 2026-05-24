@@ -955,6 +955,7 @@ const struct skeletonkey_module af_packet_module = {
     .detect_yara    = af_packet_yara,
     .detect_falco   = af_packet_falco,
     .opsec_notes    = "Creates AF_PACKET socket and TPACKET_V3 ring inside unshare(CLONE_NEWUSER|CLONE_NEWNET); triggers integer overflow with crafted tp_block_size/tp_block_nr and sprays ~200 loopback frames. Audit-visible via socket(AF_PACKET) (a0=17) + sendmmsg from a userns process; KASAN tag 'iamroot-afp-tag' may appear in dmesg if enabled. No persistent files. No cleanup callback - kernel state unwinds on child exit.",
+    .arch_support   = "x86_64+unverified-arm64",
 };
 
 void skeletonkey_register_af_packet(void)
