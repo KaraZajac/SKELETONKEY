@@ -118,31 +118,28 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          # Pull the latest entry from CVES.md / ROADMAP.md for the body
-          {
-            echo "## SKELETONKEY $tag"
-            echo
-            echo "Pre-built binaries for x86_64 and arm64. Checksums alongside."
-            echo
-            echo "### Install"
-            echo
-            echo '```bash'
-            echo "curl -sSLfo /tmp/skeletonkey https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/skeletonkey-\$(uname -m | sed s/aarch64/arm64/)"
-            echo "chmod +x /tmp/skeletonkey && sudo mv /tmp/skeletonkey /usr/local/bin/skeletonkey"
-            echo "skeletonkey --version"
-            echo '```'
-            echo
-            echo "Or one-shot via the install script:"
-            echo
-            echo '```bash'
-            echo "curl -sSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/install.sh | sh"
-            echo '```'
-            echo
-            echo "### What's in this release"
-            echo
-            echo "See [\`CVES.md\`](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/CVES.md) for the curated CVE inventory."
-            echo "See [\`ROADMAP.md\`](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/ROADMAP.md) for phase progress."
-          } > release-notes.md
+          # Prefer the hand-written release notes if present (richer
+          # per-release context); otherwise fall back to an auto-generated
+          # stub with install instructions + pointers to docs.
+          if [ -f docs/RELEASE_NOTES.md ]; then
+            cp docs/RELEASE_NOTES.md release-notes.md
+          else
+            {
+              echo "## SKELETONKEY $tag"
+              echo
+              echo "Pre-built binaries for x86_64 (dynamic + static-musl) and arm64."
+              echo "Checksums alongside each artifact."
+              echo
+              echo "### Install"
+              echo '```bash'
+              echo "curl -sSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/install.sh | sh"
+              echo "skeletonkey --version"
+              echo '```'
+              echo
+              echo "See [\`CVES.md\`](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/CVES.md) for the CVE inventory."
+              echo "See [\`docs/RELEASE_NOTES.md\`](https://github.com/${GITHUB_REPOSITORY}/blob/${tag}/docs/RELEASE_NOTES.md) for per-release detail."
+            } > release-notes.md
+          fi
 
       - name: publish release
         uses: softprops/action-gh-release@v2

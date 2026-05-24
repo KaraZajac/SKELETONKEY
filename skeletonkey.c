@@ -35,7 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.6.0"
+#define SKELETONKEY_VERSION "0.7.0"
 
 static const char BANNER[] =
 "\n"
