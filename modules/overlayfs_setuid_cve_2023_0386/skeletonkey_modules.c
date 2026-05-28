@@ -62,7 +62,7 @@
 static const struct kernel_patched_from overlayfs_setuid_patched_branches[] = {
     {5, 10, 179},   /* 5.10.x stable backport (per Debian tracker — bullseye) */
     {5, 15, 110},
-    {6,  1,  27},
+    {6,  1,  11},   /* Debian tracker: earlier than 6.1.27 */
     {6,  2,  13},
     {6,  3,   0},   /* mainline */
 };

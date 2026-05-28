@@ -53,7 +53,7 @@ static const struct kernel_patched_from ptrace_traceme_patched_branches[] = {
     {4,  4, 182},
     {4,  9, 182},
     {4, 14, 131},
-    {4, 19,  58},
+    {4, 19,  37},   /* Debian tracker: earlier than 4.19.58 */
     {5,  0,  20},
     {5,  1,  17},
     {5,  2,   0},   /* mainline (5.2-rc) */

@@ -127,7 +127,7 @@
 
 static const struct kernel_patched_from sequoia_patched_branches[] = {
     {5,  4, 134},
-    {5, 10,  52},
+    {5, 10,  46},   /* Debian tracker: earlier than 5.10.52 */
     {5, 13,   4},
     {5, 14,   0},   /* mainline */
 };

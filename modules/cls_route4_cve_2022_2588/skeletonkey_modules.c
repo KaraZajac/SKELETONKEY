@@ -69,9 +69,9 @@
 
 static const struct kernel_patched_from cls_route4_patched_branches[] = {
     {5,  4, 213},
-    {5, 10, 143},
+    {5, 10, 136},   /* Debian tracker: earlier than 5.10.143 */
     {5, 15,  69},
-    {5, 18,  18},
+    {5, 18,  16},   /* Debian tracker: earlier than 5.18.18 */
     {5, 19,   7},
     {5, 20,   0},   /* mainline */
 };

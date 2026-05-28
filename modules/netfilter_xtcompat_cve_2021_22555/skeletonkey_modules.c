@@ -103,7 +103,7 @@ static const struct kernel_patched_from netfilter_xtcompat_patched_branches[] = 
     {4, 14, 240},
     {4, 19, 198},
     {5,  4, 128},
-    {5, 10,  46},
+    {5, 10,  38},   /* Debian tracker: earlier than 5.10.46 */
     {5, 11,  20},
     {5, 12,  13},
     {5, 13,   0},   /* mainline (5.13 carries b29c457a6511) */

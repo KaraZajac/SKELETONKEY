@@ -97,6 +97,7 @@
  * patch (likely 6.16 once the post-rc release tags). Conservatively
  * placeholding at {7, 0, 0} until that lands. */
 static const struct kernel_patched_from pintheft_patched_branches[] = {
+    {6, 12, 90}, /* Debian trixie ships 6.12.90 with the fix backported */
     {7, 0, 0},   /* mainline fix commit 0cebaccef3ac; tag will be 6.16 or 7.0
                     depending on when 6.15 closes — refresh when known */
 };

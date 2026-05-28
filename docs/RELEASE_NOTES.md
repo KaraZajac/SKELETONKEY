@@ -1,3 +1,43 @@
+## SKELETONKEY v0.9.5 — kernel_range drift cleanup (the other half)
+
+v0.9.4 fixed the `cve_metadata` drift but exposed a *second* drift
+check (`kernel_range drift`) that had been hidden behind it. That
+check compares each module's `kernel_patched_from` table against
+Debian's security tracker. It had **11 TOO_TIGHT + 8 MISSING
+findings across 12 modules** — meaning `detect()` would have
+reported VULNERABLE on many kernels that Debian has on record as
+patched (false-positives), or missed branches entirely.
+
+Applied `tools/refresh-kernel-ranges.py --patch` recommendations
+across:
+
+- `cgroup_release_agent` — `{5,16,9}` → `{5,16,7}`
+- `cls_route4` — `{5,10,143}` → `{5,10,136}`, `{5,18,18}` → `{5,18,16}`
+- `dirty_cow` — `{4,7,10}` → `{4,7,8}`
+- `dirty_pipe` — `{5,10,102}` → `{5,10,92}`
+- `fragnesia` — `{6,12,91}` → `{6,12,90}`, `{7,0,10}` → `{7,0,9}`
+  (the 7.0.10 entry I added in v0.9.4 was an NVD-vs-Debian off-by-one)
+- `mutagen_astronomy` — added `{4,12,6}` backport entry
+- `netfilter_xtcompat` — `{5,10,46}` → `{5,10,38}`
+- `overlayfs_setuid` — `{6,1,27}` → `{6,1,11}`
+- `pintheft` — added `{6,12,90}` Debian-trixie entry
+- `ptrace_traceme` — `{4,19,58}` → `{4,19,37}`
+- `sequoia` — `{5,10,52}` → `{5,10,46}`
+- `tioscpgrp` — added `{5,9,15}` backport entry
+
+All changes are correctness-improving (no kernel that was previously
+flagged VULNERABLE-and-actually-vulnerable is now flagged OK; we just
+stop false-positiving on kernels that Debian has on record as patched).
+
+Build's `kernel_range drift` step now exits 0 with 0 TOO_TIGHT and 0
+MISSING.
+
+Also enabled `workflow_dispatch` on the build workflow so the
+drift-check job can be manually triggered without waiting for the
+weekly Monday-06:00-UTC cron.
+
+---
+
 ## SKELETONKEY v0.9.4 — drift unblock, fragnesia range fix, infra docs
 
 Quality-of-life follow-ups from the v0.9.3 review:

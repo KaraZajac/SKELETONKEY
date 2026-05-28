@@ -204,7 +204,7 @@ static void revert_passwd_page_cache(void)
  *  - mainline (≥ 5.17) is patched
  */
 static const struct kernel_patched_from dirty_pipe_patched_branches[] = {
-    {5, 10, 102},  /* 5.10.x backport */
+    {5, 10,  92},  /* 5.10.x backport (Debian tracker: earlier than 5.10.102) */
     {5, 15,  25},  /* 5.15.x backport */
     {5, 16,  11},  /* 5.16.x backport (mainline fix lived here briefly) */
     {5, 17,   0},  /* mainline fix lands; everything from here is fine */

@@ -56,6 +56,7 @@ static const struct kernel_patched_from tioscpgrp_patched_branches[] = {
     {4, 14, 213},   /* 4.14 LTS */
     {4, 19, 165},   /* 4.19 LTS */
     {5,  4,  85},   /* 5.4 LTS */
+    {5,  9,  15},   /* Debian-tracked 5.9 backport */
     {5, 10,   0},   /* mainline fix in 5.10 */
 };
 

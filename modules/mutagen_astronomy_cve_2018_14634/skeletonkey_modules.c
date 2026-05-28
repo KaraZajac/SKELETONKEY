@@ -71,6 +71,7 @@
  * VULNERABLE by version-only check; the RLIMIT_STACK active probe
  * (--active) is required to confirm exploitability on a real host. */
 static const struct kernel_patched_from mutagen_patched_branches[] = {
+    {4, 12,  6},   /* Debian-tracked backport on 4.12 branch */
     {4, 14, 71},   /* 4.14 LTS stable backport */
     {4, 18,  8},   /* mainline + everything above inherits */
 };

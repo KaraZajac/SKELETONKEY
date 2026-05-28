@@ -72,7 +72,7 @@ static const struct kernel_patched_from dirty_cow_patched_branches[] = {
     {3, 16,  38},
     {3, 18,  43},
     {4,  4,  26},   /* Ubuntu 16.04 baseline */
-    {4,  7,  10},
+    {4,  7,   8},   /* Debian tracker: earlier than 4.7.10 */
     {4,  8,   3},
     {4,  9,   0},   /* mainline fix */
 };

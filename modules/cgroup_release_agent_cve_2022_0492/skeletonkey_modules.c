@@ -65,7 +65,7 @@ static const struct kernel_patched_from cgroup_ra_patched_branches[] = {
     {5,  4, 179},
     {5, 10, 100},
     {5, 15,  23},
-    {5, 16,   9},
+    {5, 16,   7},   /* Debian tracker: earlier than 5.16.9 in stable */
     {5, 17,   0},   /* mainline */
 };
 

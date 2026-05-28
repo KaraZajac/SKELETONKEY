@@ -919,9 +919,9 @@ static const struct kernel_patched_from fragnesia_patched_branches[] = {
 	{5, 15, 208}, /* 5.15-LTS backport */
 	{6,  1, 174}, /* 6.1-LTS backport */
 	{6,  6, 141}, /* 6.6-LTS backport */
-	{6, 12,  91}, /* 6.12-LTS backport */
+	{6, 12,  90}, /* 6.12-LTS backport (Debian trixie ships .90 with fix) */
 	{6, 18,  33}, /* 6.18-LTS backport */
-	{7,  0,  10}, /* 7.0 stable: fix lands at 7.0.10 */
+	{7,  0,   9}, /* 7.0 stable (Debian forky/sid ship .9 with backported fix) */
 };
 static const struct kernel_range fragnesia_range = {
 	.patched_from = fragnesia_patched_branches,
