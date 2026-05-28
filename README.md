@@ -202,7 +202,7 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.3 cut 2026-05-24.** 39 modules across 34 CVEs — **every
+**v0.9.4 cut 2026-05-28.** 39 modules across 34 CVEs — **every
 year 2016 → 2026 now covered**. v0.9.0 added 5 gap-fillers
 (`mutagen_astronomy` / `sudo_runas_neg1` / `tioscpgrp` / `vsock_uaf` /
 `nft_pipapo`); v0.8.0 added 3 (`sudo_chwoot` / `udisks_libblockdev` /

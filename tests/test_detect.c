@@ -332,6 +332,12 @@ static void run_all(void)
 		&dirtydecrypt_module, &h_ubuntu_24_userns_ok,
 		SKELETONKEY_OK);
 
+	/* fragnesia: SKBFL_SHARED_FRAG marker added in 5.11; kernels before
+	 * that predate the buggy skb_try_coalesce() code → OK */
+	run_one("fragnesia: kernel 4.4 predates 5.11 SKBFL_SHARED_FRAG → OK",
+		&fragnesia_module, &h_kernel_4_4,
+		SKELETONKEY_OK);
+
 	/* fragnesia: userns disabled → XFRM gate closed → PRECOND_FAIL */
 	run_one("fragnesia: userns_allowed=false → PRECOND_FAIL",
 		&fragnesia_module, &h_pre7_no_userns_no_dbus,

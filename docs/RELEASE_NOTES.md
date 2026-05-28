@@ -1,3 +1,50 @@
+## SKELETONKEY v0.9.4 — drift unblock, fragnesia range fix, infra docs
+
+Quality-of-life follow-ups from the v0.9.3 review:
+
+**Nightly CI drift-check unblocked.** v0.9.3's hand-applied
+`core/cve_metadata.c` entries weren't reflected in
+`docs/CVE_METADATA.json`, so the scheduled `build` workflow had
+been red since 2026-05-25 even though push-triggered runs passed.
+Regenerated both via the canonical script. Pintheft's CWE landed
+as CWE-787 (NVD-derived) — previously NULL.
+
+**fragnesia module range table corrected.** Same audit pattern that
+found the dirtydecrypt bug in v0.9.3. NVD CVE-2026-46300 confirms
+the SKBFL_SHARED_FRAG marker was introduced at 5.11 and the bug
+spans every stable branch since. Previous range table had one entry
+(`{7, 0, 9}`) — off-by-one against NVD's 7.0.10 fix point and
+missing every other backport. Now models 6 backports + predates-5.11
+introduction gate:
+
+```c
+{5, 15, 208}, /* 5.15-LTS */
+{6,  1, 174}, /* 6.1-LTS  */
+{6,  6, 141}, /* 6.6-LTS  */
+{6, 12,  91}, /* 6.12-LTS */
+{6, 18,  33}, /* 6.18-LTS */
+{7,  0,  10}, /* 7.0      */
+```
+
+Test row added for the predates path (kernel 4.4 → OK).
+
+**`tools/verify-vm/README.md` brought current.** The README was
+written for the v0.6-era apt-pin-only workflow. Now documents the
+v0.9.x infrastructure: mainline kernel pinning via
+kernel.ubuntu.com, per-module provisioners
+(`provisioners/<module>.sh`), two-phase prep→reboot→verify with
+post-reboot kernel confirmation, GRUB_DEFAULT pinning in both apt
+and mainline blocks.
+
+**NVD lookups in `refresh-cve-metadata.py` get a curl fallback.**
+v0.9.3 ran into Python's `urlopen` silently hanging on NVD's HTTP/2
+endpoint (55-min process with the 30s timeout never firing — kernel
+CLOSE_WAIT socket). The CISA path already had a curl fallback; the
+NVD path now mirrors it. Future runs degrade gracefully when
+urlopen wedges.
+
+---
+
 ## SKELETONKEY v0.9.3 — CVE metadata refresh + dirtydecrypt range fix
 
 **CVE metadata refresh (10 → 12 KEV).** Populated the 8 missing

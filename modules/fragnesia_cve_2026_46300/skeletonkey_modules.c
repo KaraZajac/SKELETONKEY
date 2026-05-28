@@ -903,11 +903,25 @@ static int fg_active_probe(void)
  *   - --active         → empirical override (catches distro silent
  *                          backports and unfixed 7.0.x ≤ 7.0.8)
  *
- * Stable-branch backports for 5.10 / 6.1 / 6.12 — when they ship —
- * extend the table with the matching {major, minor, patch} entry.
+ * Per NVD CVE-2026-46300 (queried 2026-05-28): SKBFL_SHARED_FRAG was
+ * introduced at 5.11; the marker-propagation bug is present 5.11+. The
+ * fix was backported across every active stable branch:
+ *
+ *   5.15-LTS:  vulnerable 5.15.0–5.15.207, fixed 5.15.208+
+ *   6.1-LTS:   vulnerable 5.16.0–6.1.173,  fixed 6.1.174+
+ *   6.6-LTS:   vulnerable 6.2.0–6.6.140,   fixed 6.6.141+
+ *   6.12-LTS:  vulnerable 6.7.0–6.12.90,   fixed 6.12.91+
+ *   6.18-LTS:  vulnerable 6.13.0–6.18.32,  fixed 6.18.33+
+ *   7.0:       vulnerable 6.19.0–7.0.9,    fixed 7.0.10+
+ *   7.1-rcN:   still vulnerable (rc1..rc4 at time of writing)
  */
 static const struct kernel_patched_from fragnesia_patched_branches[] = {
-	{7, 0, 9},   /* mainline + 7.0.x stable: fix lands at 7.0.9 */
+	{5, 15, 208}, /* 5.15-LTS backport */
+	{6,  1, 174}, /* 6.1-LTS backport */
+	{6,  6, 141}, /* 6.6-LTS backport */
+	{6, 12,  91}, /* 6.12-LTS backport */
+	{6, 18,  33}, /* 6.18-LTS backport */
+	{7,  0,  10}, /* 7.0 stable: fix lands at 7.0.10 */
 };
 static const struct kernel_range fragnesia_range = {
 	.patched_from = fragnesia_patched_branches,
@@ -928,6 +942,17 @@ static skeletonkey_result_t fg_detect(const struct skeletonkey_ctx *ctx)
 			fprintf(stderr, "[!] fragnesia: host fingerprint missing kernel "
 				"version — bailing\n");
 		return SKELETONKEY_TEST_ERROR;
+	}
+
+	/* Predates the bug: SKBFL_SHARED_FRAG marker only exists from 5.11
+	 * onwards; older kernels don't have the buggy skb_try_coalesce()
+	 * code path. */
+	if (!skeletonkey_host_kernel_at_least(ctx->host, 5, 11, 0)) {
+		if (!ctx->json)
+			fprintf(stderr, "[i] fragnesia: kernel %s predates the "
+				"SKBFL_SHARED_FRAG marker added in 5.11 — not "
+				"applicable\n", v->release);
+		return SKELETONKEY_OK;
 	}
 
 	if (!ctx->host->unprivileged_userns_allowed) {
