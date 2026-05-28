@@ -10,6 +10,10 @@ on:
     # Runs Monday 06:00 UTC; reports any new backports / KEV additions
     # that haven't propagated into the corpus yet.
     - cron: '0 6 * * 1'
+  workflow_dispatch:
+    # Lets us trigger the drift-check job on demand (e.g. after a
+    # metadata refresh) without waiting for the weekly cron. The
+    # drift-check job's `if:` gate honors this trigger.
 
 jobs:
   build:
