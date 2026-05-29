@@ -106,7 +106,9 @@ static bool get_sudo_version(const char *sudo_path, char *out, size_t outsz)
 static bool find_runas_blacklist_grant(const char *sudo_path, char *cmd_out, size_t cap)
 {
     char cmd[512];
-    snprintf(cmd, sizeof cmd, "%s -ln 2>/dev/null", sudo_path);
+    /* -n -l separated + stdin closed: see sudoedit_editor for the same
+     * pattern + rationale. `--auto` must never block on a tty prompt. */
+    snprintf(cmd, sizeof cmd, "%s -n -l </dev/null 2>/dev/null", sudo_path);
     FILE *p = popen(cmd, "r");
     if (!p) return false;
     char line[512];

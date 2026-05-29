@@ -149,8 +149,13 @@ static bool get_sudo_version(const char *sudo_path, char *out, size_t outsz)
 static bool find_sudoedit_target(const char *sudo_path, char *out, size_t outsz)
 {
     char cmd[512];
-    /* -n: non-interactive (no password prompt); -l: list. */
-    snprintf(cmd, sizeof cmd, "%s -ln 2>&1", sudo_path);
+    /* -n: non-interactive (no password prompt); -l: list. The two flags
+     * are written separately and stdin is redirected from /dev/null so
+     * sudo cannot fall back to a tty prompt even if the local PAM stack
+     * tries to coerce one (some sudoers + pam_unix configurations have
+     * been observed prompting despite `-n` when the flags are bundled
+     * as `-ln`). Belt-and-suspenders so `--auto` never blocks on input. */
+    snprintf(cmd, sizeof cmd, "%s -n -l </dev/null 2>&1", sudo_path);
     FILE *p = popen(cmd, "r");
     if (!p) return false;
 

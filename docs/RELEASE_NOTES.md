@@ -1,3 +1,26 @@
+## SKELETONKEY v0.9.6 — `--auto` no longer prompts for sudo password
+
+Two sudo modules' `detect()` bodies invoked `sudo -ln` to read the
+user's allowed-commands list. The intent was non-interactive — `-ln`
+should parse as `-l -n` (list + non-interactive). But some sudoers /
+PAM configurations have been observed prompting for a password
+anyway when the flags are bundled, defeating the point.
+
+That meant `skeletonkey --auto --i-know` could hang on a sudo
+password prompt during the corpus scan, even though the whole point
+of an LPE tool is to *get* root without already having it.
+
+Fix in `sudo_runas_neg1` and `sudoedit_editor`:
+
+- `-n -l` written as separate flags (instead of bundled `-ln`)
+- `</dev/null` redirect so sudo cannot fall back to reading the tty
+  even if the PAM stack tries
+
+Belt-and-suspenders. `--auto` is now guaranteed never to block on
+tty input.
+
+---
+
 ## SKELETONKEY v0.9.5 — kernel_range drift cleanup (the other half)
 
 v0.9.4 fixed the `cve_metadata` drift but exposed a *second* drift
