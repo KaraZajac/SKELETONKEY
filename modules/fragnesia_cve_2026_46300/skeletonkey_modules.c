@@ -916,6 +916,7 @@ static int fg_active_probe(void)
  *   7.1-rcN:   still vulnerable (rc1..rc4 at time of writing)
  */
 static const struct kernel_patched_from fragnesia_patched_branches[] = {
+	{5, 10, 257}, /* 5.10-LTS backport (Debian bullseye ships .257 with fix) */
 	{5, 15, 208}, /* 5.15-LTS backport */
 	{6,  1, 174}, /* 6.1-LTS backport */
 	{6,  6, 141}, /* 6.6-LTS backport */
