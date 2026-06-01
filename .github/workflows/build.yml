@@ -25,7 +25,7 @@ jobs:
         flavor: [default, debug]
     name: build (${{ matrix.cc }} / ${{ matrix.flavor }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: install build deps
         run: |
@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     name: sanitizers (ASan + UBSan)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: install deps
         run: |
           sudo apt-get update -qq
@@ -115,7 +115,7 @@ jobs:
     name: clang-tidy
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: install deps
         run: |
           sudo apt-get update -qq
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     name: drift-check (CISA KEV + Debian tracker)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: cve_metadata drift
         run: |
           # Exits 1 if the federal data has drifted from our committed
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     name: static-build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: install build deps
         run: |
           sudo apt-get update -qq
