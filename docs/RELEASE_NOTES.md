@@ -1,3 +1,30 @@
+## SKELETONKEY v0.9.7 — kernel_range drift fix + CI Node 24 readiness
+
+Two maintenance fixes, no new modules.
+
+**`fragnesia` kernel_range drift.** Debian backported CVE-2026-46300 to
+the 5.10 oldstable branch (bullseye 5.10.257), a branch the module's
+`kernel_patched_from` table didn't model — on a patched bullseye host
+`detect()` would have false-positived VULNERABLE. Added the `{5,10,257}`
+entry; the weekly `refresh-kernel-ranges.py` drift gate is green again.
+(The other flagged modules are INFO-only "more permissive" thresholds
+the check tolerates by design.)
+
+**CI Node 24 readiness.** GitHub forces the Node 24 Actions runtime on
+2026-06-16 and removes Node 20. Bumped every workflow action off its
+Node-20 line:
+
+- `actions/checkout` v4 → v6
+- `actions/upload-artifact` v4 → v7
+- `actions/download-artifact` v4 → v8
+- `softprops/action-gh-release` v2 → v3
+
+Each was reviewed against its changelog: the artifact flow uploads
+default-zipped, uniquely-named artifacts and downloads the full set, so
+none of the major-version breaking changes (opt-in direct uploads,
+download-by-ID path changes) apply. This release is itself the
+end-to-end test of the new artifact actions.
+
 ## SKELETONKEY v0.9.6 — `--auto` no longer prompts for sudo password
 
 Two sudo modules' `detect()` bodies invoked `sudo -ln` to read the

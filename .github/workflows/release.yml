@@ -52,7 +52,7 @@ jobs:
           mv skeletonkey skeletonkey-${{ matrix.target }}
           sha256sum skeletonkey-${{ matrix.target }} > skeletonkey-${{ matrix.target }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: skeletonkey-${{ matrix.target }}
           path: |
@@ -87,7 +87,7 @@ jobs:
         run: |
           mv skeletonkey skeletonkey-x86_64-static
           sha256sum skeletonkey-x86_64-static > skeletonkey-x86_64-static.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: skeletonkey-x86_64-static
           path: |
@@ -130,7 +130,7 @@ jobs:
         run: |
           mv skeletonkey skeletonkey-arm64-static
           sha256sum skeletonkey-arm64-static > skeletonkey-arm64-static.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: skeletonkey-arm64-static
           path: |
@@ -143,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -181,7 +181,7 @@ jobs:
           fi
 
       - name: publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.notes.outputs.tag }}
           name: SKELETONKEY ${{ steps.notes.outputs.tag }}
