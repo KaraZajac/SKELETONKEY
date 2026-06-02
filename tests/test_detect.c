@@ -68,6 +68,7 @@ extern const struct skeletonkey_module sudo_runas_neg1_module;
 extern const struct skeletonkey_module tioscpgrp_module;
 extern const struct skeletonkey_module vsock_uaf_module;
 extern const struct skeletonkey_module nft_pipapo_module;
+extern const struct skeletonkey_module ptrace_pidfd_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -723,6 +724,50 @@ static void run_all(void)
 	/* nft_pipapo: kernel 5.4 predates the pipapo set type (5.6+) → OK */
 	run_one("nft_pipapo: kernel 4.4 predates pipapo (5.6+) → OK",
 		&nft_pipapo_module, &h_kernel_4_4,
+		SKELETONKEY_OK);
+
+	/* ── ptrace_pidfd (CVE-2026-46333) ───────────────────────────
+	 * Version-pinned: predates-gate at pidfd_getfd's 5.6 introduction,
+	 * then Debian backports 5.10.251 / 6.1.172 / 6.12.88 / 7.0.7. */
+
+	/* kernel 4.4 predates the pidfd_getfd vector (added 5.6) → OK */
+	run_one("ptrace_pidfd: kernel 4.4 predates pidfd_getfd (5.6) → OK",
+		&ptrace_pidfd_module, &h_kernel_4_4,
+		SKELETONKEY_OK);
+
+	/* 5.5.99 is one below the 5.6 vector introduction → OK */
+	struct skeletonkey_host h_pidfd_5_5_99 =
+		mk_host(h_kernel_6_12, 5, 5, 99, "5.5.99-test");
+	run_one("ptrace_pidfd: 5.5.99 below pidfd_getfd (5.6) → OK",
+		&ptrace_pidfd_module, &h_pidfd_5_5_99,
+		SKELETONKEY_OK);
+
+	/* 5.15.5 has the vector and is below every fix backport → VULNERABLE */
+	struct skeletonkey_host h_pidfd_5_15_5 =
+		mk_host(h_kernel_6_12, 5, 15, 5, "5.15.5-test");
+	run_one("ptrace_pidfd: 5.15.5 (vector + below all fixes) → VULNERABLE",
+		&ptrace_pidfd_module, &h_pidfd_5_15_5,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.12.87 one below the trixie backport → VULNERABLE */
+	struct skeletonkey_host h_pidfd_6_12_87 =
+		mk_host(h_kernel_6_12, 6, 12, 87, "6.12.87-test");
+	run_one("ptrace_pidfd: 6.12.87 (one below 6.12.88 backport) → VULNERABLE",
+		&ptrace_pidfd_module, &h_pidfd_6_12_87,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.12.88 exact trixie backport → OK via patch table */
+	struct skeletonkey_host h_pidfd_6_12_88 =
+		mk_host(h_kernel_6_12, 6, 12, 88, "6.12.88-test");
+	run_one("ptrace_pidfd: 6.12.88 (exact backport) → OK via patch table",
+		&ptrace_pidfd_module, &h_pidfd_6_12_88,
+		SKELETONKEY_OK);
+
+	/* 7.1.0 is newer than every entry → mainline-inherited fix → OK */
+	struct skeletonkey_host h_pidfd_7_1_0 =
+		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
+	run_one("ptrace_pidfd: 7.1.0 above all backports → OK (mainline inherit)",
+		&ptrace_pidfd_module, &h_pidfd_7_1_0,
 		SKELETONKEY_OK);
 
 	/* ── coverage report ─────────────────────────────────────────
