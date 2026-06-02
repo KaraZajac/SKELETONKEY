@@ -2,10 +2,10 @@
 
 [![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Modules](https://img.shields.io/badge/CVEs-28%20VM--verified%20%2F%2034-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
+[![Modules](https://img.shields.io/badge/CVEs-28%20VM--verified%20%2F%2035-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
-> **One curated binary. 39 Linux LPE modules covering 34 CVEs from 2016 → 2026.
+> **One curated binary. 40 Linux LPE modules covering 35 CVEs from 2016 → 2026.
 > Every year 2016 → 2026 covered. 28 confirmed end-to-end against real Linux
 > VMs via `tools/verify-vm/`. Detection rules in the box. One command picks
 > the safest one and runs it.**
@@ -44,11 +44,12 @@ for every CVE in the bundle — same project for red and blue teams.
 
 ## Corpus at a glance
 
-**39 modules covering 34 distinct CVEs** across the 2016 → 2026 LPE
-timeline. **28 of the 34 CVEs have been empirically verified** in real
-Linux VMs via `tools/verify-vm/`; the 6 still-pending entries are
+**40 modules covering 35 distinct CVEs** across the 2016 → 2026 LPE
+timeline. **28 of the 35 CVEs have been empirically verified** in real
+Linux VMs via `tools/verify-vm/`; the 7 still-pending entries are
 blocked by their target environment (legacy hypervisor, EOL kernel, or
-the t64-transition libc rollout), not by missing code.
+the t64-transition libc rollout) or are brand-new additions awaiting a
+VM sweep, not by missing code.
 
 | Tier | Count | What it means |
 |---|---|---|
@@ -66,7 +67,7 @@ af_packet · af_packet2 · af_unix_gc · cls_route4 · fuse_legacy ·
 nf_tables · nft_set_uaf · nft_fwd_dup · nft_payload ·
 netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
-### Empirical verification (28 of 34 CVEs)
+### Empirical verification (28 of 35 CVEs)
 
 Records in [`docs/VERIFICATIONS.jsonl`](docs/VERIFICATIONS.jsonl) prove
 each verdict against a known-target VM. Coverage:
@@ -79,15 +80,16 @@ each verdict against a known-target VM. Coverage:
 | Debian 11 (5.10 stock) | cgroup_release_agent · fuse_legacy · netfilter_xtcompat · nft_fwd_dup |
 | Debian 12 (6.1 stock + udisks2 / polkit allow rule) | pack2theroot · udisks_libblockdev |
 
-**Not yet verified (6):** `vmwgfx` (VMware-guest-only — no public Vagrant
+**Not yet verified (7):** `vmwgfx` (VMware-guest-only — no public Vagrant
 box), `dirty_cow` (needs ≤ 4.4 kernel — older than every supported box),
 `mutagen_astronomy` (mainline 4.14.70 kernel-panics on Ubuntu 18.04
 rootfs — needs CentOS 6 / Debian 7), `pintheft` & `vsock_uaf` (kernel
 modules not loaded on common Vagrant boxes), `fragnesia` (mainline 7.0.5
 kernel .debs depend on the t64-transition libs from Ubuntu 24.04+/Debian
-13+; no Parallels-supported box has those yet). All six are flagged in
-[`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml) with
-rationale.
+13+; no Parallels-supported box has those yet), `ptrace_pidfd` (brand-new
+2026-05 Qualys disclosure — added this cycle, VM sweep pending). All seven
+are flagged in [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml)
+with rationale.
 
 See [`CVES.md`](CVES.md) for per-module CVE, kernel range, and
 detection status. Run `skeletonkey --module-info <name>` for the
@@ -133,7 +135,7 @@ uid=1000(kara) gid=1000(kara) groups=1000(kara)
 $ skeletonkey --auto --i-know
 [*] auto: host=demo distro=ubuntu/24.04 kernel=5.15.0-56-generic arch=x86_64
 [*] auto: active probes enabled — brief /tmp file touches and fork-isolated namespace probes
-[*] auto: scanning 39 modules for vulnerabilities...
+[*] auto: scanning 40 modules for vulnerabilities...
 [+] auto: dirty_pipe             VULNERABLE (safety rank 90)
 [+] auto: cgroup_release_agent   VULNERABLE (safety rank 98)
 [+] auto: pwnkit                 VULNERABLE (safety rank 100)
@@ -202,8 +204,10 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.7 cut 2026-06-01.** 39 modules across 34 CVEs — **every
-year 2016 → 2026 now covered**. v0.9.0 added 5 gap-fillers
+**v0.9.7 cut 2026-06-01.** 40 modules across 35 CVEs — **every
+year 2016 → 2026 now covered**. Newest: `ptrace_pidfd` (CVE-2026-46333,
+Qualys's `__ptrace_may_access` / `pidfd_getfd` credential-steal).
+v0.9.0 added 5 gap-fillers
 (`mutagen_astronomy` / `sudo_runas_neg1` / `tioscpgrp` / `vsock_uaf` /
 `nft_pipapo`); v0.8.0 added 3 (`sudo_chwoot` / `udisks_libblockdev` /
 `pintheft`). v0.9.1 and v0.9.2 are verification-only sweeps that took
@@ -238,7 +242,7 @@ Reliability + accuracy work in v0.7.x:
 - `--auto` upgrades: per-detect 15s timeout, fork-isolated detect +
   exploit, structured verdict table, scan summary, `--dry-run`.
 
-Not yet verified (6 of 34 CVEs): `vmwgfx` (VMware-guest only),
+Not yet verified (7 of 35 CVEs): `vmwgfx` (VMware-guest only),
 `dirty_cow` (needs ≤ 4.4 kernel), `mutagen_astronomy` (mainline
 4.14.70 panics on Ubuntu 18.04 rootfs — needs CentOS 6 / Debian 7),
 `pintheft` + `vsock_uaf` (kernel modules not autoloaded on common

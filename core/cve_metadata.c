@@ -284,6 +284,14 @@ const struct cve_metadata cve_metadata_table[] = {
         .in_kev              = false,
         .kev_date_added      = "",
     },
+    {
+        .cve                 = "CVE-2026-46333",
+        .cwe                 = NULL,
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
 };
 
 const size_t cve_metadata_table_len =

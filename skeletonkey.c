@@ -1014,6 +1014,7 @@ static int module_safety_rank(const char *n)
     if (!strcmp(n, "dirtydecrypt") ||
         !strcmp(n, "fragnesia"))             return 87;  /* ported page-cache writes; version-pinned detect, exploit NOT VM-verified */
     if (!strcmp(n, "ptrace_traceme"))        return 85;  /* userspace cred race */
+    if (!strcmp(n, "ptrace_pidfd"))          return 84;  /* pidfd_getfd fd-steal race; ported, exploit NOT VM-verified */
     if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
     if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */

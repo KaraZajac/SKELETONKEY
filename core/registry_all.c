@@ -51,4 +51,5 @@ void skeletonkey_register_all_modules(void)
     skeletonkey_register_tioscpgrp();
     skeletonkey_register_vsock_uaf();
     skeletonkey_register_nft_pipapo();
+    skeletonkey_register_ptrace_pidfd();
 }

@@ -55,6 +55,7 @@ void skeletonkey_register_sudo_runas_neg1(void);
 void skeletonkey_register_tioscpgrp(void);
 void skeletonkey_register_vsock_uaf(void);
 void skeletonkey_register_nft_pipapo(void);
+void skeletonkey_register_ptrace_pidfd(void);
 
 /* Call every skeletonkey_register_<family>() above in canonical order.
  * Single source of truth so the main binary and the test binary stay

@@ -284,3 +284,13 @@ nft_pipapo:
   kernel_version: "5.15.5"
   expect_detect: VULNERABLE
   notes: "CVE-2024-26581; nft_pipapo destroy-race (Notselwyn II). Same mainline 5.15.5 target as nf_tables works here — 5.15.5 is below the 5.15.149 backport. (Switched from apt-pinned 5.15.0-43 after that package was removed from Ubuntu repos.) Userns gate must be open (sysctl kernel.unprivileged_userns_clone=1)."
+
+# ── ptrace_pidfd (CVE-2026-46333) addition ──────────────────────────
+
+ptrace_pidfd:
+  box: ubuntu2204
+  kernel_pkg: ""
+  mainline_version: "5.15.5"   # >5.6 (has pidfd_getfd) and below every fix backport
+  kernel_version: "5.15.5"
+  expect_detect: VULNERABLE
+  notes: "CVE-2026-46333; __ptrace_may_access dumpable-race credential-fd theft via pidfd_getfd. Qualys disclosure 2026-05-20, fixed 2026-05-14 mainline (Debian backports 5.10.251 / 6.1.172 / 6.12.88 / 7.0.7). Mainline 5.15.5 carries the pidfd_getfd vector (added 5.6) and is below every fix backport, so detect() returns VULNERABLE; installed via kernel.ubuntu.com/mainline/v5.15.5/ (same box/kernel as nf_tables / af_unix_gc / nft_pipapo). Brand-new addition this cycle: exploit() fires the real pidfd_getfd steal primitive and reports a captured root-owned fd, but the full target-specific root-pop is not yet VM-verified — sweep pending."

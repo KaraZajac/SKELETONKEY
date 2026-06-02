@@ -304,5 +304,14 @@
     "attack_subtechnique": null,
     "in_kev": false,
     "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2026-46333",
+    "module_dir": "ptrace_pidfd_cve_2026_46333",
+    "cwe": null,
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
   }
 ]

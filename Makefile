@@ -222,6 +222,11 @@ PIP_DIR  := modules/nft_pipapo_cve_2024_26581
 PIP_SRCS := $(PIP_DIR)/skeletonkey_modules.c
 PIP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PIP_SRCS))
 
+# CVE-2026-46333 ptrace/pidfd_getfd __ptrace_may_access dumpable-race cred-steal (Qualys)
+PPF_DIR  := modules/ptrace_pidfd_cve_2026_46333
+PPF_SRCS := $(PPF_DIR)/skeletonkey_modules.c
+PPF_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PPF_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -234,7 +239,8 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(SAM_OBJS) $(SEQ_OBJS) $(SUE_OBJS) $(VMW_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
-               $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS)
+               $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
+               $(PPF_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 
