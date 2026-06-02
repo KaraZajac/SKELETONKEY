@@ -23,14 +23,14 @@ Status legend:
 - 🔴 **DEPRECATED** — fully patched everywhere relevant; kept for
   historical reference only
 
-**Counts:** 40 modules total covering 35 CVEs; **28 of 35 CVEs
+**Counts:** 41 modules total covering 36 CVEs; **28 of 36 CVEs
 verified end-to-end in real VMs** via `tools/verify-vm/`. 🔵 0 · ⚪ 0
 planned-with-stub · 🔴 0. (One ⚪ row below — CVE-2026-31402 — is a
 *candidate* with no module, not counted as a module.)
 
 > **Note on unverified rows:** `vmwgfx` / `dirty_cow` /
 > `mutagen_astronomy` / `pintheft` / `vsock_uaf` / `fragnesia` /
-> `ptrace_pidfd` are blocked by their target environment (VMware-only,
+> `ptrace_pidfd` / `sudo_host` are blocked by their target environment (VMware-only,
 > kernel < 4.4, mainline panic, kmod not autoloaded, t64-transition
 > libs) or are brand-new this cycle, not by missing code. See
 > [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml).
@@ -94,6 +94,7 @@ root on a host can upstream their kernel's offsets via PR.
 | CVE-2026-46300 | Fragnesia — XFRM ESP-in-TCP `skb_try_coalesce` SHARED_FRAG loss | LPE (page-cache write into a setuid binary) | mainline 7.0.9; older Debian-stable branches still unfixed as of 2026-05-22 | `fragnesia` | 🟡 | **Ported from the public V12 PoC, exploit body not yet VM-verified.** Latent bug exposed by the Dirty Frag fix (`f4c50a4034e6`). AF_ALG GCM keystream table + userns/netns + XFRM ESP-in-TCP splice trigger pair; rewrites the first 192 bytes of `/usr/bin/su`. Needs `CONFIG_INET_ESPINTCP` + unprivileged userns (the in-scope question the old `_stubs/fragnesia_TBD` raised — resolved: ships, reports PRECOND_FAIL when the userns gate is closed). detect() is version-pinned at 7.0.9; older branches that haven't backported yet are flagged VULNERABLE on the version check (override empirically via `--active`). PoC's ANSI TUI dropped in the port. x86_64. |
 | CVE-2026-41651 | Pack2TheRoot — PackageKit `InstallFiles` TOCTOU | LPE (userspace D-Bus daemon → `.deb` postinst as root) | PackageKit 1.3.5 (commit `76cfb675`, 2026-04-22) | `pack2theroot` | 🟡 | **Ported from the public Vozec PoC, not yet VM-verified.** Two back-to-back `InstallFiles` D-Bus calls — first `SIMULATE` (polkit bypass + queues a GLib idle), then immediately `NONE` + malicious `.deb` (overwrites the cached flags before the idle fires). GLib priority ordering makes the overwrite deterministic, not a race. Disclosure by **Deutsche Telekom security**. Affects PackageKit 1.0.2 → 1.3.4 — default-enabled on Ubuntu Desktop, Debian, Fedora, Rocky/RHEL via Cockpit. `detect()` reads `VersionMajor/Minor/Micro` over D-Bus → high-confidence verdict (vs. precondition-only for dirtydecrypt/fragnesia). Debian-family only (PoC's built-in `.deb` builder). Needs `libglib2.0-dev` at build time; Makefile autodetects via `pkg-config gio-2.0` and falls through to a stub when absent. |
 | CVE-2026-46333 | ptrace `__ptrace_may_access` dumpable-race → `pidfd_getfd` credential-fd theft | LPE (steal a root-opened fd / authenticated channel from a process dropping privileges) | mainline 2026-05-14 (Debian backports 5.10.251 / 6.1.172 / 6.12.88 / 7.0.7) | `ptrace_pidfd` | 🟡 | **Qualys TRU disclosure (2026-05-20), exploit not yet VM-verified.** The `__ptrace_may_access` logic flaw leaves a process *dropping* privileges briefly reachable past its `dumpable` boundary; `pidfd_getfd(2)` rides that window. detect() is version-pinned with a predates-gate at `pidfd_getfd`'s 5.6 introduction. exploit() spawns a setuid victim (chage / pkexec / ssh-keysign), `pidfd_open()`s it and sweeps `pidfd_getfd()` across its descriptor table during the credential-drop window, reporting any uid-0-owned fd captured from a non-root context — honest `EXPLOIT_FAIL` without a euid-0 witness; the target-specific full root-pop is not bundled until VM-verified. Arch-agnostic (descriptor theft, no shellcode). `--mitigate` sets `kernel.yama.ptrace_scope=2`; `--cleanup` reverts it. Credit: Qualys TRU. |
+| CVE-2025-32462 | sudo `-h`/`--host` policy bypass (Stratascale) | LPE (userspace; abuse a host-restricted sudoers rule for local root) | sudo 1.9.17p1 (2025-06-30) | `sudo_host` | 🟢 | **Stratascale CRU disclosure (Rich Mirch); sibling of `sudo_chwoot`.** sudo's `-h`/`--host` option — meant only to pair with `-l` — was honored when running a command, so a sudoers rule scoped to a host other than the current machine (and not ALL) is usable via `sudo -h <host> <cmd>`. Affects sudo 1.8.8 → 1.9.17p0; fixed 1.9.17p1. CWE-863, CVSS 8.8; not in KEV. detect() version-gates; exploit() finds an abusable host-restricted rule in readable sudoers (or `SKELETONKEY_SUDO_HOST`), witnesses with `sudo -n -h <host> id -u`, and pops a root shell only on a uid-0 witness — never fabricates root. Structural (no offsets/race); arch-agnostic. Most relevant to fleet-wide / LDAP / SSSD sudoers. Credit: Rich Mirch / Stratascale. |
 
 ## Operations supported per module
 
@@ -133,6 +134,7 @@ Symbols: ✓ = supported, — = not applicable / no automated path.
 | fragnesia | ✓ (+ `--active`) | ✓ (ported) | — (upgrade kernel) | ✓ (evict page cache) | ✓ (auditd + sigma) |
 | pack2theroot | ✓ (PK version via D-Bus) | ✓ (ported) | — (upgrade PackageKit ≥ 1.3.5) | ✓ (rm /tmp + `dpkg -r`) | ✓ (auditd + sigma) |
 | ptrace_pidfd | ✓ | ✓ (primitive) | ✓ (yama ptrace_scope=2) | ✓ (restore ptrace_scope) | ✓ (auditd + sigma + falco) |
+| sudo_host | ✓ | ✓ | — (upgrade sudo to 1.9.17p1) | — | ✓ (auditd + sigma + falco) |
 
 ## Pipeline for additions
 

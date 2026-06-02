@@ -227,6 +227,11 @@ PPF_DIR  := modules/ptrace_pidfd_cve_2026_46333
 PPF_SRCS := $(PPF_DIR)/skeletonkey_modules.c
 PPF_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(PPF_SRCS))
 
+# CVE-2025-32462 sudo -h/--host policy bypass (Stratascale; sudo family)
+SUH_DIR  := modules/sudo_host_cve_2025_32462
+SUH_SRCS := $(SUH_DIR)/skeletonkey_modules.c
+SUH_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SUH_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -240,7 +245,7 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
-               $(PPF_OBJS)
+               $(PPF_OBJS) $(SUH_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

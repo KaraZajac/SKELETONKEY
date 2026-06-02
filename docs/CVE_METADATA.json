@@ -313,5 +313,14 @@
     "attack_subtechnique": null,
     "in_kev": false,
     "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2025-32462",
+    "module_dir": "sudo_host_cve_2025_32462",
+    "cwe": "CWE-863",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
   }
 ]

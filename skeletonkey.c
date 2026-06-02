@@ -1003,6 +1003,7 @@ static int module_safety_rank(const char *n)
     /* Higher = safer. Run highest-ranked vulnerable module. */
     if (!strcmp(n, "pwnkit"))                return 100; /* userspace, no kernel */
     if (!strcmp(n, "sudoedit_editor"))       return 99;  /* structural argv */
+    if (!strcmp(n, "sudo_host"))             return 96;  /* structural; needs a host-restricted sudoers rule */
     if (!strcmp(n, "cgroup_release_agent"))  return 98;  /* structural, no offsets */
     if (!strcmp(n, "overlayfs_setuid"))      return 97;  /* structural setuid */
     if (!strcmp(n, "overlayfs"))             return 96;  /* userns + xattr */

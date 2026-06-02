@@ -69,6 +69,7 @@ extern const struct skeletonkey_module tioscpgrp_module;
 extern const struct skeletonkey_module vsock_uaf_module;
 extern const struct skeletonkey_module nft_pipapo_module;
 extern const struct skeletonkey_module ptrace_pidfd_module;
+extern const struct skeletonkey_module sudo_host_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -769,6 +770,38 @@ static void run_all(void)
 	run_one("ptrace_pidfd: 7.1.0 above all backports → OK (mainline inherit)",
 		&ptrace_pidfd_module, &h_pidfd_7_1_0,
 		SKELETONKEY_OK);
+
+	/* ── sudo_host (CVE-2025-32462) ──────────────────────────────
+	 * Version-gated on sudo [1.8.8, 1.9.17p0]; fixed 1.9.17p1.
+	 * Assumes sudo is installed on the runner (as the other sudo_*
+	 * rows do — detect() PRECOND_FAILs without a setuid sudo). */
+
+	/* vulnerable sudo 1.8.31 (in range) → VULNERABLE */
+	run_one("sudo_host: sudo 1.8.31 (in range) → VULNERABLE",
+		&sudo_host_module, &h_vuln_sudo,
+		SKELETONKEY_VULNERABLE);
+
+	/* fixed sudo 1.9.17p1 → OK (note: 1.9.13p1 is still vulnerable to
+	 * THIS CVE, so h_fixed_sudo can't be reused here) */
+	struct skeletonkey_host h_sudo_host_fixed = h_kernel_6_12;
+	strcpy(h_sudo_host_fixed.sudo_version, "1.9.17p1");
+	run_one("sudo_host: sudo 1.9.17p1 (fixed) → OK",
+		&sudo_host_module, &h_sudo_host_fixed,
+		SKELETONKEY_OK);
+
+	/* sudo 1.8.6 predates the -h behaviour (< 1.8.8) → OK */
+	struct skeletonkey_host h_sudo_host_old = h_kernel_6_12;
+	strcpy(h_sudo_host_old.sudo_version, "1.8.6");
+	run_one("sudo_host: sudo 1.8.6 (pre-1.8.8) → OK",
+		&sudo_host_module, &h_sudo_host_old,
+		SKELETONKEY_OK);
+
+	/* sudo 1.9.17 plain (== 1.9.17p0) → VULNERABLE (fix is p1) */
+	struct skeletonkey_host h_sudo_host_1917 = h_kernel_6_12;
+	strcpy(h_sudo_host_1917.sudo_version, "1.9.17");
+	run_one("sudo_host: sudo 1.9.17 (==p0, pre-p1 fix) → VULNERABLE",
+		&sudo_host_module, &h_sudo_host_1917,
+		SKELETONKEY_VULNERABLE);
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

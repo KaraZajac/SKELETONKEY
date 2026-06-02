@@ -294,3 +294,12 @@ ptrace_pidfd:
   kernel_version: "5.15.5"
   expect_detect: VULNERABLE
   notes: "CVE-2026-46333; __ptrace_may_access dumpable-race credential-fd theft via pidfd_getfd. Qualys disclosure 2026-05-20, fixed 2026-05-14 mainline (Debian backports 5.10.251 / 6.1.172 / 6.12.88 / 7.0.7). Mainline 5.15.5 carries the pidfd_getfd vector (added 5.6) and is below every fix backport, so detect() returns VULNERABLE; installed via kernel.ubuntu.com/mainline/v5.15.5/ (same box/kernel as nf_tables / af_unix_gc / nft_pipapo). Brand-new addition this cycle: exploit() fires the real pidfd_getfd steal primitive and reports a captured root-owned fd, but the full target-specific root-pop is not yet VM-verified — sweep pending."
+
+# ── sudo_host (CVE-2025-32462) addition ─────────────────────────────
+
+sudo_host:
+  box: ubuntu1804             # ships sudo 1.8.21p2 — inside [1.8.8, 1.9.17p0]
+  kernel_pkg: ""
+  kernel_version: "4.15.0"
+  expect_detect: VULNERABLE
+  notes: "CVE-2025-32462; sudo -h/--host policy bypass (Stratascale, sibling of sudo_chwoot). Ubuntu 18.04 ships sudo 1.8.21p2, inside the vulnerable range [1.8.8, 1.9.17p0] (fixed 1.9.17p1), so detect() returns VULNERABLE on the version gate. Exercising exploit() empirically needs a sudoers rule scoped to a host other than the box hostname (and not ALL): provision e.g. 'vagrant fakehost = (ALL) NOPASSWD: ALL' in /etc/sudoers.d/, then 'SKELETONKEY_SUDO_HOST=fakehost skeletonkey --exploit sudo_host --i-know' pops root via 'sudo -h fakehost /bin/bash'. Brand-new addition this cycle; provisioner + sweep pending."
