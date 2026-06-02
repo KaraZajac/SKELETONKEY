@@ -205,7 +205,7 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.7 cut 2026-06-01.** 41 modules across 36 CVEs — **every
+**v0.9.8 cut 2026-06-02.** 41 modules across 36 CVEs — **every
 year 2016 → 2026 now covered**. Newest: `ptrace_pidfd` (CVE-2026-46333,
 Qualys's `__ptrace_may_access` / `pidfd_getfd` credential-steal) and
 `sudo_host` (CVE-2025-32462, Stratascale's sudo `--host` policy bypass).

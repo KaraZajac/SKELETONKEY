@@ -1,3 +1,36 @@
+## SKELETONKEY v0.9.8 — two new LPE modules (ptrace_pidfd, sudo_host)
+
+Adds the two most compelling recent Linux LPEs not already in the corpus,
+taking it to **41 modules / 36 CVEs** (every year 2016 → 2026 still
+covered).
+
+**`ptrace_pidfd` — CVE-2026-46333** (Qualys TRU, 2026-05-20). A logic
+flaw in the kernel's `__ptrace_may_access()` path leaves a process that
+is *dropping* its credentials briefly reachable past its `dumpable`
+boundary; `pidfd_getfd(2)` rides that window to steal a root-opened file
+descriptor or authenticated channel from a transiently-privileged setuid
+binary (chage / pkexec / ssh-keysign) or root daemon. Default-distro, no
+userns, architecture-agnostic (descriptor theft, no shellcode). detect()
+is version-pinned (predates-gate at pidfd_getfd's 5.6 introduction;
+Debian backports 5.10.251 / 6.1.172 / 6.12.88 / 7.0.7). `--mitigate`
+sets `kernel.yama.ptrace_scope=2`.
+
+**`sudo_host` — CVE-2025-32462** (Rich Mirch / Stratascale, 2025-06-30;
+sibling of v0.8.0's `sudo_chwoot`). sudo's `-h`/`--host` option, meant
+only to pair with `-l`, was honored when running a command — so a
+sudoers rule scoped to a host other than the current machine (and not
+ALL) is usable via `sudo -h <host> <cmd>` for local root. Affects sudo
+1.8.8 → 1.9.17p0 (fixed 1.9.17p1); CWE-863, CVSS 8.8. Most relevant to
+fleet-wide / LDAP / SSSD sudoers.
+
+Both are honest ports: detect() is version-pinned and unit-tested (10 new
+detect() rows, all green in CI), and exploit() fires the real primitive
+and returns `EXPLOIT_FAIL` unless it can witness euid 0 — never
+fabricating root. Neither is VM-verified yet (both flagged "sweep
+pending" in `tools/verify-vm/targets.yaml`), so the verified count stays
+28 of 36. Each ships auditd + sigma + falco rules, MITRE ATT&CK + CWE
+metadata, and credits the original researcher in its `NOTICE.md`.
+
 ## SKELETONKEY v0.9.7 — kernel_range drift fix + CI Node 24 readiness
 
 Two maintenance fixes, no new modules.
