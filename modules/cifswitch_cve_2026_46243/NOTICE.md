@@ -67,3 +67,26 @@ vulnerable VM, in keeping with the project's no-fabrication rule.
 (blocklists the `cifs` module — the vendor-recommended runtime
 mitigation); `--cleanup` removes it. Architecture-agnostic — keyring and
 namespace logic, no shellcode.
+
+## Verification status (partial)
+
+Verified **2026-06-08** on **Ubuntu 24.04.4 LTS, kernel 6.8.0-117-generic**
+(QEMU/HVF, x86_64):
+
+- `modprobe cifs` registers the `cifs.spnego` key type (dmesg:
+  `Key type cifs.spnego registered`) — `cifs-utils` is **not** required to
+  reach the primitive.
+- An **independent** `python3` `ctypes` probe calling
+  `add_key("cifs.spnego", <forged uid/creduid/upcall_target>)` was
+  **ACCEPTED** (a plain `user`-key control was also accepted), and the
+  module's own `exploit()` independently reported **primitive CONFIRMED**
+  then the honest `EXPLOIT_FAIL`.
+- `detect()` returned `PRECOND_FAIL` with `cifs-utils` absent and
+  `VULNERABLE` under `SKELETONKEY_CIFS_ASSUME_PRESENT=1`.
+
+**Still pending** (so this stays 🟡 and is *not* counted as a verified
+end-to-end CVE): (a) confirming `add_key` is **rejected** on a *patched*
+kernel (≥ 6.12.90 / 7.0.10) — i.e. that the probe distinguishes
+fixed-from-vulnerable rather than the key type always permitting userspace
+creation; and (b) the full namespace + malicious-NSS root-pop, which
+remains unbundled.

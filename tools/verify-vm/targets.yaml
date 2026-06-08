@@ -307,9 +307,10 @@ sudo_host:
 # ── cifswitch (CVE-2026-46243) addition ─────────────────────────────
 
 cifswitch:
-  box: ubuntu2204
+  box: ubuntu2404
   kernel_pkg: ""
-  mainline_version: "6.12.89"  # one below the 6.12.90 backport; ~19yo bug present
-  kernel_version: "6.12.89"
+  kernel_version: "6.8.0-117-generic"
   expect_detect: VULNERABLE
-  notes: "CVE-2026-46243 'CIFSwitch'; cifs.spnego key type trusts userspace-forged authority fields (Asim Manizada, 2026-05-28). Fixed 5.10.257 / 6.1.174 / 6.12.90 / 7.0.10 (Debian backports of commit 3da1fdf4efbc, mainline 7.1-rc5); a ~19-year-old bug below those. Mainline 6.12.89 is one below the 6.12.90 backport so the version gate flags VULNERABLE — but detect() ALSO requires the cifs userspace path: provision cifs-utils (so /usr/sbin/cifs.upcall + the cifs.spnego request-key rule exist) and `modprobe cifs`, else detect() returns PRECOND_FAIL (or force with SKELETONKEY_CIFS_ASSUME_PRESENT=1). exploit() fires the non-destructive add_key(2) cifs.spnego probe and reports the forged-key accept as the primitive witness; the namespace+NSS root-pop is not bundled until VM-verified. Brand-new addition this cycle; provisioner (cifs-utils install) + sweep pending."
+  verified: partial   # detect() + add_key primitive confirmed; full root-pop + patched-kernel discriminator pending
+  verified_on: "2026-06-08 — Ubuntu 24.04.4 LTS, kernel 6.8.0-117-generic, QEMU/HVF (x86_64)"
+  notes: "CVE-2026-46243 'CIFSwitch'; cifs.spnego key type trusts userspace-forged authority fields (Asim Manizada, 2026-05-28). Fixed 5.10.257 / 6.1.174 / 6.12.90 / 7.0.10 (Debian backports of commit 3da1fdf4efbc, mainline 7.1-rc5); a ~19-year-old bug below those. PARTIALLY VM-VERIFIED 2026-06-08 on Ubuntu 24.04.4 / 6.8.0-117 (QEMU/HVF): (1) `modprobe cifs` registers the cifs.spnego key type (dmesg 'Key type cifs.spnego registered') — cifs-utils not required to reach the primitive; (2) an INDEPENDENT python ctypes add_key('cifs.spnego', forged uid/creduid/upcall_target) was ACCEPTED (serial 374940108; a `user`-key control also accepted), and the module's own exploit() reported 'primitive CONFIRMED' (serial 294765294) then honest EXPLOIT_FAIL; (3) detect() correctly returned PRECOND_FAIL with cifs-utils absent, and VULNERABLE under SKELETONKEY_CIFS_ASSUME_PRESENT=1. STILL PENDING: (a) a PATCHED kernel (>=6.12.90 / 7.0.10) to prove add_key is REJECTED there (i.e. that the probe discriminates fixed-from-vulnerable, not merely that the key type always allows userspace creation), and (b) the full user+mount-namespace + malicious-NSS root-pop, which is not bundled. Reproduce via tools/verify-vm or the QEMU offline harness used on 2026-06-08 (cloud image + payload iso, no guest networking needed)."

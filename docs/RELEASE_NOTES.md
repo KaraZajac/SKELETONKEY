@@ -30,8 +30,15 @@ module (`/etc/modprobe.d/skeletonkey-disable-cifs.conf`); `--cleanup`
 reverts. Structural, arch-agnostic (keyring + namespace logic, no
 shellcode). Ships auditd + sigma + falco rules, MITRE ATT&CK T1068 +
 CWE-20 metadata, six new `detect()` unit-test rows, and credits Asim
-Manizada in `NOTICE.md`. Not yet VM-verified (sweep pending in
-`tools/verify-vm/targets.yaml`), so the verified count stays 28 of 37.
+Manizada in `NOTICE.md`. **Partially VM-verified** (2026-06-08, Ubuntu
+24.04.4 / kernel 6.8.0-117, QEMU/HVF): `detect()`'s precondition + version
+gating and the `add_key` primitive are confirmed — an independent
+`python3` `ctypes` `add_key("cifs.spnego", …)` was accepted and the
+module's `exploit()` reported "primitive CONFIRMED" then honest
+`EXPLOIT_FAIL`. The full namespace+NSS root-pop and a patched-kernel
+discriminator check remain pending, so cifswitch is **not** counted as a
+verified end-to-end CVE — the verified count stays 28 of 37. Details in
+the module `NOTICE.md` and `tools/verify-vm/targets.yaml`.
 
 ## SKELETONKEY v0.9.9 — install.sh needs no root; CVE-2022-0492 KEV drift
 
