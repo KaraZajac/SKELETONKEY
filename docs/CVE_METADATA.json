@@ -252,6 +252,15 @@
     "kev_date_added": ""
   },
   {
+    "cve": "CVE-2025-32462",
+    "module_dir": "sudo_host_cve_2025_32462",
+    "cwe": "CWE-863",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
     "cve": "CVE-2025-32463",
     "module_dir": "sudo_chwoot_cve_2025_32463",
     "cwe": "CWE-829",
@@ -309,15 +318,6 @@
     "cve": "CVE-2026-46333",
     "module_dir": "ptrace_pidfd_cve_2026_46333",
     "cwe": "CWE-269",
-    "attack_technique": "T1068",
-    "attack_subtechnique": null,
-    "in_kev": false,
-    "kev_date_added": ""
-  },
-  {
-    "cve": "CVE-2025-32462",
-    "module_dir": "sudo_host_cve_2025_32462",
-    "cwe": "CWE-863",
     "attack_technique": "T1068",
     "attack_subtechnique": null,
     "in_kev": false,

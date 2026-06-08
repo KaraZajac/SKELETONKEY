@@ -29,6 +29,13 @@ rules into `/etc/audit` legitimately needs root.
   after disclosure, NVD had not yet classified it; it is now **CWE-269**
   (Improper Privilege Management).
 
+A third, latent cause kept the gate red even after those two: when
+`sudo_host` (CVE-2025-32462) was added in v0.9.8 its record was appended to
+the *end* of `CVE_METADATA.json`, but the drift check compares the record
+list in `discover_cves()`'s sorted order — so the out-of-order entry read
+as drift regardless of its values. Regenerating via the script restores
+sorted order.
+
 Refreshed `CVE_METADATA.json`, the generated `cve_metadata.c` table, and
 `KEV_CROSSREF.md` accordingly (README + website counts updated).
 

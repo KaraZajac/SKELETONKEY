@@ -237,6 +237,14 @@ const struct cve_metadata cve_metadata_table[] = {
         .kev_date_added      = "",
     },
     {
+        .cve                 = "CVE-2025-32462",
+        .cwe                 = "CWE-863",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
         .cve                 = "CVE-2025-32463",
         .cwe                 = "CWE-829",
         .attack_technique    = "T1068",
@@ -287,14 +295,6 @@ const struct cve_metadata cve_metadata_table[] = {
     {
         .cve                 = "CVE-2026-46333",
         .cwe                 = "CWE-269",
-        .attack_technique    = "T1068",
-        .attack_subtechnique = NULL,
-        .in_kev              = false,
-        .kev_date_added      = "",
-    },
-    {
-        .cve                 = "CVE-2025-32462",
-        .cwe                 = "CWE-863",
         .attack_technique    = "T1068",
         .attack_subtechnique = NULL,
         .in_kev              = false,
