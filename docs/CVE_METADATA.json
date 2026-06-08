@@ -122,8 +122,8 @@
     "cwe": "CWE-287",
     "attack_technique": "T1611",
     "attack_subtechnique": null,
-    "in_kev": false,
-    "kev_date_added": ""
+    "in_kev": true,
+    "kev_date_added": "2026-06-02"
   },
   {
     "cve": "CVE-2022-0847",
@@ -308,7 +308,7 @@
   {
     "cve": "CVE-2026-46333",
     "module_dir": "ptrace_pidfd_cve_2026_46333",
-    "cwe": null,
+    "cwe": "CWE-269",
     "attack_technique": "T1068",
     "attack_subtechnique": null,
     "in_kev": false,

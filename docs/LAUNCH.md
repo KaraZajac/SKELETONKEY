@@ -26,6 +26,7 @@ haven't been maintained in years.
 
 ```bash
 curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
+  && export PATH="$HOME/.local/bin:$PATH" \
   && skeletonkey --auto --i-know
 ```
 

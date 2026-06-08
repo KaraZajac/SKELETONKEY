@@ -28,7 +28,11 @@ set -eu
 
 REPO="${SKELETONKEY_REPO:-KaraZajac/SKELETONKEY}"
 VERSION="${SKELETONKEY_VERSION:-latest}"
-PREFIX="${SKELETONKEY_PREFIX:-/usr/local/bin}"
+# PREFIX resolution is deferred until install time so we can pick a
+# sudo-free default. SKELETONKEY is a privilege-escalation tool — by
+# definition the operator does NOT have root yet, so the installer must
+# NEVER need sudo. Empty here means "auto-pick a writable dir below".
+PREFIX="${SKELETONKEY_PREFIX:-}"
 
 log()   { printf '[\033[1;36m*\033[0m] %s\n' "$*" >&2; }
 ok()    { printf '[\033[1;32m+\033[0m] %s\n' "$*" >&2; }
@@ -108,29 +112,49 @@ fi
 
 chmod +x "$tmp/skeletonkey"
 
-# Install. Try $PREFIX directly; if not writable, sudo.
-target_path="$PREFIX/skeletonkey"
-if [ -w "$PREFIX" ] || [ "$(id -u)" -eq 0 ]; then
-    mv "$tmp/skeletonkey" "$target_path"
-elif command -v sudo >/dev/null 2>&1; then
-    log "$PREFIX needs sudo; you may be prompted for password"
-    sudo mv "$tmp/skeletonkey" "$target_path"
+# Choose install dir — NEVER escalate to sudo. If the user pinned
+# SKELETONKEY_PREFIX we honor it exactly (creating it if needed) and
+# error rather than escalate when it isn't writable. Otherwise prefer
+# /usr/local/bin only when it happens to already be writable, and fall
+# back to a guaranteed per-user dir ($HOME/.local/bin) that needs no
+# privileges. This keeps `curl ... | sh` password-free for the exact
+# users this tool is meant for: unprivileged accounts.
+if [ -n "$PREFIX" ]; then
+    [ -d "$PREFIX" ] || mkdir -p "$PREFIX" 2>/dev/null \
+        || fail "cannot create SKELETONKEY_PREFIX=$PREFIX"
+    [ -w "$PREFIX" ] || fail "SKELETONKEY_PREFIX=$PREFIX not writable (the installer never uses sudo — pick a writable dir)"
+elif [ -w /usr/local/bin ]; then
+    PREFIX=/usr/local/bin
 else
-    fail "$PREFIX not writable and sudo not available. Try SKELETONKEY_PREFIX=\$HOME/.local/bin"
+    PREFIX="${XDG_BIN_HOME:-$HOME/.local/bin}"
+    mkdir -p "$PREFIX" 2>/dev/null || fail "cannot create $PREFIX"
 fi
 
+target_path="$PREFIX/skeletonkey"
+mv "$tmp/skeletonkey" "$target_path" || fail "failed to install to $target_path"
 ok "installed: $target_path"
+
+# ~/.local/bin is frequently absent from PATH on fresh accounts — tell
+# the user how to invoke it rather than letting `skeletonkey` 404.
+case ":$PATH:" in
+    *":$PREFIX:"*) : ;;
+    *) log "note: $PREFIX is not on \$PATH — run it as $target_path, or add the dir to PATH" ;;
+esac
+
 "$target_path" --version
 
 cat >&2 <<EOF
 
 [\033[1;33m!\033[0m] AUTHORIZED TESTING ONLY — see https://github.com/${REPO}/blob/main/docs/ETHICS.md
 
-Quickstart:
-    sudo skeletonkey --scan                                 # what's this box vulnerable to?
-    sudo skeletonkey --audit                                # broader system hygiene
-    sudo skeletonkey --detect-rules --format=auditd \\
-       | sudo tee /etc/audit/rules.d/99-skeletonkey.rules   # deploy detection rules
+Quickstart (no root required — gaining it is the point):
+    skeletonkey --scan                  # what's this box vulnerable to?
+    skeletonkey --audit                 # broader system hygiene
+    skeletonkey --auto --i-know         # run the safest available LPE
+
+Deploy detection rules (defensive; only the write to /etc/audit needs root):
+    skeletonkey --detect-rules --format=auditd \\
+       | sudo tee /etc/audit/rules.d/99-skeletonkey.rules
 
 See \`skeletonkey --help\` for all commands.
 EOF

@@ -10,7 +10,7 @@
    * 1. typed install command in the hero
    * ============================================================ */
   const installCmd =
-    'curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \\\n  && skeletonkey --auto --i-know';
+    'curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \\\n  && export PATH="$HOME/.local/bin:$PATH" \\\n  && skeletonkey --auto --i-know';
   const typedEl  = document.getElementById('install-typed');
   const cursorEl = document.getElementById('install-cursor');
 

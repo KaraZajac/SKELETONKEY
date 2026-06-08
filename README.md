@@ -12,6 +12,7 @@
 
 ```bash
 curl -sSL https://github.com/KaraZajac/SKELETONKEY/releases/latest/download/install.sh | sh \
+  && export PATH="$HOME/.local/bin:$PATH" \
   && skeletonkey --auto --i-know
 ```
 
@@ -205,7 +206,7 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.8 cut 2026-06-02.** 41 modules across 36 CVEs — **every
+**v0.9.9 cut 2026-06-08.** 41 modules across 36 CVEs — **every
 year 2016 → 2026 now covered**. Newest: `ptrace_pidfd` (CVE-2026-46333,
 Qualys's `__ptrace_may_access` / `pidfd_getfd` credential-steal) and
 `sudo_host` (CVE-2025-32462, Stratascale's sudo `--host` policy bypass).
@@ -238,7 +239,7 @@ Reliability + accuracy work in v0.7.x:
   trace, OPSEC footprint, detection-rule coverage, verified-on
   records. Paste-into-ticket ready.
 - **CVE metadata pipeline** (`tools/refresh-cve-metadata.py`) — fetches
-  CISA KEV catalog + NVD CWE; 12 of 34 modules cover KEV-listed CVEs.
+  CISA KEV catalog + NVD CWE; 13 of 36 modules cover KEV-listed CVEs.
 - **151 detection rules** across auditd / sigma / yara / falco; one
   command exports the corpus to your SIEM.
 - `--auto` upgrades: per-detect 15s timeout, fork-isolated detect +

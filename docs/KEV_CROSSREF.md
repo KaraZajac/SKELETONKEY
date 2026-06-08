@@ -4,7 +4,7 @@ Which SKELETONKEY modules cover CVEs that CISA has observed exploited
 in the wild per the Known Exploited Vulnerabilities catalog.
 Refreshed via `tools/refresh-cve-metadata.py`.
 
-**12 of 34 modules cover KEV-listed CVEs.**
+**13 of 36 modules cover KEV-listed CVEs.**
 
 ## In KEV (prioritize patching)
 
@@ -22,6 +22,7 @@ Refreshed via `tools/refresh-cve-metadata.py`.
 | CVE-2025-32463 | 2025-09-29 | CWE-829 | `sudo_chwoot_cve_2025_32463` |
 | CVE-2021-22555 | 2025-10-06 | CWE-787 | `netfilter_xtcompat_cve_2021_22555` |
 | CVE-2018-14634 | 2026-01-26 | CWE-190 | `mutagen_astronomy_cve_2018_14634` |
+| CVE-2022-0492 | 2026-06-02 | CWE-287 | `cgroup_release_agent_cve_2022_0492` |
 
 ## Not in KEV
 
@@ -36,7 +37,6 @@ and are technically reachable. "Not in KEV" is not the same as
 | CVE-2020-14386 | CWE-250 | `af_packet2_cve_2020_14386` |
 | CVE-2020-29661 | CWE-416 | `tioscpgrp_cve_2020_29661` |
 | CVE-2021-33909 | CWE-190 | `sequoia_cve_2021_33909` |
-| CVE-2022-0492 | CWE-287 | `cgroup_release_agent_cve_2022_0492` |
 | CVE-2022-25636 | CWE-269 | `nft_fwd_dup_cve_2022_25636` |
 | CVE-2022-2588 | CWE-416 | `cls_route4_cve_2022_2588` |
 | CVE-2023-0179 | CWE-190 | `nft_payload_cve_2023_0179` |
@@ -48,8 +48,10 @@ and are technically reachable. "Not in KEV" is not the same as
 | CVE-2023-4622 | CWE-416 | `af_unix_gc_cve_2023_4622` |
 | CVE-2024-26581 | ? | `nft_pipapo_cve_2024_26581` |
 | CVE-2024-50264 | CWE-416 | `vsock_uaf_cve_2024_50264` |
+| CVE-2025-32462 | CWE-863 | `sudo_host_cve_2025_32462` |
 | CVE-2025-6019 | CWE-250 | `udisks_libblockdev_cve_2025_6019` |
 | CVE-2026-31635 | CWE-130 | `dirtydecrypt_cve_2026_31635` |
 | CVE-2026-41651 | CWE-367 | `pack2theroot_cve_2026_41651` |
 | CVE-2026-43494 | ? | `pintheft_cve_2026_43494` |
 | CVE-2026-46300 | CWE-787 | `fragnesia_cve_2026_46300` |
+| CVE-2026-46333 | CWE-269 | `ptrace_pidfd_cve_2026_46333` |

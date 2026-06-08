@@ -1,3 +1,37 @@
+## SKELETONKEY v0.9.9 — install.sh needs no root; CVE-2022-0492 KEV drift
+
+Two maintenance fixes, no new modules.
+
+**`install.sh` never escalates to sudo.** SKELETONKEY is a privilege-
+escalation tool — the operator by definition does *not* have root yet, so
+the installer must not demand it. The old default wrote to `/usr/local/bin`
+and fell back to `sudo mv` when that wasn't writable, prompting for a
+password on exactly the unprivileged accounts this tool targets. It now
+installs sudo-free: `/usr/local/bin` is used only when already writable,
+otherwise it falls back to a per-user `$HOME/.local/bin` (honoring
+`XDG_BIN_HOME`), created as needed. An explicit `SKELETONKEY_PREFIX` is
+honored exactly and errors rather than escalating if unwritable. When the
+chosen dir isn't on `$PATH` the installer prints the absolute path, and the
+documented `curl … | sh && skeletonkey --auto --i-know` one-liner now
+prepends `$HOME/.local/bin` to `$PATH` so it resolves on a fresh login. The
+quickstart no longer prefixes `sudo` to `--scan`/`--audit`/`--auto` —
+detection and escalation run as the unprivileged user; only writing audit
+rules into `/etc/audit` legitimately needs root.
+
+**Federal metadata drift (the failing scheduled build).** The weekly
+`drift-check` caught two upstream changes since v0.9.8:
+
+- **CVE-2022-0492 entered CISA KEV (2026-06-02).** The cgroup v1
+  `release_agent` container-escape (`cgroup_release_agent`) is now on the
+  Known Exploited Vulnerabilities catalog. The corpus reports **13 of 36**
+  modules covering KEV-listed CVEs (was 12).
+- **CVE-2026-46333 gained a CWE.** When `ptrace_pidfd` was added two weeks
+  after disclosure, NVD had not yet classified it; it is now **CWE-269**
+  (Improper Privilege Management).
+
+Refreshed `CVE_METADATA.json`, the generated `cve_metadata.c` table, and
+`KEV_CROSSREF.md` accordingly (README + website counts updated).
+
 ## SKELETONKEY v0.9.8 — two new LPE modules (ptrace_pidfd, sudo_host)
 
 Adds the two most compelling recent Linux LPEs not already in the corpus,
