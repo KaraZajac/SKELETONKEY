@@ -70,6 +70,7 @@ extern const struct skeletonkey_module vsock_uaf_module;
 extern const struct skeletonkey_module nft_pipapo_module;
 extern const struct skeletonkey_module ptrace_pidfd_module;
 extern const struct skeletonkey_module sudo_host_module;
+extern const struct skeletonkey_module cifswitch_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -802,6 +803,44 @@ static void run_all(void)
 	run_one("sudo_host: sudo 1.9.17 (==p0, pre-p1 fix) → VULNERABLE",
 		&sudo_host_module, &h_sudo_host_1917,
 		SKELETONKEY_VULNERABLE);
+
+	/* ── cifswitch (CVE-2026-46243) ──────────────────────────────
+	 * Version-gated on Debian backports 5.10.257 / 6.1.174 / 6.12.90 /
+	 * 7.0.10. The VULNERABLE/PRECOND_FAIL split below the fix depends on
+	 * whether the cifs.upcall userspace path is present; we drive that
+	 * deterministically with SKELETONKEY_CIFS_ASSUME_PRESENT (1=present,
+	 * 0=absent) so the rows don't depend on cifs-utils being installed on
+	 * the runner. Patched-kernel rows return OK before the probe, so they
+	 * need no override. */
+
+	/* patched branch (exact 6.12.90 backport) → OK regardless of cifs */
+	struct skeletonkey_host h_ciw_61290 =
+		mk_host(h_kernel_6_12, 6, 12, 90, "6.12.90-test");
+	run_one("cifswitch: 6.12.90 (exact backport) → OK via patch table",
+		&cifswitch_module, &h_ciw_61290,
+		SKELETONKEY_OK);
+
+	/* 7.1.0 newer than every entry → mainline-inherited fix → OK */
+	struct skeletonkey_host h_ciw_710 =
+		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
+	run_one("cifswitch: 7.1.0 above all backports → OK (mainline inherit)",
+		&cifswitch_module, &h_ciw_710,
+		SKELETONKEY_OK);
+
+	/* vulnerable kernel (one below 6.12.90) + cifs path present → VULNERABLE */
+	struct skeletonkey_host h_ciw_61289 =
+		mk_host(h_kernel_6_12, 6, 12, 89, "6.12.89-test");
+	setenv("SKELETONKEY_CIFS_ASSUME_PRESENT", "1", 1);
+	run_one("cifswitch: 6.12.89 + cifs.upcall present → VULNERABLE",
+		&cifswitch_module, &h_ciw_61289,
+		SKELETONKEY_VULNERABLE);
+
+	/* same vulnerable kernel but cifs path absent → PRECOND_FAIL */
+	setenv("SKELETONKEY_CIFS_ASSUME_PRESENT", "0", 1);
+	run_one("cifswitch: 6.12.89 but cifs-utils absent → PRECOND_FAIL",
+		&cifswitch_module, &h_ciw_61289,
+		SKELETONKEY_PRECOND_FAIL);
+	unsetenv("SKELETONKEY_CIFS_ASSUME_PRESENT");
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

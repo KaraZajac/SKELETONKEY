@@ -232,6 +232,11 @@ SUH_DIR  := modules/sudo_host_cve_2025_32462
 SUH_SRCS := $(SUH_DIR)/skeletonkey_modules.c
 SUH_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SUH_SRCS))
 
+# CVE-2026-46243 CIFSwitch — cifs.spnego userspace-forged key trust (Asim Manizada)
+CIW_DIR  := modules/cifswitch_cve_2026_46243
+CIW_SRCS := $(CIW_DIR)/skeletonkey_modules.c
+CIW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CIW_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -245,7 +250,7 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
-               $(PPF_OBJS) $(SUH_OBJS)
+               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

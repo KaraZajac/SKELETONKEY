@@ -306,6 +306,15 @@
     "kev_date_added": ""
   },
   {
+    "cve": "CVE-2026-46243",
+    "module_dir": "cifswitch_cve_2026_46243",
+    "cwe": "CWE-20",
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
+  },
+  {
     "cve": "CVE-2026-46300",
     "module_dir": "fragnesia_cve_2026_46300",
     "cwe": "CWE-787",

@@ -1,3 +1,38 @@
+## SKELETONKEY v0.9.10 — new LPE module: cifswitch (CVE-2026-46243)
+
+Adds **`cifswitch` — CVE-2026-46243 "CIFSwitch"** (Asim Manizada,
+2026-05-28), taking the corpus to **42 modules / 37 CVEs**. The newest
+kernel-7-era LPE not already covered: a ~19-year-old logic flaw in
+`fs/smb/client/cifs_spnego.c` where the `cifs.spnego` request-key type
+accepts key descriptions created by *userspace* (`add_key(2)` /
+`request_key(2)`) without verifying the request came from the in-kernel
+CIFS client. The description carries authority-bearing fields
+(`pid`/`uid`/`creduid`/`upcall_target`) that the root `cifs.upcall`
+helper trusts as kernel-originating; combined with user+mount namespace
+tricks, an unprivileged user coerces `cifs.upcall` into loading an
+attacker NSS module as root. Fixed upstream by `3da1fdf4efbc` (merged
+7.1-rc5); NVD class CWE-20; not in CISA KEV.
+
+🟡 **Honest port — full chain not VM-verified.** `detect()` gates on the
+kernel version (Debian backports 5.10.257 / 6.1.174 / 6.12.90 / 7.0.10)
+**and** on the presence of the vulnerable userspace path — a vulnerable
+kernel without `cifs-utils` reports `PRECOND_FAIL`, not a false
+`VULNERABLE` (override the probe with `SKELETONKEY_CIFS_ASSUME_PRESENT=1`
+/`0`). `exploit()` fires only the non-destructive primitive — `add_key(2)`
+of a forged-but-benign `cifs.spnego` key, which does **not** invoke
+`cifs.upcall` and loads nothing, revoked immediately — and treats a clean
+accept as the empirical witness that userspace can forge the
+authority-bearing key type. It then stops: the namespace-switch +
+malicious-NSS-load root-pop is target/config-specific and is not bundled
+until VM-verified, so it returns honest `EXPLOIT_FAIL` without a euid-0
+witness (never fabricates root). `--mitigate` blocklists the `cifs`
+module (`/etc/modprobe.d/skeletonkey-disable-cifs.conf`); `--cleanup`
+reverts. Structural, arch-agnostic (keyring + namespace logic, no
+shellcode). Ships auditd + sigma + falco rules, MITRE ATT&CK T1068 +
+CWE-20 metadata, six new `detect()` unit-test rows, and credits Asim
+Manizada in `NOTICE.md`. Not yet VM-verified (sweep pending in
+`tools/verify-vm/targets.yaml`), so the verified count stays 28 of 37.
+
 ## SKELETONKEY v0.9.9 — install.sh needs no root; CVE-2022-0492 KEV drift
 
 Two maintenance fixes, no new modules.

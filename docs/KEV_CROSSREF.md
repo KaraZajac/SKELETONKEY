@@ -4,7 +4,7 @@ Which SKELETONKEY modules cover CVEs that CISA has observed exploited
 in the wild per the Known Exploited Vulnerabilities catalog.
 Refreshed via `tools/refresh-cve-metadata.py`.
 
-**13 of 36 modules cover KEV-listed CVEs.**
+**13 of 37 modules cover KEV-listed CVEs.**
 
 ## In KEV (prioritize patching)
 
@@ -53,5 +53,6 @@ and are technically reachable. "Not in KEV" is not the same as
 | CVE-2026-31635 | CWE-130 | `dirtydecrypt_cve_2026_31635` |
 | CVE-2026-41651 | CWE-367 | `pack2theroot_cve_2026_41651` |
 | CVE-2026-43494 | ? | `pintheft_cve_2026_43494` |
+| CVE-2026-46243 | CWE-20 | `cifswitch_cve_2026_46243` |
 | CVE-2026-46300 | CWE-787 | `fragnesia_cve_2026_46300` |
 | CVE-2026-46333 | CWE-269 | `ptrace_pidfd_cve_2026_46333` |

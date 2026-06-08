@@ -303,3 +303,13 @@ sudo_host:
   kernel_version: "4.15.0"
   expect_detect: VULNERABLE
   notes: "CVE-2025-32462; sudo -h/--host policy bypass (Stratascale, sibling of sudo_chwoot). Ubuntu 18.04 ships sudo 1.8.21p2, inside the vulnerable range [1.8.8, 1.9.17p0] (fixed 1.9.17p1), so detect() returns VULNERABLE on the version gate. Exercising exploit() empirically needs a sudoers rule scoped to a host other than the box hostname (and not ALL): provision e.g. 'vagrant fakehost = (ALL) NOPASSWD: ALL' in /etc/sudoers.d/, then 'SKELETONKEY_SUDO_HOST=fakehost skeletonkey --exploit sudo_host --i-know' pops root via 'sudo -h fakehost /bin/bash'. Brand-new addition this cycle; provisioner + sweep pending."
+
+# ── cifswitch (CVE-2026-46243) addition ─────────────────────────────
+
+cifswitch:
+  box: ubuntu2204
+  kernel_pkg: ""
+  mainline_version: "6.12.89"  # one below the 6.12.90 backport; ~19yo bug present
+  kernel_version: "6.12.89"
+  expect_detect: VULNERABLE
+  notes: "CVE-2026-46243 'CIFSwitch'; cifs.spnego key type trusts userspace-forged authority fields (Asim Manizada, 2026-05-28). Fixed 5.10.257 / 6.1.174 / 6.12.90 / 7.0.10 (Debian backports of commit 3da1fdf4efbc, mainline 7.1-rc5); a ~19-year-old bug below those. Mainline 6.12.89 is one below the 6.12.90 backport so the version gate flags VULNERABLE — but detect() ALSO requires the cifs userspace path: provision cifs-utils (so /usr/sbin/cifs.upcall + the cifs.spnego request-key rule exist) and `modprobe cifs`, else detect() returns PRECOND_FAIL (or force with SKELETONKEY_CIFS_ASSUME_PRESENT=1). exploit() fires the non-destructive add_key(2) cifs.spnego probe and reports the forged-key accept as the primitive witness; the namespace+NSS root-pop is not bundled until VM-verified. Brand-new addition this cycle; provisioner (cifs-utils install) + sweep pending."

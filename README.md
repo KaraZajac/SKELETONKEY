@@ -5,7 +5,7 @@
 [![Modules](https://img.shields.io/badge/CVEs-28%20VM--verified%20%2F%2036-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
-> **One curated binary. 41 Linux LPE modules covering 36 CVEs from 2016 → 2026.
+> **One curated binary. 42 Linux LPE modules covering 37 CVEs from 2016 → 2026.
 > Every year 2016 → 2026 covered. 28 confirmed end-to-end against real Linux
 > VMs via `tools/verify-vm/`. Detection rules in the box. One command picks
 > the safest one and runs it.**
@@ -45,8 +45,8 @@ for every CVE in the bundle — same project for red and blue teams.
 
 ## Corpus at a glance
 
-**41 modules covering 36 distinct CVEs** across the 2016 → 2026 LPE
-timeline. **28 of the 36 CVEs have been empirically verified** in real
+**42 modules covering 37 distinct CVEs** across the 2016 → 2026 LPE
+timeline. **28 of the 37 CVEs have been empirically verified** in real
 Linux VMs via `tools/verify-vm/`; the 8 still-pending entries are
 blocked by their target environment (legacy hypervisor, EOL kernel, or
 the t64-transition libc rollout) or are brand-new additions awaiting a
@@ -68,7 +68,7 @@ af_packet · af_packet2 · af_unix_gc · cls_route4 · fuse_legacy ·
 nf_tables · nft_set_uaf · nft_fwd_dup · nft_payload ·
 netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
-### Empirical verification (28 of 36 CVEs)
+### Empirical verification (28 of 37 CVEs)
 
 Records in [`docs/VERIFICATIONS.jsonl`](docs/VERIFICATIONS.jsonl) prove
 each verdict against a known-target VM. Coverage:
@@ -137,7 +137,7 @@ uid=1000(kara) gid=1000(kara) groups=1000(kara)
 $ skeletonkey --auto --i-know
 [*] auto: host=demo distro=ubuntu/24.04 kernel=5.15.0-56-generic arch=x86_64
 [*] auto: active probes enabled — brief /tmp file touches and fork-isolated namespace probes
-[*] auto: scanning 41 modules for vulnerabilities...
+[*] auto: scanning 42 modules for vulnerabilities...
 [+] auto: dirty_pipe             VULNERABLE (safety rank 90)
 [+] auto: cgroup_release_agent   VULNERABLE (safety rank 98)
 [+] auto: pwnkit                 VULNERABLE (safety rank 100)
@@ -206,10 +206,14 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.9 cut 2026-06-08.** 41 modules across 36 CVEs — **every
-year 2016 → 2026 now covered**. Newest: `ptrace_pidfd` (CVE-2026-46333,
-Qualys's `__ptrace_may_access` / `pidfd_getfd` credential-steal) and
-`sudo_host` (CVE-2025-32462, Stratascale's sudo `--host` policy bypass).
+**v0.9.10 cut 2026-06-08.** 42 modules across 37 CVEs — **every
+year 2016 → 2026 now covered**. Newest: `cifswitch` (CVE-2026-46243,
+Asim Manizada's "CIFSwitch" — the `cifs.spnego` key type trusts
+userspace-forged authority fields, coercing the root `cifs.upcall` helper
+into loading an attacker NSS module as root), `ptrace_pidfd`
+(CVE-2026-46333, Qualys's `__ptrace_may_access` / `pidfd_getfd`
+credential-steal), and `sudo_host` (CVE-2025-32462, Stratascale's sudo
+`--host` policy bypass).
 v0.9.0 added 5 gap-fillers
 (`mutagen_astronomy` / `sudo_runas_neg1` / `tioscpgrp` / `vsock_uaf` /
 `nft_pipapo`); v0.8.0 added 3 (`sudo_chwoot` / `udisks_libblockdev` /
@@ -239,19 +243,19 @@ Reliability + accuracy work in v0.7.x:
   trace, OPSEC footprint, detection-rule coverage, verified-on
   records. Paste-into-ticket ready.
 - **CVE metadata pipeline** (`tools/refresh-cve-metadata.py`) — fetches
-  CISA KEV catalog + NVD CWE; 13 of 36 modules cover KEV-listed CVEs.
+  CISA KEV catalog + NVD CWE; 13 of 37 modules cover KEV-listed CVEs.
 - **151 detection rules** across auditd / sigma / yara / falco; one
   command exports the corpus to your SIEM.
 - `--auto` upgrades: per-detect 15s timeout, fork-isolated detect +
   exploit, structured verdict table, scan summary, `--dry-run`.
 
-Not yet verified (8 of 36 CVEs): `vmwgfx` (VMware-guest only),
+Not yet verified (9 of 37 CVEs): `vmwgfx` (VMware-guest only),
 `dirty_cow` (needs ≤ 4.4 kernel), `mutagen_astronomy` (mainline
 4.14.70 panics on Ubuntu 18.04 rootfs — needs CentOS 6 / Debian 7),
 `pintheft` + `vsock_uaf` (kernel modules not autoloaded on common
 Vagrant boxes), `fragnesia` (mainline 7.0.5 .debs need t64-transition
 libs from Ubuntu 24.04+ / Debian 13+), `ptrace_pidfd` + `sudo_host`
-(brand-new this cycle, sweep pending). Rationale in
++ `cifswitch` (brand-new this cycle, sweep pending). Rationale in
 [`tools/verify-vm/targets.yaml`](tools/verify-vm/targets.yaml).
 
 See [`ROADMAP.md`](ROADMAP.md) for the next planned modules and
