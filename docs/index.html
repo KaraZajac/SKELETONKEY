@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SKELETONKEY — Linux LPE corpus, VM-verified, SOC-ready detection</title>
-<meta name="description" content="One binary. 42 Linux privilege-escalation modules from 2016 to 2026. 28 of 37 CVEs empirically verified in real Linux VMs. 13 KEV-listed. 151 detection rules across auditd/sigma/yara/falco. MITRE ATT&CK and CWE annotated. --explain gives operator briefings.">
+<meta name="description" content="One binary. 43 Linux privilege-escalation modules from 2016 to 2026. 28 of 38 CVEs empirically verified in real Linux VMs. 13 KEV-listed. 151 detection rules across auditd/sigma/yara/falco. MITRE ATT&CK and CWE annotated. --explain gives operator briefings.">
 <meta property="og:title" content="SKELETONKEY — Linux LPE corpus, VM-verified">
-<meta property="og:description" content="42 Linux LPE modules; 28 of 37 CVEs empirically verified in real VMs. 151 detection rules. ATT&CK + CWE + KEV annotated.">
+<meta property="og:description" content="43 Linux LPE modules; 28 of 38 CVEs empirically verified in real VMs. 151 detection rules. ATT&CK + CWE + KEV annotated.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://karazajac.github.io/SKELETONKEY/">
 <meta property="og:image" content="https://karazajac.github.io/SKELETONKEY/og.png">
@@ -56,14 +56,14 @@
   <div class="container hero-inner">
     <div class="hero-eyebrow">
       <span class="dot dot-pulse"></span>
-      v0.9.10 — released 2026-06-08
+      v0.9.11 — released 2026-06-08
     </div>
     <h1 class="hero-title">
       <span class="display-wordmark">SKELETONKEY</span>
     </h1>
     <p class="hero-tag">
-      One binary. <strong>42 Linux LPE modules</strong> covering 37 CVEs —
-      <strong>every year 2016 → 2026</strong>. 28 of 34 confirmed against
+      One binary. <strong>43 Linux LPE modules</strong> covering 38 CVEs —
+      <strong>every year 2016 → 2026</strong>. 28 of 38 confirmed against
       real Linux kernels in VMs. SOC-ready detection rules in four SIEM
       formats. MITRE ATT&amp;CK + CWE + CISA KEV annotated.
       <span class="hero-tag-pop">--explain gives a one-page operator briefing per CVE.</span>
@@ -81,9 +81,9 @@
     </div>
 
     <div class="stats-row" id="stats-row">
-      <div class="stat-chip"><span class="num" data-target="41">0</span><span>modules</span></div>
+      <div class="stat-chip"><span class="num" data-target="43">0</span><span>modules</span></div>
       <div class="stat-chip stat-vfy"><span class="num" data-target="28">0</span><span>✓ VM-verified</span></div>
-      <div class="stat-chip stat-kev"><span class="num" data-target="12">0</span><span>★ in CISA KEV</span></div>
+      <div class="stat-chip stat-kev"><span class="num" data-target="13">0</span><span>★ in CISA KEV</span></div>
       <div class="stat-chip"><span class="num" data-target="151">0</span><span>detection rules</span></div>
     </div>
 
@@ -227,7 +227,7 @@ uid=0(root) gid=0(root)</pre>
         <div class="bento-icon">★</div>
         <h3>CISA KEV prioritized</h3>
         <p>
-          13 of 37 CVEs in the corpus are in CISA's Known Exploited
+          13 of 38 CVEs in the corpus are in CISA's Known Exploited
           Vulnerabilities catalog — actively exploited in the wild.
           Refreshed on demand via <code>tools/refresh-cve-metadata.py</code>.
         </p>
@@ -294,7 +294,7 @@ uid=0(root) gid=0(root)</pre>
           <code>tools/verify-vm/</code> spins up known-vulnerable
           kernels (stock distro + mainline from kernel.ubuntu.com), runs
           <code>--explain --active</code> per module, and records the
-          verdict. <strong>28 of 37 CVEs</strong> confirmed against
+          verdict. <strong>28 of 38 CVEs</strong> confirmed against
           real Linux across Ubuntu 18.04 / 20.04 / 22.04 + Debian 11 / 12
           + mainline 5.4.0-26 / 5.15.5 / 6.1.10 / 6.19.7. Records baked into the binary;
           <code>--list</code> shows ✓ per module.
@@ -309,7 +309,7 @@ uid=0(root) gid=0(root)</pre>
   <div class="container">
     <div class="section-head">
       <span class="section-tag">corpus</span>
-      <h2>37 CVEs across 10 years. ★ = actively exploited (CISA KEV).</h2>
+      <h2>38 CVEs across 10 years. ★ = actively exploited (CISA KEV).</h2>
     </div>
 
     <h3 class="corpus-h" data-color="green">
@@ -357,6 +357,7 @@ uid=0(root) gid=0(root)</pre>
       <span class="pill yellow">vmwgfx</span>
       <span class="pill yellow">ptrace_pidfd</span>
       <span class="pill yellow">cifswitch</span>
+      <span class="pill yellow">nft_catchall</span>
     </div>
 
     <p class="corpus-foot">
@@ -417,7 +418,7 @@ uid=0(root) gid=0(root)</pre>
         <div class="audience-icon">🎓</div>
         <h3>Researchers / CTF</h3>
         <p>
-          37 CVEs, 10-year span, each with the original PoC author
+          38 CVEs, 10-year span, each with the original PoC author
           credited and the kernel-range citation auditable.
           <code>--explain</code> shows the reasoning chain; detection
           rules let you practice both sides. Source is the documentation.
@@ -514,7 +515,7 @@ uid=0(root) gid=0(root)</pre>
       <div class="tl-col tl-shipped">
         <div class="tl-tag">shipped</div>
         <ul>
-          <li><strong>28 of 37 CVEs empirically verified</strong> in real Linux VMs</li>
+          <li><strong>28 of 38 CVEs empirically verified</strong> in real Linux VMs</li>
           <li><strong>kernel.ubuntu.com/mainline/</strong> kernel fetch path — unblocks pin-not-in-apt targets</li>
           <li>Per-module <code>verified_on[]</code> table baked into the binary</li>
           <li><strong>--explain mode</strong> — one-page operator briefing per CVE</li>
@@ -601,7 +602,7 @@ uid=0(root) gid=0(root)</pre>
       who found the bugs.
     </p>
     <p class="footer-meta">
-      v0.9.10 · MIT · <a href="https://github.com/KaraZajac/SKELETONKEY">github.com/KaraZajac/SKELETONKEY</a>
+      v0.9.11 · MIT · <a href="https://github.com/KaraZajac/SKELETONKEY">github.com/KaraZajac/SKELETONKEY</a>
     </p>
   </div>
 </footer>

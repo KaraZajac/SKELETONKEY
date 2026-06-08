@@ -71,6 +71,7 @@ extern const struct skeletonkey_module nft_pipapo_module;
 extern const struct skeletonkey_module ptrace_pidfd_module;
 extern const struct skeletonkey_module sudo_host_module;
 extern const struct skeletonkey_module cifswitch_module;
+extern const struct skeletonkey_module nft_catchall_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -841,6 +842,54 @@ static void run_all(void)
 		&cifswitch_module, &h_ciw_61289,
 		SKELETONKEY_PRECOND_FAIL);
 	unsetenv("SKELETONKEY_CIFS_ASSUME_PRESENT");
+
+	/* ── nft_catchall (CVE-2026-23111) ───────────────────────────
+	 * Version-gated: predates-gate at catch-all set elements (~5.13),
+	 * then Debian backports 6.1.164 / 6.12.71 / 7.0.10, PLUS unprivileged
+	 * user_ns clone required (else PRECOND_FAIL). h_kernel_6_12 allows
+	 * userns; h_kernel_5_14_no_userns denies it. */
+
+	/* 5.12.50 predates catch-all set elements (~5.13) → OK */
+	struct skeletonkey_host h_nca_512 =
+		mk_host(h_kernel_6_12, 5, 12, 50, "5.12.50-test");
+	run_one("nft_catchall: 5.12.50 predates catch-all (~5.13) → OK",
+		&nft_catchall_module, &h_nca_512,
+		SKELETONKEY_OK);
+
+	/* 6.1.164 exact backport → OK via patch table */
+	struct skeletonkey_host h_nca_61164 =
+		mk_host(h_kernel_6_12, 6, 1, 164, "6.1.164-test");
+	run_one("nft_catchall: 6.1.164 (exact backport) → OK via patch table",
+		&nft_catchall_module, &h_nca_61164,
+		SKELETONKEY_OK);
+
+	/* 7.1.0 newer than every entry → mainline-inherited fix → OK */
+	struct skeletonkey_host h_nca_710 =
+		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
+	run_one("nft_catchall: 7.1.0 above all backports → OK (mainline inherit)",
+		&nft_catchall_module, &h_nca_710,
+		SKELETONKEY_OK);
+
+	/* 6.1.163 (one below the 6.1.164 backport) + userns → VULNERABLE */
+	struct skeletonkey_host h_nca_61163 =
+		mk_host(h_kernel_6_12, 6, 1, 163, "6.1.163-test");
+	run_one("nft_catchall: 6.1.163 + userns allowed → VULNERABLE",
+		&nft_catchall_module, &h_nca_61163,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.12.70 (one below the 6.12.71 backport) + userns → VULNERABLE */
+	struct skeletonkey_host h_nca_61270 =
+		mk_host(h_kernel_6_12, 6, 12, 70, "6.12.70-test");
+	run_one("nft_catchall: 6.12.70 + userns allowed → VULNERABLE",
+		&nft_catchall_module, &h_nca_61270,
+		SKELETONKEY_VULNERABLE);
+
+	/* same vulnerable kernel but unprivileged userns denied → PRECOND_FAIL */
+	struct skeletonkey_host h_nca_nouserns =
+		mk_host(h_kernel_5_14_no_userns, 6, 1, 163, "6.1.163-nouserns-test");
+	run_one("nft_catchall: 6.1.163 but userns denied → PRECOND_FAIL",
+		&nft_catchall_module, &h_nca_nouserns,
+		SKELETONKEY_PRECOND_FAIL);
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

@@ -1,3 +1,36 @@
+## SKELETONKEY v0.9.11 — new LPE module: nft_catchall (CVE-2026-23111)
+
+Adds **`nft_catchall` — CVE-2026-23111**, taking the corpus to **43
+modules / 38 CVEs**. The newest nftables LPE: a **use-after-free** in the
+nf_tables transaction-abort path. `nft_map_catchall_activate()` carries an
+inverted condition (a stray `!`) so the abort path processes *active*
+catch-all map elements instead of skipping them — a catch-all GOTO element
+drives a chain's use-count to zero, and a following `DELCHAIN` frees the
+chain while the catch-all verdict still references it → UAF. From an
+unprivileged user (user namespaces + nftables) it escalates to root via a
+`modprobe_path` / `selinux_state` ROP. Fixed upstream by commit `f41c5d1`;
+CWE-416, CVSS 7.8; not in CISA KEV. Public reproduction + analysis by
+**FuzzingLabs**.
+
+🟡 **Trigger (reconstructed) — primitive-only, not VM-verified.** This is
+one more UAF in the corpus's most-covered subsystem (`nf_tables`,
+`nft_set_uaf`, `nft_payload`, `nft_pipapo`, …) and ships on the same
+contract as `nf_tables` (CVE-2024-1086): a fork-isolated trigger that
+fires the bug class and stops. `detect()` version-gates against the
+Debian backports (upstream thresholds 6.1.164 / 6.12.73 / 6.18.10;
+catch-all set elements arrived ~5.13) **and** requires unprivileged
+user-namespace clone — a vulnerable kernel with userns locked down is
+`PRECOND_FAIL`. `exploit()` builds a verdict map with a catch-all GOTO
+element and provokes an aborting batch transaction to drive the abort-path
+UAF, observes slabinfo, and returns `EXPLOIT_FAIL`. The per-kernel leak +
+arbitrary-R/W + `modprobe_path` ROP is **not** bundled (per-build offsets
+refused), and the trigger is reconstructed from the public analysis rather
+than VM-verified — it never claims root it did not get. Ships auditd +
+sigma + falco rules, ATT&CK T1068 + CWE-416 metadata, six new `detect()`
+unit-test rows (version + userns gating), credits FuzzingLabs + the
+upstream fix in `NOTICE.md`, and a verify-vm target (sweep pending). Not
+VM-verified, so the verified count stays 28 of 38.
+
 ## SKELETONKEY v0.9.10 — new LPE module: cifswitch (CVE-2026-46243)
 
 Adds **`cifswitch` — CVE-2026-46243 "CIFSwitch"** (Asim Manizada,

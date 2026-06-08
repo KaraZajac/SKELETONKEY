@@ -237,6 +237,11 @@ CIW_DIR  := modules/cifswitch_cve_2026_46243
 CIW_SRCS := $(CIW_DIR)/skeletonkey_modules.c
 CIW_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CIW_SRCS))
 
+# CVE-2026-23111 nft_catchall — nf_tables nft_map_catchall_activate abort UAF (FuzzingLabs repro)
+NCA_DIR  := modules/nft_catchall_cve_2026_23111
+NCA_SRCS := $(NCA_DIR)/skeletonkey_modules.c
+NCA_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NCA_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -250,7 +255,7 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
-               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS)
+               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

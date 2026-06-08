@@ -261,6 +261,14 @@ const struct cve_metadata cve_metadata_table[] = {
         .kev_date_added      = "",
     },
     {
+        .cve                 = "CVE-2026-23111",
+        .cwe                 = "CWE-416",
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
+    {
         .cve                 = "CVE-2026-31635",
         .cwe                 = "CWE-130",
         .attack_technique    = "T1068",

@@ -35,7 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.9.10"
+#define SKELETONKEY_VERSION "0.9.11"
 
 static const char BANNER[] =
 "\n"
@@ -1018,6 +1018,7 @@ static int module_safety_rank(const char *n)
     if (!strcmp(n, "ptrace_pidfd"))          return 84;  /* pidfd_getfd fd-steal race; ported, exploit NOT VM-verified */
     if (!strcmp(n, "cifswitch"))             return 86;  /* structural cifs.spnego keyring trust; ported, full chain NOT bundled/VM-verified */
     if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
+    if (!strcmp(n, "nft_catchall"))          return 35;  /* reconstructed nf_tables abort UAF; may KASAN-oops, primitive-only/not VM-verified */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
     if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */
     if (!strcmp(n, "entrybleed"))            return 0;   /* leak only, not LPE */

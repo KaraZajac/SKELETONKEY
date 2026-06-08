@@ -54,4 +54,5 @@ void skeletonkey_register_all_modules(void)
     skeletonkey_register_ptrace_pidfd();
     skeletonkey_register_sudo_host();
     skeletonkey_register_cifswitch();
+    skeletonkey_register_nft_catchall();
 }
