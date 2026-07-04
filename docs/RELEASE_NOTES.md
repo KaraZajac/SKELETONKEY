@@ -1,3 +1,51 @@
+## SKELETONKEY v0.9.12 — new LPE module: bad_epoll (CVE-2026-46242)
+
+Adds **`bad_epoll` — CVE-2026-46242 "Bad Epoll"** (Jaeyoung Chung /
+`J-jaeyoung`, submitted to Google's kernelCTF), taking the corpus to **44
+modules / 39 CVEs** and opening a brand-new subsystem: **epoll /
+`fs/eventpoll.c`**. A race-condition use-after-free on the file-teardown
+path — `ep_remove()` clears `file->f_ep` under `file->f_lock` but keeps
+using the file inside the critical section (`hlist_del_rcu()` +
+`spin_unlock()`), so a concurrent `__fput()` observes the transient NULL,
+skips `eventpoll_release_file()`, and frees a `struct eventpoll` still in
+use. The public exploit weaponises the 8-byte UAF write via a cross-cache
+attack to a `struct file`, arbitrary kernel read through
+`/proc/self/fdinfo`, and a ROP chain — ~99% reliable through a
+~6-instruction window, and reachable by **any unprivileged user with no
+user namespace, no CONFIG, and no capability** (which also means there is
+no unprivileged-userns stopgap — the only fix is to patch). Introduced by
+`58c9b016e128` (Linux 6.4); fixed by `a6dc643c6931` (merged 7.1-rc1),
+stable backport 7.0.13. CWE-416 (race root cause CWE-362); not in CISA
+KEV. Also affects Android.
+
+🟡 **Trigger (reconstructed) — deliberately under-driven, primitive-only,
+not VM-verified.** A *won* race frees a live `struct eventpoll` — real
+memory corruption that rarely trips KASAN, so a completed race can
+silently destabilise a vulnerable host. `detect()` is therefore a pure
+kernel-version gate (vulnerable iff ≥ 6.4 and below the fix on-branch;
+stable backport 7.0.13, 7.1+ inherits; 6.1/5.10 not affected) with **no
+active probe** — there is no safe way to distinguish vulnerable from
+patched without winning the race. `exploit()` forks a CPU-pinned child
+that builds the epoll race pair and exercises the `ep_remove`-vs-`__fput`
+concurrent-close window a **hard-bounded** 48 attempts / 2 s (widened with
+`close(dup())` false-sharing storms), snapshots the eventpoll slab, and
+returns `EXPLOIT_FAIL`; it does not grind the race to a win, does not do
+the cross-cache reclaim, and does not bundle the `fdinfo` arbitrary-read +
+ROP root-pop (per-build offsets refused). It carries the corpus's
+**lowest `--auto` safety rank (12)** — a kernel race that frees a live
+`struct file` is the least predictable class, so `--auto` only reaches for
+it after every safer vulnerable module. Detection is intentionally
+weak/structural (epoll syscalls are ubiquitous and the exploit rarely
+trips KASAN) — the shipped auditd/sigma/falco rules key on the
+post-exploitation euid-0 transition, with no yara; treat this as much as a
+blue-team "your stack is nearly blind to this" teaching case as an
+offensive one. Wired: registry, Makefile, safety rank (12), 5 `detect()`
+test rows (version gating), CVE metadata (CWE-416 / T1068 / not-KEV),
+README + CVES.md + website counts (44/39), RELEASE_NOTES v0.9.12, and a
+verify-vm target (sweep pending). Credits Jaeyoung Chung + the upstream
+fix in `NOTICE.md`. Reconstructed from the public kernelCTF PoC and not
+VM-verified, so the verified count stays 28 of 39.
+
 ## SKELETONKEY v0.9.11 — new LPE module: nft_catchall (CVE-2026-23111)
 
 Adds **`nft_catchall` — CVE-2026-23111**, taking the corpus to **43

@@ -72,6 +72,7 @@ extern const struct skeletonkey_module ptrace_pidfd_module;
 extern const struct skeletonkey_module sudo_host_module;
 extern const struct skeletonkey_module cifswitch_module;
 extern const struct skeletonkey_module nft_catchall_module;
+extern const struct skeletonkey_module bad_epoll_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -890,6 +891,49 @@ static void run_all(void)
 	run_one("nft_catchall: 6.1.163 but userns denied → PRECOND_FAIL",
 		&nft_catchall_module, &h_nca_nouserns,
 		SKELETONKEY_PRECOND_FAIL);
+
+	/* ── bad_epoll (CVE-2026-46242) ──────────────────────────────
+	 * Pure version gate: vulnerable iff >= 6.4 (bug introduced
+	 * 58c9b016e128) AND below the fix on-branch (stable backport
+	 * 7.0.13; 7.1+ inherits via mainline). NO userns/CONFIG
+	 * precondition — epoll is reachable by every unprivileged user, so
+	 * there is deliberately no PRECOND_FAIL path to test. userns state
+	 * of the base host is irrelevant here. */
+
+	/* 6.1.100 predates the vulnerable epoll path (introduced 6.4) → OK */
+	struct skeletonkey_host h_bep_61 =
+		mk_host(h_kernel_6_12, 6, 1, 100, "6.1.100-test");
+	run_one("bad_epoll: 6.1.100 predates the bug (introduced 6.4) → OK",
+		&bad_epoll_module, &h_bep_61,
+		SKELETONKEY_OK);
+
+	/* 6.12.70 in range [6.4, 7.0.13) → VULNERABLE (no userns needed) */
+	struct skeletonkey_host h_bep_61270 =
+		mk_host(h_kernel_6_12, 6, 12, 70, "6.12.70-test");
+	run_one("bad_epoll: 6.12.70 in range → VULNERABLE (no userns gate)",
+		&bad_epoll_module, &h_bep_61270,
+		SKELETONKEY_VULNERABLE);
+
+	/* 7.0.5 on the 7.0 branch, below the 7.0.13 backport → VULNERABLE */
+	struct skeletonkey_host h_bep_705 =
+		mk_host(h_kernel_6_12, 7, 0, 5, "7.0.5-test");
+	run_one("bad_epoll: 7.0.5 below the 7.0.13 backport → VULNERABLE",
+		&bad_epoll_module, &h_bep_705,
+		SKELETONKEY_VULNERABLE);
+
+	/* 7.0.13 exact backport → OK via patch table */
+	struct skeletonkey_host h_bep_70130 =
+		mk_host(h_kernel_6_12, 7, 0, 13, "7.0.13-test");
+	run_one("bad_epoll: 7.0.13 (exact backport) → OK via patch table",
+		&bad_epoll_module, &h_bep_70130,
+		SKELETONKEY_OK);
+
+	/* 7.1.0 newer than every entry → mainline-inherited fix → OK */
+	struct skeletonkey_host h_bep_710 =
+		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
+	run_one("bad_epoll: 7.1.0 above the backport → OK (mainline inherit)",
+		&bad_epoll_module, &h_bep_710,
+		SKELETONKEY_OK);
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

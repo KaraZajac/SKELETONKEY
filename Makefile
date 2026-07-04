@@ -242,6 +242,11 @@ NCA_DIR  := modules/nft_catchall_cve_2026_23111
 NCA_SRCS := $(NCA_DIR)/skeletonkey_modules.c
 NCA_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(NCA_SRCS))
 
+# CVE-2026-46242 bad_epoll — epoll ep_remove-vs-__fput teardown race UAF ("Bad Epoll", J-jaeyoung kernelCTF)
+BEP_DIR  := modules/bad_epoll_cve_2026_46242
+BEP_SRCS := $(BEP_DIR)/skeletonkey_modules.c
+BEP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(BEP_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -255,7 +260,7 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
-               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS)
+               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS) $(BEP_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

@@ -35,7 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SKELETONKEY_VERSION "0.9.11"
+#define SKELETONKEY_VERSION "0.9.12"
 
 static const char BANNER[] =
 "\n"
@@ -1021,6 +1021,7 @@ static int module_safety_rank(const char *n)
     if (!strcmp(n, "nft_catchall"))          return 35;  /* reconstructed nf_tables abort UAF; may KASAN-oops, primitive-only/not VM-verified */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
     if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */
+    if (!strcmp(n, "bad_epoll"))             return 12;  /* reconstructed epoll teardown race UAF; a won race frees a live struct file and rarely trips KASAN (silent-corruption risk), primitive-only/not VM-verified — least predictable in the corpus */
     if (!strcmp(n, "entrybleed"))            return 0;   /* leak only, not LPE */
     return 50; /* kernel primitives — middle of pack */
 }
