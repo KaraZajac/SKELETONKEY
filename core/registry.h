@@ -60,6 +60,7 @@ void skeletonkey_register_sudo_host(void);
 void skeletonkey_register_cifswitch(void);
 void skeletonkey_register_nft_catchall(void);
 void skeletonkey_register_bad_epoll(void);
+void skeletonkey_register_ghostlock(void);
 
 /* Call every skeletonkey_register_<family>() above in canonical order.
  * Single source of truth so the main binary and the test binary stay

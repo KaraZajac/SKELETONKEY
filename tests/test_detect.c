@@ -73,6 +73,7 @@ extern const struct skeletonkey_module sudo_host_module;
 extern const struct skeletonkey_module cifswitch_module;
 extern const struct skeletonkey_module nft_catchall_module;
 extern const struct skeletonkey_module bad_epoll_module;
+extern const struct skeletonkey_module ghostlock_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -933,6 +934,80 @@ static void run_all(void)
 		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
 	run_one("bad_epoll: 7.1.0 above the backport → OK (mainline inherit)",
 		&bad_epoll_module, &h_bep_710,
+		SKELETONKEY_OK);
+
+	/* ── ghostlock (CVE-2026-43499) ──────────────────────────────
+	 * Pure version gate over a FIVE-branch backport table (fixed
+	 * 7.0.4 / 6.18.27 / 6.12.86 / 6.6.140 / 6.1.175 on-branch, 7.1+
+	 * inherits mainline; introduced 2.6.39). Unlike bad_epoll's single
+	 * entry, this exercises kernel_range_is_patched()'s "strictly newer
+	 * than ALL entries" mainline-inherit clause: 6.13.x is newer than
+	 * some entries but not all, so it must stay VULNERABLE. The 5.x/4.19
+	 * LTS branches are affected with NO upstream fix. No userns/CONFIG
+	 * precondition (CVSS PR:L, any local user). */
+
+	/* 2.6.30 predates PI-futex requeue (introduced 2.6.39) → OK */
+	struct skeletonkey_host h_ghl_2630 =
+		mk_host(h_kernel_6_12, 2, 6, 30, "2.6.30-test");
+	run_one("ghostlock: 2.6.30 predates PI-futex requeue → OK",
+		&ghostlock_module, &h_ghl_2630,
+		SKELETONKEY_OK);
+
+	/* 5.10.200 — affected LTS with NO upstream stable fix → VULNERABLE */
+	struct skeletonkey_host h_ghl_510 =
+		mk_host(h_kernel_6_12, 5, 10, 200, "5.10.200-test");
+	run_one("ghostlock: 5.10.200 (no upstream fix on 5.10) → VULNERABLE",
+		&ghostlock_module, &h_ghl_510,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.1.174 one below the 6.1.175 backport → VULNERABLE */
+	struct skeletonkey_host h_ghl_61174 =
+		mk_host(h_kernel_6_12, 6, 1, 174, "6.1.174-test");
+	run_one("ghostlock: 6.1.174 below the 6.1.175 backport → VULNERABLE",
+		&ghostlock_module, &h_ghl_61174,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.1.175 exact backport → OK via patch table */
+	struct skeletonkey_host h_ghl_61175 =
+		mk_host(h_kernel_6_12, 6, 1, 175, "6.1.175-test");
+	run_one("ghostlock: 6.1.175 (exact backport) → OK via patch table",
+		&ghostlock_module, &h_ghl_61175,
+		SKELETONKEY_OK);
+
+	/* 6.12.85 one below the 6.12.86 backport → VULNERABLE */
+	struct skeletonkey_host h_ghl_61285 =
+		mk_host(h_kernel_6_12, 6, 12, 85, "6.12.85-test");
+	run_one("ghostlock: 6.12.85 below the 6.12.86 backport → VULNERABLE",
+		&ghostlock_module, &h_ghl_61285,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.13.0 — newer than 6.12.86 but OLDER than 6.18.27/7.0.4, EOL
+	 * branch with no fix → must stay VULNERABLE ("newer than ALL" test). */
+	struct skeletonkey_host h_ghl_6130 =
+		mk_host(h_kernel_6_12, 6, 13, 0, "6.13.0-test");
+	run_one("ghostlock: 6.13.0 newer than some entries but not all → VULNERABLE",
+		&ghostlock_module, &h_ghl_6130,
+		SKELETONKEY_VULNERABLE);
+
+	/* 7.0.3 one below the 7.0.4 backport → VULNERABLE */
+	struct skeletonkey_host h_ghl_7003 =
+		mk_host(h_kernel_6_12, 7, 0, 3, "7.0.3-test");
+	run_one("ghostlock: 7.0.3 below the 7.0.4 backport → VULNERABLE",
+		&ghostlock_module, &h_ghl_7003,
+		SKELETONKEY_VULNERABLE);
+
+	/* 7.0.4 exact backport → OK */
+	struct skeletonkey_host h_ghl_7004 =
+		mk_host(h_kernel_6_12, 7, 0, 4, "7.0.4-test");
+	run_one("ghostlock: 7.0.4 (exact backport) → OK via patch table",
+		&ghostlock_module, &h_ghl_7004,
+		SKELETONKEY_OK);
+
+	/* 7.1.0 newer than every entry → mainline-inherited fix → OK */
+	struct skeletonkey_host h_ghl_710 =
+		mk_host(h_kernel_6_12, 7, 1, 0, "7.1.0-test");
+	run_one("ghostlock: 7.1.0 above all backports → OK (mainline inherit)",
+		&ghostlock_module, &h_ghl_710,
 		SKELETONKEY_OK);
 
 	/* ── coverage report ─────────────────────────────────────────

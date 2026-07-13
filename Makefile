@@ -247,6 +247,11 @@ BEP_DIR  := modules/bad_epoll_cve_2026_46242
 BEP_SRCS := $(BEP_DIR)/skeletonkey_modules.c
 BEP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(BEP_SRCS))
 
+# CVE-2026-43499 ghostlock — rtmutex/futex requeue-PI remove_waiter() stack UAF ("GhostLock", VEGA / Nebula Security)
+GHL_DIR  := modules/ghostlock_cve_2026_43499
+GHL_SRCS := $(GHL_DIR)/skeletonkey_modules.c
+GHL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(GHL_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -260,7 +265,8 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(DDC_OBJS) $(FGN_OBJS) $(P2TR_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
-               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS) $(BEP_OBJS)
+               $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS) $(BEP_OBJS) \
+               $(GHL_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

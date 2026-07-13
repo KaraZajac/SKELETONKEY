@@ -1,3 +1,57 @@
+## SKELETONKEY v0.9.13 — new LPE module: ghostlock (CVE-2026-43499)
+
+Adds **`ghostlock` — CVE-2026-43499 "GhostLock"** (VEGA / Nebula Security,
+"IonStack part II"), taking the corpus to **45 modules / 40 CVEs** and opening a
+brand-new subsystem: **rtmutex / futex requeue-PI** (`kernel/locking/rtmutex.c`).
+It is also the corpus's first kernel-**stack** use-after-free — every other UAF
+in the set is heap/slab. On the `-EDEADLK` deadlock-rollback path,
+`remove_waiter()` operates on `current` instead of the actual waiter task while
+unwinding a proxy lock in `rt_mutex_start_proxy_lock()` (reached from
+`futex_requeue()`); if a concurrent PI-chain priority walk — driven from another
+CPU via `sched_setattr()` — runs at that instant, `pi_blocked_on` is cleared on
+the wrong task and an on-stack `rt_mutex_waiter` is left dangling, becoming a
+controlled kernel write when the rbtree is later rotated over the reused frame.
+Reachable by **any unprivileged user** (CVSS 7.8, PR:L) — plain `futex(2)` +
+`sched_setattr(2)`, no user namespace, no capability, only `CONFIG_FUTEX_PI`
+(universal). It has existed since PI-futex requeue landed in **2.6.39** — ~15
+years across every distribution. The public exploit weaponises it (Android/Pixel)
+via a "KernelSnitch" futex-bucket page leak → forged waiter → `struct file`
+`f_op` → configfs/ashmem R/W → pipe physical R/W → cred patch; ~97% stable on
+kernelCTF, $92,337. Introduced 2.6.39; fixed `3bfdc63936dd` (merged 7.1-rc1),
+stable backports 7.0.4 / 6.18.27 / 6.12.86 / 6.6.140 / 6.1.175 — the
+5.15/5.10/5.4/4.19 LTS branches are affected with no upstream fix. CWE-416 (race
+root cause CWE-362); not in CISA KEV.
+
+🟡 **Trigger (reconstructed) — reachability-only, deliberately under-driven, not
+VM-verified.** `detect()` is a pure kernel-version gate over a five-branch
+backport table (7.0.4 / 6.18.27 / 6.12.86 / 6.6.140 / 6.1.175, 7.1+ inherits
+mainline; 5.15/5.10/5.4/4.19 affected with no fix; < 2.6.39 not affected) — no
+userns/CONFIG probe (`CONFIG_FUTEX_PI` assumed). `exploit()` forks an isolated
+child that **(A)** deterministically confirms the `-EDEADLK` `remove_waiter()`
+rollback path is reachable — a **safe** witness, since without a concurrent
+priority walk the unwind creates no dangling pointer (validated on real hardware:
+the requeue-PI cycle returns `-EDEADLK` reliably) — then **(B)** exercises the
+actual race a hard-bounded 24 iterations / 2 s with a sibling-CPU
+`sched_setattr(SCHED_BATCH)` storm, and stops. It does **not** widen the
+`copy_from_user` window (no memfd/`PUNCH_HOLE`), does **not** spray or reoccupy
+the freed stack frame, and does **not** bundle the KernelSnitch leak →
+forged-waiter → fops/configfs/ashmem/pipe R/W → cred-patch chain (Android/Pixel-
+specific, per-build offsets). Returns `EXPLOIT_FAIL`. It carries the corpus's
+**lowest `--auto` safety rank (11)** — a won race corrupts the kernel stack and
+drives a near-arbitrary pointer write (near-certain panic), so `--auto` only
+reaches for it after every safer vulnerable module. Unlike most kernel races
+GhostLock has a **real detection signature**: a futex requeue-PI op returning
+`-EDEADLK` (glibc never provokes this) plus tight-loop
+`sched_setattr(SCHED_BATCH)` on a sibling thread — the shipped auditd/sigma rules
+anchor on `sched_setattr` + the post-exploitation euid-0 transition, the
+falco/eBPF rule on the requeue-PI-EDEADLK tell; no yara. Wired: registry,
+Makefile, safety rank (11), 9 `detect()` test rows (incl. the multi-branch
+"newer than all" case 6.13.0 → VULNERABLE), CVE metadata (CWE-416 / T1068 /
+not-KEV), README + CVES.md + website counts (45/40), RELEASE_NOTES v0.9.13, and a
+verify-vm target (sweep pending). Also corrects pre-existing website drift left
+by v0.9.12 (index.html body counts + the missing `bad_epoll` corpus pill).
+Credits VEGA / Nebula Security + the upstream fix `3bfdc63936dd`.
+
 ## SKELETONKEY v0.9.12 — new LPE module: bad_epoll (CVE-2026-46242)
 
 Adds **`bad_epoll` — CVE-2026-46242 "Bad Epoll"** (Jaeyoung Chung /
