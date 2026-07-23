@@ -124,13 +124,14 @@ rpm-family vendor-backport caveat fired, the `--active` FICLONE witness confirme
 reflink, phase A observed `FIEMAP_EXTENT_SHARED` on a real shared extent, the
 scratch dir self-cleaned, and the source built clean on el9 gcc.
 
-The **underlying bug was separately confirmed winnable** on that kernel using a
-VM-only harness driven at the public PoC's parameters (32 writers / 8 helpers,
-60 s — `tools/verify-vm/refluxfs_verify.c`): **4 out of 4 runs won**, first
-divergence after **69, 114, 170 and 494 rounds**. A racing `O_DIRECT` write
-landed on a still-shared block and rewrote the donor's on-disk bytes — the
-arbitrary-overwrite primitive observed directly, contained to files the test user
-owned, with no oops and no dmesg output (as expected for a data-oriented bug).
+The **underlying bug was separately confirmed winnable** on that kernel: the
+`--full-chain` root pop above is the proof (the same race rewrote `/etc/passwd`,
+3/3). An earlier *non-destructive* measurement at the public PoC's parameters
+(32 writers / 8 helpers, 60 s), confined to two files the test user owned, won
+**4 out of 4 runs**, first divergence after **69, 114, 170 and 494 rounds** — a
+racing `O_DIRECT` write landing on a still-shared block and rewriting the donor's
+on-disk bytes, the arbitrary-overwrite primitive observed directly with no oops
+and no dmesg output (as expected for a data-oriented bug).
 
 Worth stating plainly, because it is the whole point of the design: the shipped
 trigger **did not win** in its 2 s budget on a kernel that is provably

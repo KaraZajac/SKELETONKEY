@@ -205,13 +205,15 @@ qemu/KVM with 6 vCPUs — the stock GenericCloud installer layout, root on
 | Scratch cleanup | no artifacts left |
 | Build on el9 gcc | clean |
 
-**The underlying bug was separately confirmed winnable on that kernel**, using a
-VM-only harness driven at the public PoC's parameters (32 writers / 8 helpers,
-60 s budget — `tools/verify-vm/refluxfs_verify.c`): **4 out of 4 runs won**, with
-the first divergence after **69, 114, 170 and 494 rounds**. A racing `O_DIRECT`
-write landed on a still-shared block and rewrote the donor's on-disk bytes —
-the arbitrary-overwrite primitive, observed directly, contained to files the
-test user owned.
+**The underlying bug was separately confirmed winnable on that kernel.** The
+`--full-chain` run above is the definitive proof — the same reflink-CoW race
+rewrote `/etc/passwd` and landed root **3/3** (1244 / 3716 / 7913 rounds). An
+earlier *non-destructive* measurement, driven at the public PoC's parameters
+(32 writers / 8 helpers, 60 s) but confined to two files the test user owned,
+won **4/4** (first divergence after **69, 114, 170 and 494 rounds**): a racing
+`O_DIRECT` write landing on a still-shared block and rewriting the donor's
+on-disk bytes — the arbitrary-overwrite primitive, observed directly, contained
+entirely to attacker-owned files.
 
 Note carefully what this does and does not say. The shipped trigger **not**
 winning in 2 s on a kernel that is provably vulnerable is exactly the designed
