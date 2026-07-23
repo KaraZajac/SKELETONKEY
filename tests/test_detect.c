@@ -74,6 +74,7 @@ extern const struct skeletonkey_module cifswitch_module;
 extern const struct skeletonkey_module nft_catchall_module;
 extern const struct skeletonkey_module bad_epoll_module;
 extern const struct skeletonkey_module ghostlock_module;
+extern const struct skeletonkey_module refluxfs_module;
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -1009,6 +1010,127 @@ static void run_all(void)
 	run_one("ghostlock: 7.1.0 above all backports → OK (mainline inherit)",
 		&ghostlock_module, &h_ghl_710,
 		SKELETONKEY_OK);
+
+	/* ── refluxfs (CVE-2026-64600) ───────────────────────────────
+	 * Version gate over a THREE-branch backport table (fixed 7.1.4 /
+	 * 6.18.39 / 6.12.96 on-branch, 7.2+ inherits mainline; introduced
+	 * 4.11) AND a storage precondition: the XFS reflink CoW race is only
+	 * reachable where a writable XFS filesystem is mounted, so a
+	 * vulnerable kernel on an ext4/btrfs-only host is PRECOND_FAIL, not
+	 * VULNERABLE. We drive that deterministically with
+	 * SKELETONKEY_XFS_ASSUME_REFLINK (1=reachable, 0=no XFS) so the rows
+	 * don't depend on the CI runner having an XFS volume. Patched and
+	 * predates-the-bug rows return OK before the probe is consulted, so
+	 * they hold regardless of the override.
+	 *
+	 * The RHEL-family base versions carry real weight here: 4.18 (el8)
+	 * and 5.14 (el9) are the primary affected population and sit below
+	 * every table entry. Note those vendors backport without bumping the
+	 * upstream version — detect() warns about that at runtime; these rows
+	 * pin the upstream-version behaviour only. */
+	setenv("SKELETONKEY_XFS_ASSUME_REFLINK", "1", 1);
+
+	/* 3.10.0 — RHEL/CentOS 7; predates reflink entirely → OK */
+	struct skeletonkey_host h_rfx_3100 =
+		mk_host(h_kernel_6_12, 3, 10, 0, "3.10.0-el7-test");
+	run_one("refluxfs: 3.10.0 (el7) predates XFS reflink → OK",
+		&refluxfs_module, &h_rfx_3100,
+		SKELETONKEY_OK);
+
+	/* 4.10.0 — one below the 4.11 introduction → OK */
+	struct skeletonkey_host h_rfx_4100 =
+		mk_host(h_kernel_6_12, 4, 10, 0, "4.10.0-test");
+	run_one("refluxfs: 4.10.0 one below the 4.11 introduction → OK",
+		&refluxfs_module, &h_rfx_4100,
+		SKELETONKEY_OK);
+
+	/* 4.18.0 — RHEL 8 upstream base, below every entry → VULNERABLE */
+	struct skeletonkey_host h_rfx_4180 =
+		mk_host(h_kernel_6_12, 4, 18, 0, "4.18.0-el8-test");
+	run_one("refluxfs: 4.18.0 (el8 base) + XFS → VULNERABLE",
+		&refluxfs_module, &h_rfx_4180,
+		SKELETONKEY_VULNERABLE);
+
+	/* 5.14.0 — RHEL 9 upstream base → VULNERABLE */
+	struct skeletonkey_host h_rfx_5140 =
+		mk_host(h_kernel_6_12, 5, 14, 0, "5.14.0-el9-test");
+	run_one("refluxfs: 5.14.0 (el9 base) + XFS → VULNERABLE",
+		&refluxfs_module, &h_rfx_5140,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.1.100 — LTS branch with no published backport → VULNERABLE */
+	struct skeletonkey_host h_rfx_61100 =
+		mk_host(h_kernel_6_12, 6, 1, 100, "6.1.100-test");
+	run_one("refluxfs: 6.1.100 (LTS, no upstream fix) → VULNERABLE",
+		&refluxfs_module, &h_rfx_61100,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.12.95 one below the 6.12.96 backport → VULNERABLE */
+	struct skeletonkey_host h_rfx_61295 =
+		mk_host(h_kernel_6_12, 6, 12, 95, "6.12.95-test");
+	run_one("refluxfs: 6.12.95 below the 6.12.96 backport → VULNERABLE",
+		&refluxfs_module, &h_rfx_61295,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.12.96 exact backport → OK via patch table */
+	struct skeletonkey_host h_rfx_61296 =
+		mk_host(h_kernel_6_12, 6, 12, 96, "6.12.96-test");
+	run_one("refluxfs: 6.12.96 (exact backport) → OK via patch table",
+		&refluxfs_module, &h_rfx_61296,
+		SKELETONKEY_OK);
+
+	/* 6.13.0 — newer than 6.12.96 but OLDER than 6.18.39/7.1.4, an EOL
+	 * branch with no fix → must stay VULNERABLE ("newer than ALL" test). */
+	struct skeletonkey_host h_rfx_6130 =
+		mk_host(h_kernel_6_12, 6, 13, 0, "6.13.0-test");
+	run_one("refluxfs: 6.13.0 newer than some entries but not all → VULNERABLE",
+		&refluxfs_module, &h_rfx_6130,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.18.38 one below the 6.18.39 backport → VULNERABLE */
+	struct skeletonkey_host h_rfx_61838 =
+		mk_host(h_kernel_6_12, 6, 18, 38, "6.18.38-test");
+	run_one("refluxfs: 6.18.38 below the 6.18.39 backport → VULNERABLE",
+		&refluxfs_module, &h_rfx_61838,
+		SKELETONKEY_VULNERABLE);
+
+	/* 6.18.39 exact backport → OK */
+	struct skeletonkey_host h_rfx_61839 =
+		mk_host(h_kernel_6_12, 6, 18, 39, "6.18.39-test");
+	run_one("refluxfs: 6.18.39 (exact backport) → OK via patch table",
+		&refluxfs_module, &h_rfx_61839,
+		SKELETONKEY_OK);
+
+	/* 7.1.3 one below the 7.1.4 backport → VULNERABLE */
+	struct skeletonkey_host h_rfx_713 =
+		mk_host(h_kernel_6_12, 7, 1, 3, "7.1.3-test");
+	run_one("refluxfs: 7.1.3 below the 7.1.4 backport → VULNERABLE",
+		&refluxfs_module, &h_rfx_713,
+		SKELETONKEY_VULNERABLE);
+
+	/* 7.1.4 exact backport → OK */
+	struct skeletonkey_host h_rfx_714 =
+		mk_host(h_kernel_6_12, 7, 1, 4, "7.1.4-test");
+	run_one("refluxfs: 7.1.4 (exact backport) → OK via patch table",
+		&refluxfs_module, &h_rfx_714,
+		SKELETONKEY_OK);
+
+	/* 7.2.0 newer than every entry → mainline-inherited fix
+	 * (2f4acd0fcd86 shipped in 7.2-rc4) → OK */
+	struct skeletonkey_host h_rfx_720 =
+		mk_host(h_kernel_6_12, 7, 2, 0, "7.2.0-test");
+	run_one("refluxfs: 7.2.0 above all backports → OK (mainline inherit)",
+		&refluxfs_module, &h_rfx_720,
+		SKELETONKEY_OK);
+
+	/* Same vulnerable kernel, but no writable XFS filesystem mounted —
+	 * the stock Debian/Ubuntu (ext4) case. The bug is unreachable, so the
+	 * honest verdict is PRECOND_FAIL rather than VULNERABLE. */
+	setenv("SKELETONKEY_XFS_ASSUME_REFLINK", "0", 1);
+	run_one("refluxfs: 6.12.95 but no XFS mounted → PRECOND_FAIL",
+		&refluxfs_module, &h_rfx_61295,
+		SKELETONKEY_PRECOND_FAIL);
+	unsetenv("SKELETONKEY_XFS_ASSUME_REFLINK");
 
 	/* ── coverage report ─────────────────────────────────────────
 	 * Iterate the runtime registry (populated by skeletonkey_register_*

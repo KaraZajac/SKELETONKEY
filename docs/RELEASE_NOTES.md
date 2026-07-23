@@ -1,3 +1,129 @@
+## SKELETONKEY v0.9.14 — new LPE module: refluxfs (CVE-2026-64600)
+
+Adds **`refluxfs` — CVE-2026-64600 "RefluXFS"** (Qualys Threat Research Unit),
+taking the corpus to **46 modules / 41 CVEs** and opening a brand-new subsystem:
+**XFS reflink copy-on-write** (`fs/xfs/xfs_iomap.c`, `fs/xfs/xfs_reflink.c`). It
+is also the corpus's first **data-oriented** kernel bug — every other kernel
+entry in the set corrupts memory; this one corrupts file contents.
+
+`xfs_direct_write_iomap_begin()` reads the data-fork extent map under `ILOCK`,
+then `xfs_reflink_fill_cow_hole()` **drops `ILOCK`** to allocate a transaction
+(i.e. to wait for log space). On re-acquiring it, the code re-queries the
+refcount btree at the **original** physical block number (`imap->br_startblock`)
+and **never re-reads the data fork**. A second `O_DIRECT` writer holding only the
+coarser `IOLOCK` can complete an entire CoW cycle inside that window — allocate
+block Y, write it, remap via `xfs_reflink_end_cow()` — leaving the first writer's
+mapping pointing at a block now owned solely by the reflink **source**. The stale
+lookup returns refcount `1`, the writer concludes the block is private, and
+writes to it in place, landing attacker data on the source file's on-disk blocks.
+
+Three properties make this unlike anything else in the corpus:
+
+- **No offsets, no ROP, no KASLR/SMEP/SMAP.** The primitive is an arbitrary
+  overwrite of the *on-disk contents of any readable file*, so there is nothing
+  to port per kernel build and no `--full-chain` offset entry to fill. Qualys is
+  explicit that SELinux enforcing, container boundaries and seccomp are equally
+  irrelevant: *"This isn't a vulnerability you can harden around, isolate, or
+  live-patch."*
+- **File-integrity monitoring cannot see it.** The data is applied to the shared
+  physical block *beneath* the victim inode. No `write(2)` ever targets it, so
+  `mtime`/`ctime`/size are unchanged and nothing is logged — `-w /etc/passwd -p
+  wa`, AIDE and Tripwire all stay silent. The change persists across reboots.
+- **The exposure is distro-shaped, not kernel-shaped.** What matters is whether
+  XFS+reflink is the installer default: **RHEL/CentOS Stream/Rocky/AlmaLinux/
+  Oracle/CloudLinux 8-10, Fedora Server ≥ 31 and Amazon Linux 2023** are
+  exploitable out of the box; Debian, Ubuntu, Fedora Workstation, SLES, openSUSE
+  and Arch default to ext4/btrfs and are not reachable. RHEL/CentOS 7 (3.10) was
+  never affected.
+
+Introduced **4.11** (2017-02, `3c68d44a2b49`) — a nine-year window. Fixed by
+`2f4acd0fcd86` ("xfs: resample the data fork mapping after cycling ILOCK"),
+merged **2026-07-16** for **7.2-rc4**; stable backports **7.1.4** / **6.18.39** /
+**6.12.96**. The 6.6 / 6.1 / 5.15 / 5.14 / 5.10 / 4.19 / 4.18 lines have no
+upstream stable fix in the CNA record at time of writing. CWE-362 → CWE-367; NVD
+published neither a CWE nor a CVSS vector at time of writing; not in CISA KEV.
+
+🟡 **Trigger (reconstructed) — deliberately under-driven, and VM-VERIFIED.**
+Unlike the corpus's other race
+modules, `detect()` is **not** a pure version gate: this bug's reachability is
+safely observable, so it pairs the three-branch version table with a **real
+storage precondition** — a writable directory on a mounted XFS filesystem,
+identified by `statfs(2)` `f_type == XFS_SUPER_MAGIC` and deliberately **not** by
+a successful `FICLONE`, since btrfs implements `FICLONE` too and is unaffected.
+No such directory → `PRECOND_FAIL`, the correct verdict on a stock Debian/Ubuntu
+host. Under `--active` it confirms `reflink=1` empirically; override with
+`SKELETONKEY_XFS_ASSUME_REFLINK=1/0`. On rpm-family hosts it warns explicitly
+that RHEL/Oracle/Rocky/Alma backport **without bumping the upstream version** (a
+patched el8 kernel still reports `4.18.0-*`), so the verdict reflects the
+upstream base version only — check the RHSA/ELSA/ALSA/RLSA erratum.
+
+`exploit()` forks an isolated child that creates a private `mkdtemp` scratch
+directory and works **only on two files it owns**: **(A)** it writes a donor,
+`FICLONE`-clones it, and confirms the shared extent via **`FIEMAP_EXTENT_SHARED`**
+plus an `O_DIRECT` gate — a read-only, deterministic observation that the exact
+refcount state the bug misjudges exists here; then **(B)** it races **8**
+concurrent `O_DIRECT` 4 KiB writes against the clone with **2**
+`ftruncate`/`fdatasync` helpers cycling the `ILOCK`, for at most **16 rounds /
+2 s**, and stops — reading the donor back with `O_DIRECT`, because a buffered read
+would be served from the page cache the corruption bypasses and would hide a win.
+It is deliberately under-driven against the public PoC's 32 writers and 8
+helpers, and it **never clones or targets a file it does not own**: the step that
+yields root — reflink-cloning `/etc/passwd` and racing writes onto *its* shared
+blocks, then `su` — persistently rewrites a system file on disk with no undo, and
+is documented but **not bundled**. Always returns `EXPLOIT_FAIL`.
+
+Note the safety inversion versus the other reconstructed triggers: a won race
+here corrupts **file data, not kernel memory**, so there is no oops, no KASAN
+report and no panic path, and the blast radius is 4 KiB of a scratch file the
+module then deletes. `refluxfs` therefore carries safety rank **55** — far above
+`bad_epoll` (12) and `ghostlock` (11) — and `--cleanup` sweeps any
+`skeletonkey-refluxfs-*` directories left by an interrupted run.
+
+Detection gets a genuinely unusual treatment, because the obvious rule is the one
+that fails. auditd/sigma anchor on the two operations the attack cannot avoid —
+`ioctl` request **`0x40049409`** (`FICLONE`, matched exactly so it does not flood)
+and `openat` with `O_DIRECT` (`& 0x4000`) — plus the post-exploitation euid-0
+transition; falco adds the high-fidelity "reflinked a file owned by another user"
+condition. And for once the **yara** rule is the right tool for a kernel bug:
+since FIM is structurally blind here, it matches the *on-disk artifact* — a
+`passwd` file with a password-less root entry or an added uid-0 account. The
+module docs also recommend content-hash-vs-`mtime` drift monitoring, which is a
+near-zero-false-positive detector for this entire bug class.
+
+14 new `detect()` unit rows cover the backport boundaries, the 4.11 introduction
+gate, the el8/el9 upstream bases, the "newer than some entries but not all" case,
+and the no-XFS `PRECOND_FAIL` path (**148 tests total, 0 failures**).
+
+**VM-verified 2026-07-23 — the corpus's first rpm-family verification**, taking
+the empirical count to **29 of 41 CVEs**. Target: **Rocky Linux 9.8 /
+`5.14.0-687.10.1.el9_8.0.1.x86_64`** under qemu/KVM with 6 vCPUs. The stock
+GenericCloud layout needed **no provisioner changes at all** — root is
+`/dev/vda4` XFS with `reflink=1` out of the box, which is precisely why this CVE
+hits the RHEL family so broadly. `detect()` returned `VULNERABLE`, the
+rpm-family vendor-backport caveat fired, the `--active` FICLONE witness confirmed
+reflink, phase A observed `FIEMAP_EXTENT_SHARED` on a real shared extent, the
+scratch dir self-cleaned, and the source built clean on el9 gcc.
+
+The **underlying bug was separately confirmed winnable** on that kernel using a
+VM-only harness driven at the public PoC's parameters (32 writers / 8 helpers,
+60 s — `tools/verify-vm/refluxfs_verify.c`): **4 out of 4 runs won**, first
+divergence after **69, 114, 170 and 494 rounds**. A racing `O_DIRECT` write
+landed on a still-shared block and rewrote the donor's on-disk bytes — the
+arbitrary-overwrite primitive observed directly, contained to files the test user
+owned, with no oops and no dmesg output (as expected for a data-oriented bug).
+
+Worth stating plainly, because it is the whole point of the design: the shipped
+trigger **did not win** in its 2 s budget on a kernel that is provably
+vulnerable. That is intended under-driving, not a defect — and it is the concrete
+reason a non-win must **never** be recorded as "patched". Trust the version gate
+and the vendor erratum.
+
+Credit: **Qualys Threat Research Unit** (blog by **Saeed Abbasi**; the technical
+advisory credits model-assisted kernel analysis performed with **Anthropic**),
+and the upstream XFS maintainers who fixed it.
+
+---
+
 ## SKELETONKEY v0.9.13 — new LPE module: ghostlock (CVE-2026-43499)
 
 Adds **`ghostlock` — CVE-2026-43499 "GhostLock"** (VEGA / Nebula Security,

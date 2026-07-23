@@ -2,11 +2,11 @@
 
 [![Latest release](https://img.shields.io/github/v/release/KaraZajac/SKELETONKEY?label=release)](https://github.com/KaraZajac/SKELETONKEY/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Modules](https://img.shields.io/badge/CVEs-28%20VM--verified%20%2F%2039-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
+[![Modules](https://img.shields.io/badge/CVEs-29%20VM--verified%20%2F%2041-brightgreen.svg)](docs/VERIFICATIONS.jsonl)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](#)
 
-> **One curated binary. 45 Linux LPE modules covering 40 CVEs from 2016 → 2026.
-> Every year 2016 → 2026 covered. 28 confirmed end-to-end against real Linux
+> **One curated binary. 46 Linux LPE modules covering 41 CVEs from 2016 → 2026.
+> Every year 2016 → 2026 covered. 29 confirmed end-to-end against real Linux
 > VMs via `tools/verify-vm/`. Detection rules in the box. One command picks
 > the safest one and runs it.**
 
@@ -45,8 +45,8 @@ for every CVE in the bundle — same project for red and blue teams.
 
 ## Corpus at a glance
 
-**45 modules covering 40 distinct CVEs** across the 2016 → 2026 LPE
-timeline. **28 of the 40 CVEs have been empirically verified** in real
+**46 modules covering 41 distinct CVEs** across the 2016 → 2026 LPE
+timeline. **29 of the 41 CVEs have been empirically verified** in real
 Linux VMs via `tools/verify-vm/`; the 12 still-pending entries are
 blocked by their target environment (legacy hypervisor, EOL kernel, or
 the t64-transition libc rollout) or are brand-new additions awaiting a
@@ -68,7 +68,7 @@ af_packet · af_packet2 · af_unix_gc · cls_route4 · fuse_legacy ·
 nf_tables · nft_set_uaf · nft_fwd_dup · nft_payload ·
 netfilter_xtcompat · stackrot · sudo_samedit · sequoia · vmwgfx
 
-### Empirical verification (28 of 40 CVEs)
+### Empirical verification (29 of 41 CVEs)
 
 Records in [`docs/VERIFICATIONS.jsonl`](docs/VERIFICATIONS.jsonl) prove
 each verdict against a known-target VM. Coverage:
@@ -80,6 +80,7 @@ each verdict against a known-target VM. Coverage:
 | Ubuntu 22.04 (5.15 stock + mainline 5.15.5 / 6.1.10 / 6.19.7) | af_unix_gc · dirty_pipe · dirtydecrypt · entrybleed · nf_tables · nft_set_uaf · nft_pipapo · overlayfs_setuid · stackrot · sudoedit_editor · sudo_chwoot |
 | Debian 11 (5.10 stock) | cgroup_release_agent · fuse_legacy · netfilter_xtcompat · nft_fwd_dup |
 | Debian 12 (6.1 stock + udisks2 / polkit allow rule) | pack2theroot · udisks_libblockdev |
+| Rocky Linux 9.8 (5.14.0-687.10.1.el9_8.0.1, stock XFS + `reflink=1`) | refluxfs |
 
 **Not yet verified (12):** `vmwgfx` (VMware-guest-only — no public Vagrant
 box), `dirty_cow` (needs ≤ 4.4 kernel — older than every supported box),
@@ -212,8 +213,25 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.13 cut 2026-07-13.** 45 modules across 40 CVEs — **every
-year 2016 → 2026 now covered**. Newest: `ghostlock` (CVE-2026-43499,
+**v0.9.14 cut 2026-07-23.** 46 modules across 41 CVEs — **every
+year 2016 → 2026 now covered**. Newest: `refluxfs` (CVE-2026-64600,
+Qualys TRU's "RefluXFS" — a nine-year TOCTOU race in the XFS **reflink
+copy-on-write** path: `xfs_reflink_fill_cow_hole()` drops `ILOCK` to wait
+for transaction log space, then re-checks the refcount btree at a
+**stale** physical block without re-reading the data fork, so a
+direct-I/O writer treats a still-shared block as private and writes to it
+in place. The primitive is an arbitrary overwrite of the **on-disk
+contents of any readable file** — data, not memory corruption — so there
+are **no offsets, no ROP, no KASLR/SMEP/SMAP** to defeat, and SELinux
+enforcing, containers and seccomp are all irrelevant. Because the
+victim's inode is never written, its `mtime`/`ctime`/size never change
+and **file-integrity monitoring cannot see it**. Unprivileged, no userns,
+no crafted image — reachable wherever an XFS volume is mounted
+`reflink=1`, the installer default on RHEL/CentOS/Rocky/Alma/Oracle 8-10,
+Fedora Server ≥ 31 and Amazon Linux 2023. Shipped as a reconstructed
+trigger confined to files the operator owns, with the `/etc/passwd`
+overwrite → `su` → root step documented but **not** bundled),
+`ghostlock` (CVE-2026-43499,
 VEGA / Nebula Security's "GhostLock" — a ~15-year rtmutex/futex requeue-PI
 use-after-free on **kernel stack** memory where `remove_waiter()` clears
 `pi_blocked_on` on the wrong task during the `-EDEADLK` deadlock-rollback,
@@ -237,9 +255,9 @@ v0.9.0 added 5 gap-fillers
 the verified count from 22 → 28 by booting real vulnerable kernels
 (Ubuntu mainline 5.4.0-26, 5.15.5, 6.19.7 + provisioner-built sudo
 1.9.16p1 + Debian 12 + polkit allow rule for udisks).
-**28 empirically verified** against real Linux VMs (Ubuntu 18.04 /
-20.04 / 22.04 + Debian 11 / 12 + mainline kernels from
-kernel.ubuntu.com). 88-test unit harness + ASan/UBSan + clang-tidy on
+**29 empirically verified** against real Linux VMs (Ubuntu 18.04 /
+20.04 / 22.04 + Debian 11 / 12 + Rocky Linux 9.8 + mainline kernels
+from kernel.ubuntu.com). 88-test unit harness + ASan/UBSan + clang-tidy on
 every push. 4 prebuilt binaries (x86_64 + arm64, each in dynamic +
 static-musl flavors).
 
@@ -253,7 +271,7 @@ Reliability + accuracy work in v0.7.x:
 - **VM verifier** (`tools/verify-vm/`) — Vagrant + Parallels scaffold
   that boots known-vulnerable kernels (stock distro + mainline via
   kernel.ubuntu.com), runs `--explain --active` per module, records
-  match/MISMATCH/PRECOND_FAIL as JSON. 28 modules confirmed end-to-end.
+  match/MISMATCH/PRECOND_FAIL as JSON. 29 modules confirmed end-to-end.
 - **`--explain <module>`** — single-page operator briefing: CVE / CWE
   / MITRE ATT&CK / CISA KEV status, host fingerprint, live detect()
   trace, OPSEC footprint, detection-rule coverage, verified-on
@@ -265,7 +283,7 @@ Reliability + accuracy work in v0.7.x:
 - `--auto` upgrades: per-detect 15s timeout, fork-isolated detect +
   exploit, structured verdict table, scan summary, `--dry-run`.
 
-Not yet verified (12 of 40 CVEs): `vmwgfx` (VMware-guest only),
+Not yet verified (12 of 41 CVEs): `vmwgfx` (VMware-guest only),
 `dirty_cow` (needs ≤ 4.4 kernel), `mutagen_astronomy` (mainline
 4.14.70 panics on Ubuntu 18.04 rootfs — needs CentOS 6 / Debian 7),
 `pintheft` + `vsock_uaf` (kernel modules not autoloaded on common

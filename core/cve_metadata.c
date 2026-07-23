@@ -332,6 +332,19 @@ const struct cve_metadata cve_metadata_table[] = {
         .in_kev              = false,
         .kev_date_added      = "",
     },
+    {
+        /* NVD had published no CWE for this CVE at time of writing
+         * (disclosed 2026-07-22); SKELETONKEY's own reading is CWE-362
+         * (race) yielding CWE-367 (TOCTOU) — see the module MODULE.md.
+         * This field mirrors NVD, so it stays NULL until NVD classifies
+         * it and the refresh script fills it in. */
+        .cve                 = "CVE-2026-64600",
+        .cwe                 = NULL,
+        .attack_technique    = "T1068",
+        .attack_subtechnique = NULL,
+        .in_kev              = false,
+        .kev_date_added      = "",
+    },
 };
 
 const size_t cve_metadata_table_len =

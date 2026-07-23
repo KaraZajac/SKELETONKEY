@@ -252,6 +252,11 @@ GHL_DIR  := modules/ghostlock_cve_2026_43499
 GHL_SRCS := $(GHL_DIR)/skeletonkey_modules.c
 GHL_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(GHL_SRCS))
 
+# CVE-2026-64600 refluxfs — XFS reflink CoW ILOCK-cycling TOCTOU race ("RefluXFS", Qualys TRU)
+RFX_DIR  := modules/refluxfs_cve_2026_64600
+RFX_SRCS := $(RFX_DIR)/skeletonkey_modules.c
+RFX_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(RFX_SRCS))
+
 # Top-level dispatcher
 TOP_OBJ  := $(BUILD)/skeletonkey.o
 
@@ -266,7 +271,7 @@ MODULE_OBJS := $(CFF_OBJS) $(DP_OBJS) $(EB_OBJS) $(PK_OBJS) $(NFT_OBJS) \
                $(SCHW_OBJS) $(UDB_OBJS) $(PTH_OBJS) \
                $(MUT_OBJS) $(SRN_OBJS) $(TIO_OBJS) $(VSK_OBJS) $(PIP_OBJS) \
                $(PPF_OBJS) $(SUH_OBJS) $(CIW_OBJS) $(NCA_OBJS) $(BEP_OBJS) \
-               $(GHL_OBJS)
+               $(GHL_OBJS) $(RFX_OBJS)
 
 ALL_OBJS := $(TOP_OBJ) $(CORE_OBJS) $(REGISTRY_ALL_OBJ) $(MODULE_OBJS)
 

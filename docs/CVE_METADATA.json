@@ -358,5 +358,14 @@
     "attack_subtechnique": null,
     "in_kev": false,
     "kev_date_added": ""
+  },
+  {
+    "cve": "CVE-2026-64600",
+    "module_dir": "refluxfs_cve_2026_64600",
+    "cwe": null,
+    "attack_technique": "T1068",
+    "attack_subtechnique": null,
+    "in_kev": false,
+    "kev_date_added": ""
   }
 ]

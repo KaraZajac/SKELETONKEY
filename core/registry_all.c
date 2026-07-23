@@ -57,4 +57,5 @@ void skeletonkey_register_all_modules(void)
     skeletonkey_register_nft_catchall();
     skeletonkey_register_bad_epoll();
     skeletonkey_register_ghostlock();
+    skeletonkey_register_refluxfs();
 }
