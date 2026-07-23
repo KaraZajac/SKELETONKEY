@@ -1018,7 +1018,7 @@ static int module_safety_rank(const char *n)
     if (!strcmp(n, "ptrace_pidfd"))          return 84;  /* pidfd_getfd fd-steal race; ported, exploit NOT VM-verified */
     if (!strcmp(n, "cifswitch"))             return 86;  /* structural cifs.spnego keyring trust; ported, full chain NOT bundled/VM-verified */
     if (!strcmp(n, "sudo_samedit"))          return 80;  /* heap-tuned, may crash sudo */
-    if (!strcmp(n, "refluxfs"))              return 55;  /* XFS reflink CoW race; DATA-oriented — a won race rewrites 4 KiB of our own scratch file and cannot touch kernel memory (no oops/KASAN/panic path, unlike bad_epoll/ghostlock), but the trigger is reconstructed and not VM-verified */
+    if (!strcmp(n, "refluxfs"))              return 55;  /* XFS reflink CoW race; DATA-oriented — cannot touch kernel memory (no oops/KASAN/panic path, unlike bad_epoll/ghostlock), so it never downs the box. VM-verified full root pop, but gated behind --full-chain because that path persistently rewrites /etc/passwd (backed up + restorable); plain --auto runs only the safe own-files trigger */
     if (!strcmp(n, "nft_catchall"))          return 35;  /* reconstructed nf_tables abort UAF; may KASAN-oops, primitive-only/not VM-verified */
     if (!strcmp(n, "af_unix_gc"))            return 25;  /* kernel race, low win% */
     if (!strcmp(n, "stackrot"))              return 15;  /* very low win% */

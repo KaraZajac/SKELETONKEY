@@ -72,18 +72,23 @@ SKELETONKEY is the bundling and bookkeeping layer only.
 
 ## SKELETONKEY role
 
-🟡 **Trigger (reconstructed) — VM-verified, and deliberately not weaponised.**
-Confirmed 2026-07-23 on **Rocky Linux 9.8 / `5.14.0-687.10.1.el9_8.0.1.x86_64`**
-(stock GenericCloud layout, root on XFS with `reflink=1`) under qemu/KVM:
-`detect()` returns `VULNERABLE`, the `--active` FICLONE witness confirms
-reflink, and phase A observes `FIEMAP_EXTENT_SHARED` on a real shared extent.
-The underlying bug was separately confirmed winnable on that kernel — **4/4
-runs, first divergence after 69-494 rounds** in a 60 s budget — via a VM-only
-harness at the public PoC's parameters (`tools/verify-vm/refluxfs_verify.c`).
-The shipped trigger, deliberately under-driven, did **not** win in its 2 s
-budget on that same vulnerable kernel; that is intended, and is why a non-win
-must never be read as "patched". See `MODULE.md` for the full result table.
-This is the corpus's first XFS
+🟢 **Full chain (`--full-chain`), 🟡 safe trigger by default — VM-verified
+end-to-end.** Confirmed 2026-07-23 on **Rocky Linux 9.8 /
+`5.14.0-687.10.1.el9_8.0.1.x86_64`** (stock GenericCloud layout, root on XFS
+with `reflink=1`) under qemu/KVM. `--exploit refluxfs --i-know --full-chain`
+reflink-clones `/etc/passwd`, races the CoW window, strips root's password field
+on-disk, evicts the stale page cache, and returns `EXPLOIT_OK`; `su root` (empty
+password) then gives uid 0 — verified **3/3 wins** on a private-extent target
+(1244 / 3716 / 7913 rounds, 4–30 s) as unprivileged `uid=1000` under SELinux
+Enforcing, with every other passwd line preserved and the file backed up +
+restorable. A key exploitability constraint surfaced in testing (not in the
+public writeup): the target's extent must be **private** going in — an
+already-reflink-shared file keeps a post-CoW refcount > 1 and is not attackable
+via that target; normal admin churn (`useradd`/`passwd`/`vipw`) produces the
+exploitable private-extent state. Without `--full-chain` the module runs a safe
+own-files reachability trigger only (`EXPLOIT_FAIL`), deliberately under-driven
+so a non-win is never read as "patched". See `MODULE.md` for the full result
+tables. This is the corpus's first XFS
 module and its first **data-oriented** kernel bug — every other kernel entry
 corrupts memory; this one corrupts file contents.
 

@@ -54,14 +54,15 @@ VM sweep, not by missing code.
 
 | Tier | Count | What it means |
 |---|---|---|
-| 🟢 Full chain | **14** | Lands root (or its canonical capability) end-to-end. No per-kernel offsets needed. |
-| 🟡 Primitive | **14** | Fires the kernel primitive + grooms the slab + records a witness. Default returns `EXPLOIT_FAIL` honestly. Pass `--full-chain` to engage the shared `modprobe_path` finisher (needs offsets — see [`docs/OFFSETS.md`](docs/OFFSETS.md)). |
+| 🟢 Full chain | **15** | Lands root (or its canonical capability) end-to-end. No per-kernel offsets needed. |
+| 🟡 Primitive | **13** | Fires the kernel primitive + grooms the slab + records a witness. Default returns `EXPLOIT_FAIL` honestly. Pass `--full-chain` to engage the shared `modprobe_path` finisher (needs offsets — see [`docs/OFFSETS.md`](docs/OFFSETS.md)). |
 
 **🟢 Modules that land root on a vulnerable host:**
 copy_fail family ×5 · dirty_pipe · dirty_cow · pwnkit · overlayfs
 (CVE-2021-3493) · overlayfs_setuid (CVE-2023-0386) ·
 cgroup_release_agent · ptrace_traceme · sudoedit_editor · entrybleed
-(KASLR leak primitive)
+(KASLR leak primitive) · refluxfs (CVE-2026-64600, `--full-chain`:
+`/etc/passwd` root pop on a private-extent XFS target)
 
 **🟡 Modules with opt-in `--full-chain`:**
 af_packet · af_packet2 · af_unix_gc · cls_route4 · fuse_legacy ·
@@ -228,9 +229,14 @@ victim's inode is never written, its `mtime`/`ctime`/size never change
 and **file-integrity monitoring cannot see it**. Unprivileged, no userns,
 no crafted image — reachable wherever an XFS volume is mounted
 `reflink=1`, the installer default on RHEL/CentOS/Rocky/Alma/Oracle 8-10,
-Fedora Server ≥ 31 and Amazon Linux 2023. Shipped as a reconstructed
-trigger confined to files the operator owns, with the `/etc/passwd`
-overwrite → `su` → root step documented but **not** bundled),
+Fedora Server ≥ 31 and Amazon Linux 2023. **🟢 VM-verified full chain**:
+`--exploit refluxfs --i-know --full-chain` reflink-clones `/etc/passwd`,
+races the CoW window, strips root's password on-disk and returns
+`EXPLOIT_OK` (`su root`, empty password → uid 0) — confirmed on Rocky 9.8,
+every other account preserved, backed up + restorable. One caveat found
+in testing: the target's extent must be **private** going in (an
+already-shared file isn't attackable; normal `useradd`/`passwd` churn
+makes it private). Plain `--exploit` runs only a safe own-files trigger),
 `ghostlock` (CVE-2026-43499,
 VEGA / Nebula Security's "GhostLock" — a ~15-year rtmutex/futex requeue-PI
 use-after-free on **kernel stack** memory where `remove_waiter()` clears

@@ -43,7 +43,27 @@ merged **2026-07-16** for **7.2-rc4**; stable backports **7.1.4** / **6.18.39** 
 upstream stable fix in the CNA record at time of writing. CWE-362 → CWE-367; NVD
 published neither a CWE nor a CVSS vector at time of writing; not in CISA KEV.
 
-🟡 **Trigger (reconstructed) — deliberately under-driven, and VM-VERIFIED.**
+🟢 **Full chain (`--full-chain`), 🟡 safe trigger by default — VM-verified
+end-to-end.** `--exploit refluxfs --i-know --full-chain` reflink-clones
+`/etc/passwd`, races the CoW window, strips root's password field on-disk
+(`root:x:` → `root::`, the public PoC's technique), evicts the stale page cache,
+and returns `EXPLOIT_OK`; `su root` with an empty password then yields uid 0.
+Confirmed on Rocky Linux 9.8 / `5.14.0-687.10.1.el9_8.0.1` — **3/3 wins** on a
+private-extent target (1244 / 3716 / 7913 rounds, 4–30 s) as unprivileged
+`uid=1000` under **SELinux Enforcing**, with every other passwd line preserved,
+the file backed up first and restored on failure (`--cleanup` restores after the
+pop). A naive port that truncates the tail would drop `sshd`/the caller and brick
+login; preserving every line is the implementation's key safety property.
+
+**Exploitability constraint discovered during verification (not in the Qualys
+writeup):** the race only fires when the target's extent is **private** going in.
+An already-reflink-shared file keeps a post-CoW refcount > 1 and is not
+attackable via that target — some fresh cloud images ship `/etc/passwd`
+pre-shared (Rocky 9's did, and the attack failed against it across ~41 000
+rounds), while normal admin churn (`useradd`/`passwd`/`vipw`) rewrites it into
+the exploitable private-extent state. `detect() --active` now reports which state
+the target is in. Without `--full-chain` the module runs a safe own-files
+reachability trigger only (`EXPLOIT_FAIL`), deliberately under-driven.
 Unlike the corpus's other race
 modules, `detect()` is **not** a pure version gate: this bug's reachability is
 safely observable, so it pairs the three-branch version table with a **real

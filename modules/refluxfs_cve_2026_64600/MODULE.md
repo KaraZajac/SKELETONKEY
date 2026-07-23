@@ -11,6 +11,14 @@ This is the corpus's first XFS module, and its first **data-oriented** kernel
 bug: the primitive is an arbitrary *file content* overwrite, not memory
 corruption.
 
+> **🟢 Full chain (`--full-chain`), VM-verified end-to-end.**
+> `skeletonkey --exploit refluxfs --i-know --full-chain` lands root: it
+> reflink-clones `/etc/passwd`, races the CoW window, strips root's password
+> field on disk (`root:x:` → `root::`), evicts the stale page cache, and
+> returns `EXPLOIT_OK`; `su root` (empty password) then gives uid 0. **Without**
+> `--full-chain` the module runs a safe reachability trigger only, confined to
+> files the caller owns. See "Full-chain verification" below.
+
 ## The bug
 
 `xfs_direct_write_iomap_begin()` (`fs/xfs/xfs_iomap.c`) reads the data-fork
@@ -89,8 +97,73 @@ precondition probe**:
   (force unreachable), for when you know the fleet's storage layout better than
   a local probe can. This also drives the unit tests.
 
-`exploit()` forks an isolated child that creates a private `mkdtemp` scratch
-directory on the XFS mount and works **only on two files it owns**:
+### `--full-chain` — the real `/etc/passwd` root pop
+
+With `--full-chain`, `exploit()` performs the actual privilege escalation:
+
+1. **Pre-flight, before touching anything.** Confirms the target
+   (`/etc/passwd`, or `$SKELETONKEY_REFLUXFS_TARGET`) is root-owned and fits in
+   one block, and **crafts the payload first** — the original file with root's
+   password field emptied (`root:x:` → `root::`), **every other line preserved
+   byte-for-byte**, padded with newlines to the exact original size. If it
+   cannot produce a payload that keeps both root and the invoking user's line,
+   it refuses and touches nothing. (A naive port that truncates the tail drops
+   `sshd`/`nobody`/the caller and bricks login — this is the single most
+   important safety property of the implementation.)
+2. **Backup.** Copies the target aside so failure or `cleanup()` can restore it.
+3. **Race.** 32 writers push the crafted block at a reflink-clone of the target
+   while 8 helpers churn `ftruncate`/`fdatasync`, up to a 90 s budget. A won
+   race lands the crafted block on the target's still-shared physical block.
+4. **Cache eviction.** The overwrite bypasses the target inode, so its clean
+   page-cache pages are never invalidated — a `su` immediately after would read
+   the *stale* old passwd. The module issues `POSIX_FADV_DONTNEED` (needs only
+   an `O_RDONLY` fd) so subsequent buffered readers see the new bytes.
+5. **Verify (via `O_DIRECT`, not the cache) and report.** Confirms the on-disk
+   root line is now `root::`; if the write was torn, it restores from backup and
+   fails. On success returns `EXPLOIT_OK` and prints `su root` (empty password).
+
+`cleanup()` (run as root after the pop) restores `/etc/passwd` from the backup.
+The overwrite is persistent and survives reboot, so restoring matters.
+
+#### The private-extent precondition (not in the public writeup)
+
+The race only fires when the target's extent refcount is **exactly** the
+attacker-clone pair — i.e. the target's extent must be **private** going in. The
+mechanism: the block starts at refcount 2 (target + attacker clone), the
+concurrent CoW drops it to 1, and the stale writer then reads "1 → private". If
+the target is *already* reflink-shared with a third file, the post-CoW refcount
+stays > 1, the writer correctly does CoW, and nothing corrupts.
+
+This was found during verification: the stock Rocky 9 cloud image ships
+`/etc/passwd` **pre-shared** (its block had refcount > 1 in the base image), and
+the attack failed against it across ~41 000 rounds. Rewriting the file so its
+extent became private — with byte-identical content, exactly what any
+`useradd`/`passwd`/`vipw` does — made it fall in ~2 000 rounds. So the
+exploitable state is the *normal* administered state; the cloud image was
+accidentally protected by how it was built. `detect() --active` reports the
+target's extent state (`filefrag -v /etc/passwd | grep shared` checks it by
+hand), and the full chain warns when the target is pre-shared.
+
+### `--full-chain` verification (2026-07-23, Rocky 9.8)
+
+On `5.14.0-687.10.1.el9_8.0.1.x86_64`, unprivileged `uid=1000`, SELinux
+**Enforcing**, against a private-extent `/etc/passwd`:
+
+| | |
+|---|---|
+| `--exploit refluxfs --i-know --full-chain` | **`EXPLOIT_OK`**, 3/3 wins (1244 / 3716 / 7913 rounds, 4–30 s) |
+| `su root` (empty password) afterwards | **`uid=0(root)`** |
+| Accounts preserved | all 25 lines; `root`/`sk`/`sshd`/`nobody` intact |
+| `/etc/passwd` metadata after overwrite | size/inode/**mtime/ctime unchanged**, only content — FIM-invisible |
+| `cleanup` (as root) | restored `/etc/passwd` from backup, removed backup |
+| Plain `--exploit` (no `--full-chain`) | safe trigger, `EXPLOIT_FAIL`, target untouched |
+| Pre-shared `/etc/passwd` | not attackable (~41 000 rounds, no win) — as predicted |
+
+### The safe default trigger
+
+Without `--full-chain`, `exploit()` forks an isolated child that creates a
+private `mkdtemp` scratch directory on the XFS mount and works **only on two
+files it owns**:
 
 - **(A) deterministic + safe** — writes a donor file, `FICLONE`-clones it, and
   confirms via **`FIEMAP_EXTENT_SHARED`** that the clone's extent really is
@@ -105,16 +178,15 @@ directory on the XFS mount and works **only on two files it owns**:
   the donor back **with `O_DIRECT`** — a buffered read would be served from the
   page cache that the corruption bypasses, and would hide a win.
 
-It is **deliberately under-driven** (the public PoC uses 32 writers and 8
-helpers and grinds far longer) and, more importantly, it **never clones or
-targets a file it does not own**. The step that makes this root — reflink-cloning
-a root-owned file such as `/etc/passwd` and racing writes onto *its* shared
-blocks — persistently rewrites a system file on disk **with no undo**, so it is
-documented here and **not bundled**. `exploit()` always returns `EXPLOIT_FAIL`.
+This default path is **deliberately under-driven** (the public PoC and the
+`--full-chain` path use 32 writers and 8 helpers) and **never clones or targets
+a file it does not own** — the destructive `/etc/passwd` overwrite lives only
+behind `--full-chain` (above). The default `exploit()` always returns
+`EXPLOIT_FAIL`.
 
-If the race *is* won, the module says so loudly: that is CVE-2026-64600
-confirmed present, empirically, with the damage contained to 4 KiB of the
-operator's own scratch file.
+If the race *is* won on the safe path, the module says so loudly: that is
+CVE-2026-64600 confirmed present, empirically, with the damage contained to
+4 KiB of the operator's own scratch file.
 
 ## VM verification (2026-07-23)
 
@@ -200,8 +272,10 @@ SELinux enforcing, container boundaries, KASLR, SMEP, SMAP and seccomp are all
 irrelevant. Qualys puts it plainly: *"This isn't a vulnerability you can harden
 around, isolate, or live-patch."*
 
-`cleanup()` sweeps any `skeletonkey-refluxfs-*` scratch directories left behind
-if a trigger run was killed mid-round; normal runs remove their own.
+`cleanup()` restores `/etc/passwd` from the `--full-chain` backup (run it as
+root after the pop: `su root`, then `skeletonkey --cleanup refluxfs`), then
+sweeps any `skeletonkey-refluxfs-*` scratch directories left behind if a run was
+killed mid-round; normal runs remove their own.
 
 ## Credit
 

