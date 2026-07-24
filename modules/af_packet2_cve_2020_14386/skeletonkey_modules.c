@@ -449,6 +449,12 @@ static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vc
         pid_t p = fork();
         if (p < 0) return -1;
         if (p == 0) {
+            /* Capture the OUTER uid/gid BEFORE unshare: after
+             * unshare(CLONE_NEWUSER) getuid()/getgid() return 65534 (nobody),
+             * so a post-unshare map is "0 65534 1" which the kernel rejects
+             * with EPERM and the userns-root mapping silently fails. */
+            unsigned outer_uid = (unsigned)getuid();
+            unsigned outer_gid = (unsigned)getgid();
             if (unshare(CLONE_NEWUSER | CLONE_NEWNET) < 0) _exit(2);
             int fd;
             fd = open("/proc/self/setgroups", O_WRONLY);
@@ -456,13 +462,13 @@ static int afp2_arb_write(uintptr_t kaddr, const void *buf, size_t len, void *vc
             fd = open("/proc/self/uid_map", O_WRONLY);
             if (fd >= 0) {
                 char m[64];
-                int n = snprintf(m, sizeof m, "0 %u 1", (unsigned)getuid());
+                int n = snprintf(m, sizeof m, "0 %u 1", outer_uid);
                 (void)!write(fd, m, n); close(fd);
             }
             fd = open("/proc/self/gid_map", O_WRONLY);
             if (fd >= 0) {
                 char m[64];
-                int n = snprintf(m, sizeof m, "0 %u 1", (unsigned)getgid());
+                int n = snprintf(m, sizeof m, "0 %u 1", outer_gid);
                 (void)!write(fd, m, n); close(fd);
             }
             int rc = af_packet2_primitive_child(c->ictx);
