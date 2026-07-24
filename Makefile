@@ -107,10 +107,31 @@ CRA_DIR  := modules/cgroup_release_agent_cve_2022_0492
 CRA_SRCS := $(CRA_DIR)/skeletonkey_modules.c
 CRA_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(CRA_SRCS))
 
-# Family: overlayfs_setuid (CVE-2023-0386) — joins overlayfs family
+# Family: overlayfs_setuid (CVE-2023-0386) — joins overlayfs family.
+# The exploit needs a FUSE filesystem to export a setuid-root lower layer;
+# autodetected via `pkg-config fuse3` (or fuse2). When absent, the module
+# compiles as a stub that returns PRECOND_FAIL with a hint to install the
+# libfuse3-dev (or libfuse-dev) package and rebuild.
 OSU_DIR  := modules/overlayfs_setuid_cve_2023_0386
 OSU_SRCS := $(OSU_DIR)/skeletonkey_modules.c
 OSU_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(OSU_SRCS))
+
+# Prefer fuse2 — the public CVE-2023-0386 PoC uses it, and overlay copy-up's
+# splice path works cleanly through libfuse2's read_buf; libfuse3's read_buf
+# path returns ENOSYS at copy-up on the kernels tested. Fall back to fuse3.
+OSU_FUSE2_OK := $(shell pkg-config --exists fuse  2>/dev/null && echo 1 || echo 0)
+OSU_FUSE3_OK := $(shell pkg-config --exists fuse3 2>/dev/null && echo 1 || echo 0)
+ifeq ($(OSU_FUSE2_OK),1)
+  OSU_CFLAGS := $(shell pkg-config --cflags fuse) -DOVLSU_HAVE_FUSE
+  OSU_LIBS   := $(shell pkg-config --libs fuse)
+else ifeq ($(OSU_FUSE3_OK),1)
+  OSU_CFLAGS := $(shell pkg-config --cflags fuse3) -DOVLSU_HAVE_FUSE -DOVLSU_FUSE3
+  OSU_LIBS   := $(shell pkg-config --libs fuse3)
+else
+  OSU_CFLAGS :=
+  OSU_LIBS   :=
+endif
+$(OSU_OBJS): CFLAGS += $(OSU_CFLAGS)
 
 # Family: nft_set_uaf (CVE-2023-32233)
 NSU_DIR  := modules/nft_set_uaf_cve_2023_32233
@@ -299,10 +320,10 @@ TEST_KR_ALL_OBJS := $(TEST_KR_OBJS) $(CORE_OBJS)
 all: $(BIN)
 
 $(BIN): $(ALL_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS) $(OSU_LIBS)
 
 $(TEST_BIN): $(TEST_ALL_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ -lpthread $(P2TR_LIBS) $(OSU_LIBS)
 
 $(TEST_KR_BIN): $(TEST_KR_ALL_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^

