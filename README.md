@@ -214,8 +214,16 @@ also compile (modules with Linux-only headers stub out gracefully).
 
 ## Status
 
-**v0.9.14 cut 2026-07-23.** 46 modules across 41 CVEs — **every
-year 2016 → 2026 now covered**. Newest: `refluxfs` (CVE-2026-64600,
+**v0.10.0 cut 2026-07-24 — the exploit-verification release.** The corpus
+moved from *detect*-verified to **out-of-band exploit-verified**: **11 modules
+now confirmed landing `uid=0` in a VM**, each witnessed independently (a
+root-owned artifact / `/etc/shadow` read / setuid-bash sentinel) rather than
+self-reported. Along the way, **four modules that falsely reported `EXPLOIT_OK`
+without ever getting root were fixed** (`pwnkit`, `ptrace_traceme`, `dirty_pipe`,
+`dirty_cow`), and a full false-`EXPLOIT_OK` audit was closed — every success
+claim is now backed by a real out-of-band check. See `docs/EXPLOITED.md`.
+46 modules across 41 CVEs — **every year 2016 → 2026 now covered**. Newest
+module: `refluxfs` (CVE-2026-64600,
 Qualys TRU's "RefluXFS" — a nine-year TOCTOU race in the XFS **reflink
 copy-on-write** path: `xfs_reflink_fill_cow_hole()` drops `ILOCK` to wait
 for transaction log space, then re-checks the refcount btree at a

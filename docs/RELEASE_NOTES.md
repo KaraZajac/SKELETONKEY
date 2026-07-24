@@ -1,3 +1,83 @@
+## SKELETONKEY v0.10.0 — the exploit-verification release
+
+This release moves the corpus from **detect-verified** to **out-of-band
+exploit-verified**. Every headline claim below was witnessed in a VM by an
+independent root proof (a root-owned artifact, an `/etc/shadow` read, or a
+setuid-bash sentinel) — never by the module's own self-report. Full ledger:
+`docs/EXPLOITED.md`; per-run records: `docs/VERIFICATIONS.jsonl`.
+
+### Headline: 11 modules confirmed landing `uid=0` out of band
+
+| module | CVE | verified on |
+|---|---|---|
+| `refluxfs` | CVE-2026-64600 | Rocky 9.8 / 5.14.0-687 — `/etc/passwd` full chain |
+| `overlayfs` | CVE-2021-3493 | Ubuntu 20.04.0 / 5.4.0-26 — **direct uid=0 witness** |
+| `overlayfs_setuid` | CVE-2023-0386 | Ubuntu 22.04.0 / 5.15.0-25 — **rewritten (libfuse)** |
+| `pwnkit` | CVE-2021-4034 | Ubuntu 20.04.0 / polkit 0.105 — **fixed** |
+| `sudo_runas_neg1` | CVE-2019-14287 | Ubuntu 18.04.2 / sudo 1.8.21p2 |
+| `sudoedit_editor` | CVE-2023-22809 | Ubuntu 22.04.0 / sudo 1.9.9 — **fixed** |
+| `sudo_host` | CVE-2025-32462 | Ubuntu 22.04.0 / sudo 1.9.9 |
+| `ptrace_traceme` | CVE-2019-13272 | Ubuntu 18.04.0 / 4.15.0-50 — **rewritten** |
+| `sudo_samedit` | CVE-2021-3156 | Ubuntu 18.04.0 / sudo 1.8.21p2 — **rewritten (Baron Samedit)** |
+| `dirty_pipe` | CVE-2022-0847 | mainline 5.16.0 — **rewritten, 3 bugs fixed** |
+| `dirty_cow` | CVE-2016-5195 | mainline 4.8.0 — **rewritten, false-OK fixed** |
+
+### Integrity: four modules were falsely claiming root — all fixed
+
+A corpus-wide **false-`EXPLOIT_OK` audit** found four modules that reported
+success while obtaining **no root at all**, via the dispatcher's "an `execve`
+transferred, so treat it as success" path (the exec'd helper then failed):
+`pwnkit`, `ptrace_traceme`, `dirty_pipe`, `dirty_cow`. All four now verify root
+by an out-of-band artifact before claiming success. `dirty_pipe`/`dirty_cow`
+additionally reverted `/etc/passwd` via `drop_caches` (needs root) — as an
+unprivileged caller that **corrupted the running system's `/etc/passwd`**; both
+now revert through the Dirty Pipe/COW primitive itself, leaving the file
+byte-identical. The audit was then broadened to **every** `EXPLOIT_OK` site: all
+are now backed by a real check (root-owned artifact `stat`, `getxattr`
+bug-signature, `/etc/passwd` grep, `setuid(0)==0` gate, or page-cache
+`verify_plant`). No false positives remain.
+
+### New / rewritten working exploits
+
+- **`ptrace_traceme`** (CVE-2019-13272) — the shipped sequence had the mechanism
+  backwards; rewritten to the Jann Horn/bcoles technique (child becomes
+  non-degraded root via its own setuid-execve under a privileged tracer), lands
+  real root.
+- **`sudo_samedit`** (CVE-2021-3156, "Baron Samedit") — the corpus's hardest
+  userspace target; ported blasty's NSS `libnss_X` hijack, lands root as a
+  non-sudoer on the first grooming attempt.
+- **`overlayfs_setuid`** (CVE-2023-0386) — rewritten with libfuse (setuid-root
+  FUSE lower + overlay copy-up).
+- **`dirty_pipe`** / **`dirty_cow`** — rewritten to the reliable "known-hash into
+  root's password field + `su` over a pty" escalation, with primitive-based
+  revert; `dirty_cow` verified on a pre-4.8.3 kernel.
+
+### Other fixes
+
+- **Systemic userns bug** fixed in `cgroup_release_agent` + `af_packet2`:
+  `getuid()`/`getgid()` were read *after* `unshare(CLONE_NEWUSER)` (→ 65534), so
+  the `uid_map` write was rejected and userns-root silently failed.
+- **Offset resolver** (`core/offsets.c`): env-provided kernel offsets
+  (`SKELETONKEY_MODPROBE_PATH`, …) were silently wiped under `kptr_restrict` (i.e.
+  on every default host), blocking every `--full-chain` primitive. Fixed.
+- **Robust `su` helper**: the su-over-pty step now polls for the prompt with a
+  hard 20s cap so a misbehaving `su` can never hang the module (and thus never
+  block a revert). Latent `readback[16]` overflow fixed. `netfilter_xtcompat`
+  now includes `<linux/if.h>` for `IFNAMSIZ` (builds on older kernel headers).
+- **`overlayfs`** upgraded from a `getxattr` proxy to a **direct uid=0 witness**.
+
+### Kernel primitives — scope note
+
+The ~13 kernel-primitive modules (`nf_tables` & friends) remain honest
+`EXPLOIT_FAIL` trigger/groom scaffolds. `nf_tables`' kernel was confirmed
+vulnerable and the offset plumbing fixed, but landing root needs a
+Notselwyn-scale port; and even the most tractable primitive
+(`netfilter_xtcompat`, CVE-2021-22555) needs its exact target kernel+config —
+Andy Nguyen's reference exploit does not land on mainline 5.4/5.8. These are
+per-target, per-primitive exploit-dev, documented in `docs/EXPLOITED.md`.
+
+---
+
 ## SKELETONKEY v0.9.14 — new LPE module: refluxfs (CVE-2026-64600)
 
 Adds **`refluxfs` — CVE-2026-64600 "RefluXFS"** (Qualys Threat Research Unit),
