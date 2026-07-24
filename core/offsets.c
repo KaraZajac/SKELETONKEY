@@ -212,10 +212,20 @@ static int parse_symfile(const char *path,
     fclose(f);
 
     /* /proc/kallsyms returns all-zero addrs under kptr_restrict — treat
-     * that as "couldn't read", not "actually zero". */
+     * that as "couldn't read", not "actually zero". Undo ONLY the bogus
+     * KALLSYMS source tags this pass may have set on still-zero fields —
+     * do NOT clobber values a higher-priority source (env vars) already
+     * provided, or the env override is silently wiped on any kptr_restrict
+     * host (which is every default host). */
     if (!saw_nonzero) {
-        o->modprobe_path = o->poweroff_cmd = o->init_task = o->init_cred = 0;
-        o->source_modprobe = o->source_init_task = OFFSETS_NONE;
+        if (o->source_modprobe == OFFSETS_FROM_KALLSYMS) {
+            o->modprobe_path = 0;
+            o->source_modprobe = OFFSETS_NONE;
+        }
+        if (o->source_init_task == OFFSETS_FROM_KALLSYMS) {
+            o->init_task = 0;
+            o->source_init_task = OFFSETS_NONE;
+        }
         return 0;
     }
     return filled;
