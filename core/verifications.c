@@ -296,6 +296,36 @@ const struct verification_record verifications[] = {
         .actual_detect = "VULNERABLE",
         .status        = "match",
     },
+    {
+        .module        = "refluxfs",
+        .verified_at   = "2026-07-23",
+        .host_kernel   = "5.14.0-687.10.1.el9_8.0.1.x86_64",
+        .host_distro   = "Rocky Linux 9.8 (Blue Onyx)",
+        .vm_box        = "rockylinux/9",
+        .expect_detect = "VULNERABLE",
+        .actual_detect = "VULNERABLE",
+        .status        = "match",
+    },
+    {
+        .module        = "dirty_cow",
+        .verified_at   = "2026-07-24",
+        .host_kernel   = "4.8.0-040800-generic",
+        .host_distro   = "Ubuntu 16.04.7 LTS",
+        .vm_box        = "ubuntu/xenial64+mainline-4.8.0",
+        .expect_detect = "VULNERABLE",
+        .actual_detect = "VULNERABLE",
+        .status        = "match",
+    },
+    {
+        .module        = "sudo_host",
+        .verified_at   = "2026-07-24",
+        .host_kernel   = "5.15.0-25-generic",
+        .host_distro   = "Ubuntu 22.04 LTS",
+        .vm_box        = "generic/ubuntu2204",
+        .expect_detect = "VULNERABLE",
+        .actual_detect = "VULNERABLE",
+        .status        = "match",
+    },
 };
 
 const size_t verifications_count =
