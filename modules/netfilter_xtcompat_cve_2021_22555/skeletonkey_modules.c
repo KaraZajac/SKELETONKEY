@@ -90,6 +90,8 @@
  * and declare the few socket constants we need by hand. IPPROTO_RAW
  * is provided by linux/in.h; SOL_IP is glibc-only so we hardcode it
  * (Linux constant value 0). */
+#include <linux/if.h>   /* IFNAMSIZ — ip_tables.h uses it but doesn't pull it
+                         * in on older kernel headers (e.g. Ubuntu 16.04). */
 #include <linux/netfilter_ipv4/ip_tables.h>
 #ifndef SOL_IP
 #define SOL_IP  0
